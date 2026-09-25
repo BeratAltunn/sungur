@@ -22,7 +22,7 @@ Resmî veri paketi gelince `docker-compose.yml`'deki `volumes`/`SENTINEL_DATA_DI
 
 ```bash
 cd stage2
-python3 -m pip install -e '.[dev]'     # veya: uv sync
+make install                           # Python paketleri + geçici YOLO ağırlıkları
 cp .env.example .env                   # LLM anahtarını yazın; boşken şablon brief çalışır
 make check                             # ruff + testler
 make demo                              # img_000860 değerlendirmesi (CLI)

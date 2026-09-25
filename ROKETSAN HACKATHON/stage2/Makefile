@@ -1,10 +1,15 @@
 PY ?= python3
 export PYTHONPATH := src
 
-.PHONY: install check lint test validate precompute batch demo demo-check web app dev-web docker-up docker-test docker-down
+.PHONY: install weights check lint test validate precompute batch demo demo-check web app dev-web docker-up docker-test docker-down
 
 install:
-	$(PY) -m pip install -e '.[dev]'
+	$(PY) -m pip install -e '.[dev,ui,detector]'
+	$(MAKE) weights
+
+# Geçici tespit modeli: Ultralytics'in resmî COCO ağırlıkları (git'e girmez, ~6 MB)
+weights:
+	mkdir -p models && $(PY) -c "from ultralytics import YOLO; YOLO('models/yolov8n.pt')"
 
 lint:
 	$(PY) -m ruff check src tests scripts
