@@ -216,3 +216,20 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# ---- NÖBETÇİ (ROKETSAN Hackathon) ----
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+.claude/
+
+# Kaggle yarışma verisi: büyük (1,8 GB) ve lisans gereği paylaşılmaz
+ROKETSAN HACKATHON/dataset/
+
+# Organizatör dokümanları (depo herkese açıksa paylaşmayın; özelse bu iki satırı silebilirsiniz)
+ROKETSAN HACKATHON/*.pptx
+ROKETSAN HACKATHON/*.pdf
+
+# Python şablonundaki "lib/" kuralı arayüz kodunu da yok sayar; geri aç
+!ROKETSAN HACKATHON/stage2/web/src/lib/

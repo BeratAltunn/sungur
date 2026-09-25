@@ -1,0 +1,1 @@
+{"content":null,"tool_calls":[{"id":"chatcmpl-tool-8c9e0cfb503f925e","name":"find_reports","arguments":"{\"t_from\": \"12:00\", \"t_to\": \"13:00\", \"verdict\": \"ÇELİŞİYOR\"}"}],"tokens_in":1649,"tokens_out":37,"cost_usd":0.0,"model":"glm-5.3","cached":false}

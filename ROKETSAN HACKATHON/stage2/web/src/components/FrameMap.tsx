@@ -1,0 +1,230 @@
+import type { Map as MLMap, Marker } from "maplibre-gl";
+import { useEffect, useRef, useState } from "react";
+import { LEVEL_COLOR, VERDICT_CLASS, VERDICT_ICON, hhmm, scoreLevel } from "../lib/format";
+import { bounds, circle, fullPath, pathUntil, positionAt } from "../lib/geo";
+import type { FrameInfo, FrameTracks, LngLat, MapContext, TrackPath } from "../lib/types";
+import { MapView, fc, htmlMarker, line, polygon, setGeo } from "./MapView";
+
+export type Focus = { kind: "track"; id: string } | { kind: "report"; id: string } | null;
+
+interface Props {
+  ctx: MapContext;
+  frame: FrameInfo;
+  imageUrl: string;
+  data: FrameTracks;
+  t: number;
+  focus: Focus;
+  onFocus: (f: Focus) => void;
+}
+
+const trackColor = (tr: TrackPath) =>
+  tr.role === "vehicle" ? LEVEL_COLOR[scoreLevel(tr.score ?? 0)] : tr.role === "undetected" ? "#94a3b8" : "#64748b";
+
+export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus }: Props) {
+  const mapRef = useRef<MLMap | null>(null);
+  const vehicleMarkers = useRef<Record<string, Marker>>({});
+  const pinMarkers = useRef<Record<string, Marker>>({});
+  const [ready, setReady] = useState(0);
+  const c = frame.corners;
+  const frameCorners: LngLat[] = [c.top_left, c.top_right, c.bottom_right, c.bottom_left].map(([la, lo]) => [lo, la]);
+
+  const focusedTrack = focus?.kind === "track" ? focus.id : null;
+  const pin = focus?.kind === "report" ? data.report_pins.find((p) => p.report_id === focus.id) ?? null : null;
+
+  const fitAll = () => {
+    const map = mapRef.current;
+    if (!map) return;
+    const pts: LngLat[] = [...frameCorners, ...data.tracks.flatMap((tr) => fullPath(tr.points))];
+    map.fitBounds(bounds(pts), { padding: 48, duration: 600, maxZoom: 16 });
+  };
+  const fitFrame = () => mapRef.current?.fitBounds(bounds(frameCorners), { padding: 24, duration: 600 });
+
+  const onReady = (map: MLMap) => {
+    mapRef.current = map;
+    Object.values(vehicleMarkers.current).forEach((m) => m.remove());
+    Object.values(pinMarkers.current).forEach((m) => m.remove());
+    vehicleMarkers.current = {};
+    pinMarkers.current = {};
+
+    setGeo(map, "rings", fc(ctx.rings.map((r) => line(r.ring))));
+    map.addLayer({ id: "rings", type: "line", source: "rings", paint: { "line-color": "#334155", "line-dasharray": [3, 3] } });
+    map.addSource("frame-img", { type: "image", url: imageUrl, coordinates: frameCorners as never });
+    map.addLayer({ id: "frame-img", type: "raster", source: "frame-img", paint: { "raster-opacity": 0.95 } });
+    setGeo(map, "frame-outline", fc([line([...frameCorners, frameCorners[0]])]));
+    map.addLayer({ id: "frame-outline", type: "line", source: "frame-outline", paint: { "line-color": "#e2e8f0", "line-width": 1.5 } });
+
+    for (const id of ["paths-full", "paths-sofar", "report-circle", "links"]) setGeo(map, id, fc([]));
+    map.addLayer({
+      id: "paths-full",
+      type: "line",
+      source: "paths-full",
+      paint: { "line-color": ["get", "color"], "line-width": 1.5, "line-opacity": 0.35 },
+    });
+    map.addLayer({
+      id: "paths-sofar",
+      type: "line",
+      source: "paths-sofar",
+      paint: { "line-color": ["get", "color"], "line-width": ["get", "width"], "line-opacity": 0.95 },
+    });
+    map.addLayer({ id: "report-circle-fill", type: "fill", source: "report-circle", paint: { "fill-color": "#f8fafc", "fill-opacity": 0.08 } });
+    map.addLayer({ id: "report-circle", type: "line", source: "report-circle", paint: { "line-color": "#f8fafc", "line-width": 1.5 } });
+    map.addLayer({
+      id: "links",
+      type: "line",
+      source: "links",
+      paint: { "line-color": "#f8fafc", "line-width": 1, "line-dasharray": [2, 2], "line-opacity": 0.8 },
+    });
+
+    htmlMarker(map, ctx.base.center, `<span>◆</span><b>${ctx.base.name}</b>`, "mk mk-base");
+    for (const tr of data.tracks) {
+      const label = tr.vehicle_ref ? `${tr.vehicle_ref}` : tr.track_id;
+      const m = htmlMarker(map, [0, 0], label, `mk mk-veh mk-${tr.role}`, () => onFocusRef.current({ kind: "track", id: tr.track_id }));
+      m.getElement().style.setProperty("--c", trackColor(tr));
+      m.getElement().title = `${tr.vehicle_ref ?? ""} ${tr.track_id}`.trim();
+      vehicleMarkers.current[tr.track_id] = m;
+    }
+    for (const p of data.report_pins) {
+      const m = htmlMarker(
+        map,
+        [p.lon, p.lat],
+        `<span>${VERDICT_ICON[p.verdict]}</span>${p.report_id}`,
+        `mk mk-pin ${VERDICT_CLASS[p.verdict]}`,
+        () => onFocusRef.current({ kind: "report", id: p.report_id }),
+      );
+      m.getElement().title = `${p.report_id} · ${p.time} · ${p.verdict}`;
+      pinMarkers.current[p.report_id] = m;
+    }
+    fitAll();
+    setReady((r) => r + 1);
+  };
+  const onFocusRef = useRef(onFocus);
+  onFocusRef.current = onFocus;
+
+  // Time slider: move vehicles, extend the "so far" paths. Pure display; runs every tick.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getSource("paths-sofar")) return;
+    setGeo(
+      map,
+      "paths-full",
+      fc(data.tracks.map((tr) => line(fullPath(tr.points), { color: trackColor(tr) }))),
+    );
+    setGeo(
+      map,
+      "paths-sofar",
+      fc(
+        data.tracks.map((tr) =>
+          line(pathUntil(tr.points, t), {
+            color: tr.track_id === focusedTrack ? "#ffffff" : trackColor(tr),
+            width: tr.track_id === focusedTrack ? 4 : tr.role === "vehicle" ? 2.5 : 1.5,
+          }),
+        ),
+      ),
+    );
+    for (const tr of data.tracks) {
+      const m = vehicleMarkers.current[tr.track_id];
+      const pos = positionAt(tr.points, t);
+      const el = m.getElement();
+      el.style.display = pos ? "" : "none";
+      if (pos) m.setLngLat(pos);
+      el.classList.toggle("mk-focus", tr.track_id === focusedTrack || !!pin?.related_tracks.includes(tr.track_id));
+    }
+    // selected report: its radius and dashed links to the vehicles it is about, at the slider time
+    if (pin) {
+      setGeo(map, "report-circle", fc([polygon(circle([pin.lon, pin.lat], data.radius_m))]));
+      const links = data.tracks
+        .filter((tr) => pin.related_tracks.includes(tr.track_id))
+        .map((tr) => positionAt(tr.points, t))
+        .filter((p): p is LngLat => !!p)
+        .map((p) => line([[pin.lon, pin.lat], p]));
+      setGeo(map, "links", fc(links));
+    } else {
+      setGeo(map, "report-circle", fc([]));
+      setGeo(map, "links", fc([]));
+    }
+    for (const [id, m] of Object.entries(pinMarkers.current)) m.getElement().classList.toggle("mk-focus", id === pin?.report_id);
+  }, [t, focusedTrack, pin, data, ready]);
+
+  // Focusing a report frames the pin and its vehicles so the gap is visible at a glance.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !pin) return;
+    const pts: LngLat[] = [[pin.lon, pin.lat]];
+    for (const tr of data.tracks)
+      if (pin.related_tracks.includes(tr.track_id)) {
+        const p = positionAt(tr.points, pin.t_min);
+        if (p) pts.push(p);
+      }
+    map.fitBounds(bounds(pts), { padding: 70, duration: 700, maxZoom: 15 });
+  }, [pin, data]);
+
+  return (
+    <div className="frame-map">
+      <MapView onReady={onReady} initial={{ center: [frame.center_lon, frame.center_lat], zoom: 13 }} />
+      <div className="map-actions">
+        <button className="btn btn-ghost btn-sm" onClick={fitAll}>
+          Tüm izler
+        </button>
+        <button className="btn btn-ghost btn-sm" onClick={fitFrame}>
+          Kareye odaklan
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface SliderProps {
+  data: FrameTracks;
+  t: number;
+  onChange: (t: number) => void;
+  playing: boolean;
+  onPlay: () => void;
+  focusReport: string | null;
+  onPickReport: (id: string) => void;
+}
+
+export function TimeSlider({ data, t, onChange, playing, onPlay, focusReport, onPickReport }: SliderProps) {
+  const { start, end } = data.window;
+  const pct = (x: number) => `${((x - start) / (end - start)) * 100}%`;
+  const before = end - t;
+  return (
+    <div className="slider" aria-label="Zaman kaydırıcısı">
+      <button className="btn btn-ghost btn-sm" onClick={onPlay} aria-label={playing ? "Durdur" : "Oynat"}>
+        {playing ? "❚❚ Durdur" : "▶ Oynat"}
+      </button>
+      <div className="slider-track">
+        <input
+          type="range"
+          min={start}
+          max={end}
+          step={1}
+          value={t}
+          onChange={(e) => onChange(Number(e.target.value))}
+          aria-valuetext={hhmm(t)}
+        />
+        {data.report_pins.map((p) => (
+          <button
+            key={p.report_id}
+            className={`tick ${VERDICT_CLASS[p.verdict]} ${focusReport === p.report_id ? "tick-focus" : ""}`}
+            style={{ left: pct(p.t_min) }}
+            onClick={() => onPickReport(p.report_id)}
+            title={`${p.report_id} · ${p.time} · ${p.verdict}`}
+          >
+            {VERDICT_ICON[p.verdict]}
+          </button>
+        ))}
+        <div className="slider-scale">
+          <span>{hhmm(start)}</span>
+          <span>{hhmm(end)} çekim</span>
+        </div>
+      </div>
+      <div className="slider-now">
+        <span className="mono big">{hhmm(t)}</span>
+        <span className="muted">{before > 0 ? `çekimden ${before} dk önce` : "çekim anı"}</span>
+      </div>
+      <button className="btn btn-ghost btn-sm" onClick={() => onChange(end)} disabled={t === end}>
+        ⟲ Çekim anına dön
+      </button>
+    </div>
+  );
+}

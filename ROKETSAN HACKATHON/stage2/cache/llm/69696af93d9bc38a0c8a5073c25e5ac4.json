@@ -1,0 +1,1 @@
+{"content":null,"tool_calls":[{"id":"chatcmpl-tool-8ce2ad5d56b1e643","name":"zone_summary","arguments":"{\"zone\": \"Doğu Yolu\"}"}],"tokens_in":1642,"tokens_out":15,"cost_usd":0.0,"model":"glm-5.3","cached":false}

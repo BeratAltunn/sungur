@@ -1,0 +1,22 @@
+# Tek komutla:  docker compose -f stage2/docker-compose.yml up --build     (ROKETSAN HACKATHON/ klasöründen)
+#          ya da:  cd stage2 && docker compose up --build
+# Arayüz: http://127.0.0.1:8000
+services:
+  nobetci:
+    build:
+      context: ..
+      dockerfile: stage2/Dockerfile
+    image: nobetci:latest
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - path: .env        # LLM anahtarı imaja girmez; yoksa sistem şablon brief ile çalışır
+        required: false
+    volumes:
+      - ./runs:/app/stage2/runs     # iz (trace.jsonl) ve operatör kararları kalıcı
+      - ./cache:/app/stage2/cache   # tespit ve LLM önbelleği host ile paylaşılır
+      # Resmî veri paketi gelince:
+      # - ../data:/app/data:ro
+    # environment:
+    #   SENTINEL_DATA_DIR: /app/data
+    restart: unless-stopped
