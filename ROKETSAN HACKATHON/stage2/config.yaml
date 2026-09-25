@@ -93,6 +93,11 @@ observability:
   labels_dir: calibration/labels    # kör altın set etiketleri (git'e girer, ekip paylaşır)
 
 # Canlı demonun dayandığı şeyler (make demo-check korur). Senaryo: DEMO.md
+impact:                             # vardiya simülasyonu (#/impact, triage'da oynatma); model, kanıt değil
+  manual_min_assumed: 6.0           # elle kare başına dk (tasarım V5); kronometre ölçümü ≥ 3 ise o kullanılır
+  system_min_assumed: 1.0           # sistemle kare başına dk; açılış→karar ölçümü ya da kronometre ≥ 3 ise o
+  min_measurements: 3
+
 demo:
   frames:
     img_000860: KRİTİK              # ana kare: 4 araçlık konvoy, kamyon T0122, ETA ~4,5 dk
@@ -102,6 +107,8 @@ demo:
   no_contradiction: [img_006388]
   chat:                             # yalnızca `demo-check --chat` ile (LLM çağırır)
     - question: "Bu karedeki en riskli araç neden riskli?"
+      image_id: img_000860
+    - question: "Bu karedeki kamyon neden riskli?"   # demo sorusu: 4 araç 100 puanda eşit, anlatı kamyon üzerine
       image_id: img_000860
     - question: "T0122 12:35'te neredeydi?"
   chat_max_s: 45

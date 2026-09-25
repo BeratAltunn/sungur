@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { go } from "../App";
-import { type Focus, FrameMap, TimeSlider } from "../components/FrameMap";
+import { type Focus, FrameMap, ReportCallout, TimeSlider } from "../components/FrameMap";
 import { ImagePanel } from "../components/ImagePanel";
 import { EvidenceTabs, type TabId } from "../components/Tabs";
 import { ErrorState, Kbd, Loading, TopBar } from "../components/ui";
@@ -43,7 +43,7 @@ export function LabelPage({ id, health }: { id: string | null; health: Health | 
     return (
       <div className="app">
         <TopBar health={health} />
-        <main className="label-intro panel">
+        <main tabIndex={-1} className="label-intro panel">
           <h1>Kör etiketleme (altın set)</h1>
           <p>
             Her kare için <b>sistemin çıktısını görmeden</b>, yalnızca kanıta bakarak bir risk seviyesi verin: görüntü ve
@@ -214,6 +214,18 @@ function LabelFrame({
 
   if (error) return <ErrorState error={error} />;
   if (!packet || !tracks || !mapCtx) return <Loading label="Kanıt yükleniyor" />;
+  // Report verdicts are evidence the labeller may see (the Reports tab shows them too); no level or score.
+  const focusedReport = focus?.kind === "report" ? packet.reports.find((r) => r.report_id === focus.id) : undefined;
+  const focusedPin = focus?.kind === "report" ? tracks.report_pins.find((p) => p.report_id === focus.id) : undefined;
+  const callout = focusedReport && (
+    <ReportCallout
+      report={focusedReport}
+      atReportTime={!focusedPin || t === focusedPin.t_min}
+      onSeek={() => pickReport(focusedReport.report_id)}
+      onClose={() => setFocus(null)}
+      onRef={onRef}
+    />
+  );
   const pos = order.indexOf(id);
   const f = packet.frame;
 
@@ -258,7 +270,7 @@ function LabelFrame({
           </button>
         </form>
       </div>
-      <main className="frame-grid">
+      <main tabIndex={-1} className="frame-grid">
         <div className="col-left">
           <section className="panel">
             <div className="panel-head">
@@ -300,6 +312,7 @@ function LabelFrame({
               focusReport={focus?.kind === "report" ? focus.id : null}
               onPickReport={pickReport}
             />
+            {callout}
           </section>
           <EvidenceTabs
             only={["vehicles", "reports"]}

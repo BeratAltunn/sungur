@@ -1,5 +1,5 @@
-import { LABEL_TR, LEVEL_COLOR, dec, scoreLevel } from "../lib/format";
-import type { EvidencePacket } from "../lib/types";
+import { LABEL_TR, LEVEL_COLOR, dec } from "../lib/format";
+import type { EvidencePacket, Level } from "../lib/types";
 
 const NEUTRAL = "#38bdf8";
 
@@ -9,16 +9,19 @@ export function ImagePanel({
   url,
   focusTrack,
   onFocusTrack,
+  levels,
   blind = false,
 }: {
   packet: EvidencePacket;
   url: string;
   focusTrack: string | null;
   onFocusTrack: (trackId: string | null) => void;
+  /** Per-vehicle level from the backend (config thresholds); omitted in blind mode. */
+  levels?: Record<string, Level>;
   /** Blind labelling: one neutral colour, so box colours do not reveal the system's scores. */
   blind?: boolean;
 }) {
-  const colorOf = (score: number) => (blind ? NEUTRAL : LEVEL_COLOR[scoreLevel(score)]);
+  const colorOf = (ref: string) => (blind || !levels?.[ref] ? NEUTRAL : LEVEL_COLOR[levels[ref]]);
   const { width_px: W, height_px: H } = packet.frame;
   return (
     <figure className="image-panel">
@@ -27,7 +30,7 @@ export function ImagePanel({
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden>
           {packet.vehicles.map((v) => {
             const [x, y, w, h] = v.bbox;
-            const color = colorOf(v.score);
+            const color = colorOf(v.ref);
             const focused = !!v.track_id && v.track_id === focusTrack;
             return (
               <g
@@ -63,7 +66,7 @@ export function ImagePanel({
               className={v.track_id && v.track_id === focusTrack ? "active" : ""}
               onMouseEnter={() => onFocusTrack(v.track_id)}
             >
-              <span className="swatch" style={{ background: colorOf(v.score) }} />
+              <span className="swatch" style={{ background: colorOf(v.ref) }} />
               <b>{v.ref}</b> {LABEL_TR[v.label]} · {v.track_id ?? "hareket kaydı yok"} · güven {dec(v.conf, 2)}
               {v.promoted ? " · track ile terfi" : ""}
             </li>

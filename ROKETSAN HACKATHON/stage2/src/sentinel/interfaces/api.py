@@ -7,14 +7,17 @@ The React app in web/ is built to web/dist and served from "/"; in development V
 
 from __future__ import annotations
 
+import json
 import logging
+import queue
 import threading
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -49,7 +52,7 @@ def _warmup() -> None:
     """Evaluate every frame once without network calls, so triage shows cached LLM headlines."""
     s = svc()
     frames = s.repo.frames()
-    _warm["total"] = len(frames)
+    _warm["done"], _warm["total"] = 0, len(frames)  # a restarted app (tests) counts from zero
     for m in frames:
         try:
             with _frame_lock(m.image_id):
@@ -84,6 +87,18 @@ def health() -> dict:
 @app.get("/api/summary")
 def summary():
     return svc().shift_summary()
+
+
+@app.get("/api/handover")
+def handover():
+    """Deterministic shift handover (no LLM): decisions, open high-risk frames, contradicted official reports."""
+    return svc().shift_handover()
+
+
+@app.get("/api/impact")
+def impact():
+    """Shift simulation for the impact view and the triage replay (a model of operator time, not evidence)."""
+    return svc().impact()
 
 
 @app.get("/api/triage")
@@ -141,6 +156,37 @@ def evaluate(image_id: str, live: bool = False):
     return {"result": res, "decision": svc().decisions.current(image_id)}
 
 
+@app.post("/api/frames/{image_id}/evaluate/stream")
+def evaluate_stream(image_id: str, live: bool = False):
+    """Same run as /evaluate, streamed as NDJSON: {"type": "start"|"step"|"packet"|"result"|"error", ...}.
+    The UI shows the six steps as they finish and the evidence before the brief arrives."""
+    _check_frame(image_id)
+    events: queue.Queue = queue.Queue()
+    done = object()
+
+    def emit(kind: str, payload: dict) -> None:
+        events.put({"type": kind, **payload})
+
+    def run() -> None:
+        try:
+            with _frame_lock(image_id):
+                res = svc().evaluate(image_id, live=live, on_event=emit)
+            emit("result", {"result": res, "decision": svc().decisions.current(image_id)})
+        except Exception as e:  # the stream reports it; the UI keeps the cached evaluation
+            log.exception("canlı değerlendirme başarısız: %s", image_id)
+            emit("error", {"detail": f"{type(e).__name__}: {e}"})
+        finally:
+            events.put(done)
+
+    threading.Thread(target=run, daemon=True).start()
+
+    def lines():
+        while (ev := events.get()) is not done:
+            yield json.dumps(jsonable_encoder(ev), ensure_ascii=False) + "\n"
+
+    return StreamingResponse(lines(), media_type="application/x-ndjson")
+
+
 class ChatIn(BaseModel):
     question: str
     history: list[dict] = []
@@ -187,6 +233,13 @@ class DecisionIn(BaseModel):
     action: str
     level: RiskLevel | None = None
     reason: str = ""
+
+
+@app.post("/api/frames/{image_id}/viewed")
+def frame_viewed(image_id: str) -> dict:
+    """Logged when the operator opens a frame: opening → decision is the measured handling time."""
+    _check_frame(image_id)
+    return {"at": svc().record_view(image_id)}
 
 
 @app.post("/api/frames/{image_id}/decisions")

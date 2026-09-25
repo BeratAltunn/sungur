@@ -1,7 +1,7 @@
 PY ?= python3
 export PYTHONPATH := src
 
-.PHONY: install weights calibrate stopwatch demo-check-chat check lint test validate precompute batch demo demo-check web app dev-web docker-up docker-test docker-down
+.PHONY: install weights calibrate stopwatch demo-check-chat check lint test ui-test validate precompute batch demo demo-check web app dev-web docker-up docker-test docker-down
 
 install:
 	$(PY) -m pip install -e '.[dev,ui,detector]'
@@ -19,6 +19,11 @@ test:
 	$(PY) -m pytest
 
 check: lint test
+
+# Arayüz duman testi: derlenmiş arayüz + gerçek API, sistem Chrome'uyla (tarayıcı indirmez).
+# Playwright/Chrome yoksa testler atlanır; `make check` da bunları çalıştırır ama arayüzü derlemez.
+ui-test: web
+	$(PY) -m pytest tests/ui
 
 validate:
 	$(PY) scripts/validate_data.py

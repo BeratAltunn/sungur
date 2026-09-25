@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { api } from "../lib/api";
-import { dec, storage } from "../lib/format";
+import { dec, smooth, storage } from "../lib/format";
 import type { ChatTurn } from "../lib/types";
 import { RefText } from "./ui";
 
@@ -84,12 +84,13 @@ export function ChatPanel({ open, onClose, imageId }: { open: boolean; onClose: 
   const [input, setInput] = useState("");
   const [pending, setPending] = useState<number | null>(null); // start time
   const [elapsed, setElapsed] = useState(0);
+  const abortRef = useRef<AbortController | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => storage.set("chat", msgs.slice(-40)), [msgs]);
   useEffect(() => {
-    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: "smooth" });
+    listRef.current?.scrollTo({ top: listRef.current.scrollHeight, behavior: smooth() });
   }, [msgs, pending]);
   useEffect(() => {
     if (open) inputRef.current?.focus();
@@ -108,15 +109,23 @@ export function ChatPanel({ open, onClose, imageId }: { open: boolean; onClose: 
     setInput("");
     setElapsed(0);
     setPending(Date.now());
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
     try {
-      const turn = await api.chat(q, history, imageId);
+      const turn = await api.chat(q, history, imageId, ctrl.signal);
       setMsgs((m) => [...m, { role: "assistant", content: turn.answer, turn, error: turn.note === "llm_hata" }]);
     } catch (e) {
-      setMsgs((m) => [...m, { role: "assistant", content: `İstek başarısız: ${(e as Error).message}`, error: true }]);
+      const content = ctrl.signal.aborted ? "Soru iptal edildi." : `İstek başarısız: ${(e as Error).message}`;
+      setMsgs((m) => [...m, { role: "assistant", content, error: true }]);
     } finally {
+      abortRef.current = null;
       setPending(null);
     }
   };
+
+  // Suggestions not asked yet: shown when the chat is empty and as follow-ups under the last answer.
+  const asked = new Set(msgs.filter((m) => m.role === "user").map((m) => m.content));
+  const suggestions = (imageId ? [...IN_FRAME, ...GENERAL.slice(1, 3)] : GENERAL).filter((s) => !asked.has(s));
 
   const lastQuestion = [...msgs].reverse().find((m) => m.role === "user")?.content;
 
@@ -140,14 +149,14 @@ export function ChatPanel({ open, onClose, imageId }: { open: boolean; onClose: 
         </div>
       </div>
 
-      <div className="chat-list" ref={listRef}>
+      <div className="chat-list" ref={listRef} role="log" aria-live="polite" aria-label="Sohbet geçmişi">
         {msgs.length === 0 && (
           <div className="chat-empty">
             <p className="muted">
               Kareler, araçların geçmişi ve saha raporları hakkında soru sorun. Cevaptaki her sayı sistemin kayıtlarından gelir;
               kimliklere tıklayarak kanıtı açabilirsiniz.
             </p>
-            {(imageId ? [...IN_FRAME, ...GENERAL.slice(1, 3)] : GENERAL).map((s) => (
+            {suggestions.map((s) => (
               <button key={s} className="suggestion" onClick={() => send(s)}>
                 {s}
               </button>
@@ -202,9 +211,28 @@ export function ChatPanel({ open, onClose, imageId }: { open: boolean; onClose: 
             </div>
           ),
         )}
+        {pending === null && msgs.length > 0 && msgs[msgs.length - 1].role === "assistant" && suggestions.length > 0 && (
+          <div className="followups" aria-label="Önerilen sorular">
+            {suggestions.slice(0, 2).map((s) => (
+              <button key={s} className="suggestion suggestion-sm" onClick={() => send(s)}>
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
         {pending !== null && (
           <div className="msg msg-bot msg-pending" role="status">
-            <span className="spinner" aria-hidden /> Kayıtları sorguluyor… {elapsed} sn
+            <div>
+              <span className="spinner" aria-hidden /> Kayıtları sorguluyor… {elapsed} sn
+            </div>
+            {elapsed >= 10 && (
+              <p className="muted small">
+                Yanıtlar 5–45 sn sürebilir. Kanıt ekranda hazır; beklerken karede çalışmaya devam edebilirsiniz.
+              </p>
+            )}
+            <button className="btn btn-ghost btn-sm" onClick={() => abortRef.current?.abort()}>
+              İptal
+            </button>
           </div>
         )}
       </div>

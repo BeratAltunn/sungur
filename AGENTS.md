@@ -89,7 +89,8 @@ Arayüz üzerinde çalışırken: bir terminalde `make app` açık kalsın, diğ
 
 | Komut | Beklenen |
 |---|---|
-| `make check` | ruff "All checks passed!", pytest'te hata yok (yazıldığı an 71 test) |
+| `make check` | ruff "All checks passed!", pytest'te hata yok (yazıldığı an 88 test; 8'i arayüz duman testi, Playwright/Chrome yoksa atlanır) |
+| `make ui-test` | arayüzü derler, `tests/ui` 8/8 geçer (demo yolu: kuyruk, 12:35 ✗ kartı, canlı değerlendirme adımları, karar → kuyruk, eskalasyon kartı + vardiya devri, etki + vardiya oynatma, yalnız klavyeyle kullanım; kör modda seviye sızmaz) |
 | `make validate` | `SONUÇ: temiz`, 40 kare / 226 track / 137 rapor, 20 tuzak track |
 | `curl -s http://127.0.0.1:8000/api/health` | `"detector": "yolo:yolov8n"`, `"detector_fallback": null`, `"llm": {"error": null}` (anahtar varsa), `warmup.done == 40` |
 | `make demo-check` | tüm satırlar ✓, `demo-check YEŞİL (7/7)` (demo kareleri, aha anı raporları, karşıt kare, önbellekteki brief'ler; `config.yaml → demo`) |
@@ -165,7 +166,7 @@ python3 -m sentinel evaluate img_000860      # (PYTHONPATH=src ya da make instal
 | Brief dili | yeni `agent/prompts/analyst_vN.md` + `llm.prompt_version` | `scripts/precompute.py` |
 | Yeni sohbet aracı | `agent/tools.py` (`TOOL_SPECS` + handler; koordinat sızdırmadan, sayımları kendisi versin) + `prompts/chat_vN.md` | `tests/contract/test_chat.py` |
 | Yeni API ucu | `service.py` metodu → `interfaces/api.py` ince uç → `web/src/lib/api.ts` + `types.ts` | `tests/integration/test_api.py` |
-| Arayüz ekranı/bileşeni | `web/src/pages/*`, `web/src/components/*`, stil `web/src/styles.css` | `cd web && npm run typecheck && npm run build`, tarayıcıda dene |
+| Arayüz ekranı/bileşeni | `web/src/pages/*`, `web/src/components/*`, stil `web/src/styles.css` | `cd web && npm run typecheck && npm run build`, `make ui-test`, tarayıcıda dene |
 | Risk kalibrasyonu | Ekip `#/label` ile kör etiketler → `make calibrate` → `runs/calibration.md`'ye göre `config.yaml → risk` | recall %100 ve yanlış alarm ≤ %20 hedefi; seviye değişirse `config.yaml → demo` ve `DEMO.md` |
 | Demo senaryosu | `stage2/DEMO.md`, `config.yaml → demo` | `make demo-check`, `make demo-check-chat` |
 | Resmî veri paketi | önce `make validate` (ya da `SENTINEL_DATA_DIR=/yol python3 scripts/validate_data.py`); format farkı yalnızca `data/adapters.py`'de düzeltilir | `make check` |
@@ -184,6 +185,7 @@ python3 -m sentinel evaluate img_000860      # (PYTHONPATH=src ya da make instal
 ```
 make install        Python paketleri + YOLO ağırlıkları        make app          arayüz + API (:8000)
 make check          ruff + testler                            make dev-web      arayüz geliştirme (:5173)
+make ui-test        arayüzü derler + tarayıcı duman testi
 make validate       veri paketi doğrulama                     make docker-up    Docker ile başlat
 make demo           img_000860 CLI değerlendirmesi            make docker-test  testler konteynerde
 make demo-check     demo karelerinin beklenen seviyesi        make docker-down  Docker'ı durdur

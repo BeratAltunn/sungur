@@ -127,6 +127,16 @@ class DemoCfg(BaseModel):
     chat_max_s: float = 45.0
 
 
+class ImpactCfg(BaseModel):
+    """Shift simulation (#/impact, triage replay). Measured handling times win over these assumptions:
+    manual ← calibration/stopwatch.csv (mode=manual); system ← opening→decision log, else stopwatch (mode=system)."""
+
+    manual_min_assumed: float = 6.0  # PROJECT_DESIGN §1.2, Varsayım V5
+    system_min_assumed: float = 1.0  # §1.4
+    min_measurements: int = 3
+    stopwatch_file: Path = Path("calibration/stopwatch.csv")
+
+
 class ObservabilityCfg(BaseModel):
     runs_dir: Path = Path("runs")
     labels_dir: Path = Path("calibration/labels")  # blind gold-set labels (committed to git)
@@ -143,6 +153,7 @@ class Settings(BaseModel):
     llm: LLMCfg = Field(default_factory=LLMCfg)
     observability: ObservabilityCfg = Field(default_factory=ObservabilityCfg)
     demo: DemoCfg = Field(default_factory=DemoCfg)
+    impact: ImpactCfg = Field(default_factory=ImpactCfg)
 
     def path(self, p: Path | str) -> Path:
         """Resolve a config-relative path."""

@@ -3,6 +3,13 @@ import type { Label, Level, VerdictT } from "./types";
 
 export const dec = (x: number, nd = 1) => x.toFixed(nd).replace(".", ",");
 export const km = (m: number, nd = 1) => `${dec(m / 1000, nd)} km`;
+/** The user asked for less motion: map fly-tos and smooth scrolls become instant. */
+export const reducedMotion = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+export const smooth = (): ScrollBehavior => (reducedMotion() ? "auto" : "smooth");
+export const flyMs = (ms: number) => (reducedMotion() ? 0 : ms);
+
+/** Duration for people: 48 sn · 2,3 dk. */
+export const secs = (s: number) => (s < 90 ? `${Math.round(s)} sn` : `${dec(s / 60)} dk`);
 export const hhmm = (t: number) => {
   const r = Math.round(t);
   return `${String(Math.floor(r / 60)).padStart(2, "0")}:${String(r % 60).padStart(2, "0")}`;
@@ -20,7 +27,7 @@ export const LEVEL_COLOR: Record<Level, string> = {
   "DÜŞÜK": "#8b95a5",
   ORTA: "#eab308",
   "YÜKSEK": "#f97316",
-  "KRİTİK": "#ef4444",
+  "KRİTİK": "#f87171",
 };
 export const LEVEL_ACTION: Record<Level, string> = {
   "DÜŞÜK": "Sonraki turda bakılır",
@@ -52,6 +59,9 @@ export const LABEL_TR: Record<Label, string> = {
 
 export const SOURCE_TR = { official: "resmî", third_party: "3. taraf" } as const;
 
+export const DECISION_TR = { approve: "onaylandı", override: "seviye değişti", escalate: "amire iletildi", undo: "geri alındı" } as const;
+export const DECISION_ICON = { approve: "✓", override: "⇄", escalate: "↑", undo: "↺" } as const;
+
 const ZONE_DISPLAY: Record<string, string> = {
   "Kuzey Yolu": "Kuzey Yolu",
   "Kuzeydogu Kavsagi": "Kuzeydoğu Kavşağı",
@@ -63,9 +73,6 @@ const ZONE_DISPLAY: Record<string, string> = {
   "Kuzeybati Yolu": "Kuzeybatı Yolu",
 };
 export const zoneName = (z: string) => ZONE_DISPLAY[z] ?? z;
-
-/** Level for a single vehicle score, same thresholds as the backend's risk.levels. */
-export const scoreLevel = (s: number): Level => (s >= 75 ? "KRİTİK" : s >= 50 ? "YÜKSEK" : s >= 25 ? "ORTA" : "DÜŞÜK");
 
 export const STEP_TR: Record<string, string> = {
   "1_tespit": "1 · Tespit",

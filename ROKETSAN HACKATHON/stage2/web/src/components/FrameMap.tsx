@@ -1,9 +1,10 @@
 import type { Map as MLMap, Marker } from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
-import { LEVEL_COLOR, VERDICT_CLASS, VERDICT_ICON, hhmm, scoreLevel } from "../lib/format";
+import { LEVEL_COLOR, SOURCE_TR, VERDICT_CLASS, VERDICT_ICON, flyMs, hhmm } from "../lib/format";
 import { bounds, circle, fullPath, pathUntil, positionAt } from "../lib/geo";
-import type { FrameInfo, FrameTracks, LngLat, MapContext, TrackPath } from "../lib/types";
+import type { FrameInfo, FrameTracks, LngLat, MapContext, ReportVerification, TrackPath } from "../lib/types";
 import { MapView, fc, htmlMarker, line, polygon, setGeo } from "./MapView";
+import { RefText, VerdictBadge } from "./ui";
 
 export type Focus = { kind: "track"; id: string } | { kind: "report"; id: string } | null;
 
@@ -24,7 +25,7 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
     tr.role === "vehicle"
       ? blind
         ? "#38bdf8"
-        : LEVEL_COLOR[scoreLevel(tr.score ?? 0)]
+        : (tr.level ? LEVEL_COLOR[tr.level] : "#64748b")
       : tr.role === "undetected"
         ? "#94a3b8"
         : "#64748b";
@@ -42,9 +43,9 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
     const map = mapRef.current;
     if (!map) return;
     const pts: LngLat[] = [...frameCorners, ...data.tracks.flatMap((tr) => fullPath(tr.points))];
-    map.fitBounds(bounds(pts), { padding: 48, duration: 600, maxZoom: 16 });
+    map.fitBounds(bounds(pts), { padding: 48, duration: flyMs(600), maxZoom: 16 });
   };
-  const fitFrame = () => mapRef.current?.fitBounds(bounds(frameCorners), { padding: 24, duration: 600 });
+  const fitFrame = () => mapRef.current?.fitBounds(bounds(frameCorners), { padding: 24, duration: flyMs(600) });
 
   const onReady = (map: MLMap) => {
     mapRef.current = map;
@@ -162,7 +163,7 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
         const p = positionAt(tr.points, pin.t_min);
         if (p) pts.push(p);
       }
-    map.fitBounds(bounds(pts), { padding: 70, duration: 700, maxZoom: 15 });
+    map.fitBounds(bounds(pts), { padding: 70, duration: flyMs(700), maxZoom: 15 });
   }, [pin, data]);
 
   return (
@@ -176,6 +177,47 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
           Kareye odaklan
         </button>
       </div>
+    </div>
+  );
+}
+
+/** The focused report on the map: what it claims and the verifier's verdict at the report's own time.
+ *  Text and reason come verbatim from the evidence packet; nothing is computed here. */
+export function ReportCallout({
+  report,
+  atReportTime,
+  onSeek,
+  onClose,
+  onRef,
+}: {
+  report: ReportVerification;
+  atReportTime: boolean;
+  onSeek: () => void;
+  onClose: () => void;
+  onRef: (id: string) => void;
+}) {
+  return (
+    <div className={`callout ${VERDICT_CLASS[report.verdict]}-callout`} role="status" aria-live="polite">
+      <div className="callout-head">
+        <VerdictBadge verdict={report.verdict} />
+        <span className="mono">
+          {report.report_id} · {report.time}
+        </span>
+        <span className={`pill pill-dim ${report.source === "official" ? "" : "pill-3p"}`}>{SOURCE_TR[report.source]}</span>
+        {report.identity_claim && <span className="pill pill-warn">kimlik iddiası</span>}
+        <button className="btn btn-ghost btn-sm callout-close" onClick={onClose} aria-label="Raporu kapat">
+          ✕
+        </button>
+      </div>
+      <p className="callout-text">“{report.text}”</p>
+      <p className="callout-reason">
+        → <RefText text={report.reason} onRef={onRef} />
+      </p>
+      {!atReportTime && (
+        <button className="btn btn-ghost btn-sm" onClick={onSeek}>
+          ⟲ Rapor saatine git ({report.time})
+        </button>
+      )}
     </div>
   );
 }

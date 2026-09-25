@@ -23,6 +23,12 @@ Komutlar `ROKETSAN HACKATHON/stage2` içinden çalışır; kurulum için köktek
 - Kör etiketleme modu: `http://127.0.0.1:8000/#/label`
 - Demo senaryosu: `stage2/DEMO.md`, `config.yaml → demo` (ana kare img_000860 KRİTİK, karşıt kare img_006388 ORTA), `make demo-check`, `make demo-check-chat`
 - Kronometre aracı: `scripts/stopwatch.py`
+- Arayüz duman testi: `make ui-test` (Playwright + sistem Chrome'u; demo yolu ve kör modda seviye sızmaması)
+- Arayüz/UX turu: aha rapor kartı, ETA'lı sıkı kuyruk, kuyrukta kararlar + "Sonraki bekleyen" (N), canlı değerlendirmede adım adım ilerleme, sohbette iptal/takip soruları, kare arama
+- Amir (P2) için: yazdırılabilir eskalasyon kartı (`#/brief/<id>`) ve kurala dayalı vardiya devri (`#/handover`)
+- North Star ölçümü: açılış → karar süresi (medyan) ve seviye düşürme oranı nöbet devri kartında
+- Etki görünümü (`#/impact`) ve kuyrukta vardiya oynatma: elle FIFO ↔ NÖBETÇİ risk sırası, karar araçların tahmini varışından önce mi? Kronometre testi yapılınca "varsayım" etiketi kalkar.
+- Erişilebilirlik turu: tüm ekranlarda metin kontrastı ≥ 4,5:1 (otomatik tarama), gövde 16 px / en küçük 12 px, klavyeyle tam kullanım (İçeriğe geç, kuyrukta roving focus, sekmelerde ←/→), `prefers-reduced-motion`, bütçe rozeti, şablon brief için "LLM ile tekrar dene"
 
 ## 1. Şimdi — veri ve model gelmeden yapılabilecekler
 
@@ -50,6 +56,5 @@ B planı: model entegrasyonu uzarsa tam etiketlemeyi mevcut yedek modelle yapıp
 ## 3. Özellik dondurmaya kadar, zaman kalırsa
 
 - Organizatöre sor: "görüntü verildiğinde" şartı jürinin **yeni** bir görüntü vermesi mi? Öyleyse görüntü yükleme akışı (görüntü + köşe koordinatları + çekim saati) gerekir.
-- Nöbet devri özeti için tek LLM çağrısı (tasarımda "Could").
-- Arayüz duman testi (triage + kare sayfası açılıyor mu).
+- Vardiya devri için LLM'li anlatı (tasarımda "Could"); kurala dayalı sürüm `#/handover`'da hazır.
 - Demodan önce: yedek ekran kaydı, yedek laptopta `docker compose up -d`.

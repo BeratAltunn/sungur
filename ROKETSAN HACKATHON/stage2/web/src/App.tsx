@@ -3,12 +3,16 @@ import { ChatPanel } from "./components/ChatPanel";
 import { api } from "./lib/api";
 import { storage } from "./lib/format";
 import type { Health, TriageRow } from "./lib/types";
+import { EscalationCard, HandoverPage } from "./pages/Handover";
 import { FramePage } from "./pages/Frame";
+import { ImpactPage } from "./pages/Impact";
 import { LabelPage } from "./pages/Label";
 import { TriagePage } from "./pages/Triage";
 
 // Hash routing keeps the app a single static bundle served by FastAPI:
 //   #/  ·  #/frame/img_000860  ·  #/label[/img_000860]  (blind gold-set labelling)
+//   #/handover (shift handover)  ·  #/brief/img_000860 (printable escalation card for the duty officer)
+//   #/impact (shift simulation: decision vs vehicles' arrival)
 function useRoute() {
   const [hash, setHash] = useState(() => window.location.hash || "#/");
   useEffect(() => {
@@ -18,6 +22,10 @@ function useRoute() {
   }, []);
   const m = hash.match(/^#\/frame\/([\w-]+)/);
   if (m) return { page: "frame" as const, id: m[1] };
+  const b = hash.match(/^#\/brief\/([\w-]+)/);
+  if (b) return { page: "brief" as const, id: b[1] };
+  if (hash.startsWith("#/handover")) return { page: "handover" as const };
+  if (hash.startsWith("#/impact")) return { page: "impact" as const };
   const l = hash.match(/^#\/label(?:\/([\w-]+))?/);
   if (l) return { page: "label" as const, id: l[1] ?? null };
   return { page: "triage" as const };
@@ -87,6 +95,12 @@ export default function App() {
     <div className={`shell ${chatOpen ? "chat-open" : ""}`}>
       {route.page === "frame" ? (
         <FramePage key={route.id} id={route.id} health={health} queue={queue} onChanged={refreshQueue} />
+      ) : route.page === "brief" ? (
+        <EscalationCard key={route.id} id={route.id} health={health} />
+      ) : route.page === "handover" ? (
+        <HandoverPage health={health} />
+      ) : route.page === "impact" ? (
+        <ImpactPage health={health} />
       ) : (
         <TriagePage health={health} queue={queue} />
       )}
@@ -95,7 +109,7 @@ export default function App() {
           💬 Sohbet <kbd className="kbd">/</kbd>
         </button>
       )}
-      <ChatPanel open={chatOpen} onClose={() => toggleChat(false)} imageId={route.page === "frame" ? route.id : null} />
+      <ChatPanel open={chatOpen} onClose={() => toggleChat(false)} imageId={route.page === "frame" || route.page === "brief" ? route.id : null} />
     </div>
   );
 }

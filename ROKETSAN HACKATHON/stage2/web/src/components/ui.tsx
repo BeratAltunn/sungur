@@ -1,6 +1,6 @@
-import type { ReactNode } from "react";
-import { LEVEL_CLASS, LEVEL_ICON, VERDICT_CLASS, VERDICT_ICON, splitRefs } from "../lib/format";
-import type { Health, Level, VerdictT } from "../lib/types";
+import { createContext, useContext, type ReactNode } from "react";
+import { DECISION_ICON, DECISION_TR, LEVEL_CLASS, LEVEL_ICON, VERDICT_CLASS, VERDICT_ICON, dec, splitRefs } from "../lib/format";
+import type { Decision, Health, Level, VerdictT } from "../lib/types";
 
 /** Level is always icon + text + colour (never colour alone). */
 export function LevelBadge({ level, size = "md" }: { level: Level; size?: "sm" | "md" | "lg" }) {
@@ -14,20 +14,35 @@ export function LevelBadge({ level, size = "md" }: { level: Level; size?: "sm" |
   );
 }
 
-export function VerdictBadge({ verdict, compact }: { verdict: VerdictT; compact?: boolean }) {
+/** Operator decision in the queue: icon + text (the level the operator set, for overrides). */
+export function DecisionPill({ decision }: { decision: Decision }) {
+  const d = decision;
   return (
-    <span className={`verdict ${VERDICT_CLASS[verdict]}`} title={verdict}>
-      <span aria-hidden>{VERDICT_ICON[verdict]}</span>
-      {!compact && <span>{verdict}</span>}
+    <span className={`pill decision-pill dp-${d.action}`} title={[`${d.at.slice(11, 16)} · ${DECISION_TR[d.action]}`, d.reason].filter(Boolean).join("\n")}>
+      <span aria-hidden>{DECISION_ICON[d.action]}</span> {d.action === "override" && d.level ? `operatör: ${LEVEL_ICON[d.level]} ${d.level}` : DECISION_TR[d.action]}
     </span>
   );
 }
 
+export function VerdictBadge({ verdict, compact }: { verdict: VerdictT; compact?: boolean }) {
+  return (
+    <span className={`verdict ${VERDICT_CLASS[verdict]}`} title={verdict}>
+      <span aria-hidden>{VERDICT_ICON[verdict]}</span>
+      <span className={compact ? "sr-only" : undefined}>{verdict}</span>
+    </span>
+  );
+}
+
+/** Display labels for evidence ids on the open frame (e.g. R075 → "12:35"); the id itself stays the key. */
+export const RefLabels = createContext<Record<string, string>>({});
+
 /** Evidence chip: clicking it focuses the vehicle/track/report on the map and time slider. */
 export function Chip({ id, onClick, active }: { id: string; onClick?: (id: string) => void; active?: boolean }) {
+  const extra = useContext(RefLabels)[id];
   return (
     <button className={`chip ${active ? "chip-active" : ""}`} onClick={() => onClick?.(id)} title="Kanıtı göster">
       {id}
+      {extra && <span className="chip-extra"> · {extra}</span>}
     </button>
   );
 }
@@ -48,6 +63,9 @@ export function TopBar({ health, left }: { health: Health | null; left?: ReactNo
   const detFallback = health?.detector_fallback;
   return (
     <header className="topbar">
+      <button className="skip" onClick={() => document.querySelector<HTMLElement>("main")?.focus()}>
+        İçeriğe geç
+      </button>
       <div className="topbar-left">
         <a className="brand" href="#/">
           <span className="brand-mark" aria-hidden>
@@ -62,6 +80,14 @@ export function TopBar({ health, left }: { health: Health | null; left?: ReactNo
         {health && health.warmup.done < health.warmup.total && (
           <span className="pill pill-dim">
             Hazırlanıyor {health.warmup.done}/{health.warmup.total}
+          </span>
+        )}
+        {health && (health.budget.spent_usd > 0 || health.budget.ratio >= 0.8) && (
+          <span
+            className={`pill ${health.budget.ratio >= 1 ? "pill-bad" : health.budget.ratio >= 0.8 ? "pill-warn" : ""}`}
+            title="LLM harcaması / durdurma sınırı. Sınırda LLM çağrıları durur, brief'ler şablondan gelir."
+          >
+            {health.budget.ratio >= 1 ? "Bütçe doldu · şablon brief" : `Bütçe $${dec(health.budget.spent_usd, 2)} / $${dec(health.budget.stop_usd, 0)}`}
           </span>
         )}
         <span className={`pill ${detFallback ? "pill-warn" : ""}`} title={detFallback ?? "Aktif tespit modeli"}>

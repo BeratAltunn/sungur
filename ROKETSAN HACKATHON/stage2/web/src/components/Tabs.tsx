@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { LABEL_TR, SOURCE_TR, STEP_TR, VERDICT_CLASS, dec, km, zoneName } from "../lib/format";
-import type { EvaluationResult, EvidencePacket, TraceStep, VerdictT } from "../lib/types";
+import type { EvaluationResult, EvidencePacket, LiveRun, TraceStep, VerdictT } from "../lib/types";
 import { RefText, VerdictBadge } from "./ui";
 
 export type TabId = "why" | "reports" | "vehicles" | "trace";
@@ -15,8 +15,11 @@ export function EvidenceTabs({
   onPickReport,
   onRef,
   only,
+  live,
 }: {
   only?: TabId[];
+  /** A live run in progress: the trace tab shows its steps as they finish. */
+  live?: LiveRun | null;
   packet: EvidencePacket;
   res: EvaluationResult | null;
   tab: TabId;
@@ -35,18 +38,41 @@ export function EvidenceTabs({
   const tabs = all.filter(([id]) => !only || only.includes(id));
   return (
     <section className="panel tabs">
-      <div role="tablist" className="tablist">
+      <div
+        role="tablist"
+        className="tablist"
+        aria-label="Kanıt"
+        onKeyDown={(e) => {
+          // ←/→ move between tabs (WAI-ARIA tabs pattern); only the selected tab is in the Tab order.
+          const i = tabs.findIndex(([id]) => id === tab);
+          const d = e.key === "ArrowRight" ? 1 : e.key === "ArrowLeft" ? -1 : 0;
+          if (!d) return;
+          e.preventDefault();
+          const next = tabs[(i + d + tabs.length) % tabs.length][0];
+          setTab(next);
+          document.getElementById(`tab-${next}`)?.focus();
+        }}
+      >
         {tabs.map(([id, label]) => (
-          <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "tab tab-on" : "tab"} onClick={() => setTab(id)}>
+          <button
+            key={id}
+            id={`tab-${id}`}
+            role="tab"
+            aria-selected={tab === id}
+            aria-controls="tabpanel"
+            tabIndex={tab === id ? 0 : -1}
+            className={tab === id ? "tab tab-on" : "tab"}
+            onClick={() => setTab(id)}
+          >
             {label}
           </button>
         ))}
       </div>
-      <div className="tabpanel">
+      <div className="tabpanel" id="tabpanel" role="tabpanel" aria-labelledby={`tab-${tab}`}>
         {tab === "why" && <WhyTab packet={packet} onRef={onRef} />}
         {tab === "reports" && <ReportsTab packet={packet} focus={focusReport} onPick={onPickReport} onRef={onRef} />}
         {tab === "vehicles" && <VehiclesTab packet={packet} onRef={onRef} />}
-        {tab === "trace" && <TraceTab res={res} />}
+        {tab === "trace" && (live ? <LiveTrace live={live} /> : <TraceTab res={res} />)}
       </div>
     </section>
   );
@@ -241,6 +267,70 @@ function VehiclesTab({ packet, onRef }: { packet: EvidencePacket; onRef: (id: st
   );
 }
 
+/** One readable line per step from its output summary (formatting only; falls back to raw JSON). */
+function stepLine(s: TraceStep): string {
+  const o = s.output_summary as Record<string, any> | null;
+  if (!o || typeof o !== "object") return typeof o === "string" ? o : "";
+  try {
+    if (s.step === "1_tespit") {
+      const cls = Object.entries(o["sınıflar"] ?? {})
+        .map(([k, v]) => `${v} ${LABEL_TR[k as keyof typeof LABEL_TR] ?? k}`)
+        .join(", ");
+      return `${o.n} kutu, ${o["conf>=0.4"]} tanesi güvenli${cls ? ` (${cls})` : ""}`;
+    }
+    if (s.step === "2_koordinat") return `kare merkezi üsse ${km(o["üsse_m"])} ${o["yön"]} · ${zoneName(o["bölge"])} · ${o.tespitler?.length ?? 0} tespit haritada`;
+    if (s.step === "3_eşleme_kinematik") {
+      const pairs = Object.entries(o["eşleşen"] ?? {}) as [string, { track: string; m: number }][];
+      return `${pairs.length} araç hareket kaydıyla eşleşti: ${pairs.map(([v, p]) => `${v}→${p.track} (${dec(p.m)} m)`).join(" · ")}`;
+    }
+    if (s.step === "4_raporlar") {
+      const k = o.kararlar ?? {};
+      const bad = (o["çelişen"] ?? []) as string[];
+      return `${o.ilgili} rapor kendi saatine göre doğrulandı: ✓${k["DOĞRULANDI"] ?? 0} ✗${k["ÇELİŞİYOR"] ?? 0} ?${k["DOĞRULANAMAZ"] ?? 0}${bad.length ? ` · çelişen ${bad.join(", ")}` : ""}`;
+    }
+    if (s.step === "5_risk") return `skor ${o.skor} → ${o.skor_seviyesi}${o.taban ? ` · taban kuralı ${o.taban}` : ""} · nihai ${o.seviye}`;
+    if (s.step.startsWith("6_") && o["manşet"]) return `${o.seviye}: “${o["manşet"]}”`;
+  } catch {
+    /* unexpected shape: raw below */
+  }
+  return JSON.stringify(o).slice(0, 160);
+}
+
+const LIVE_SLOTS: [string, string][] = [
+  ["1_tespit", "1 · Tespit"],
+  ["2_koordinat", "2 · Koordinat"],
+  ["3_eşleme_kinematik", "3 · Eşleme ve kinematik"],
+  ["4_raporlar", "4 · Rapor doğrulama"],
+  ["5_risk", "5 · Risk"],
+  ["6_", "6 · Brief (LLM analist)"],
+];
+
+/** Live run: the six steps fill in as the backend finishes them (real durations, nothing simulated). */
+function LiveTrace({ live }: { live: LiveRun }) {
+  const match = (key: string, step: string) => (key === "6_" ? step.startsWith("6_") : step === key);
+  return (
+    <ol className="trace trace-live" aria-live="polite">
+      {LIVE_SLOTS.map(([key, label]) => {
+        const d = live.done.filter((s) => match(key, s.step)).at(-1);
+        const running = !d && !!live.current && match(key, live.current);
+        return (
+          <li key={key} className={d ? (d.error ? "trace-err" : "live-done") : running ? "live-run" : "live-wait"}>
+            <div className="trace-head">
+              <span className="live-icon" aria-hidden>
+                {d ? (d.error ? "✗" : "✓") : running ? <span className="spinner" /> : "○"}
+              </span>
+              <b>{d ? STEP_TR[d.step] ?? label : label}</b>
+              {d && <span className="mono muted">{dec(d.duration_ms, 0)} ms</span>}
+              {d?.cache_hit && <span className="pill pill-dim">önbellek</span>}
+            </div>
+            {d && <div className="trace-line">{d.error ?? stepLine(d)}</div>}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 function TraceTab({ res }: { res: EvaluationResult | null }) {
   const [steps, setSteps] = useState<TraceStep[] | null>(null);
   useEffect(() => {
@@ -263,6 +353,7 @@ function TraceTab({ res }: { res: EvaluationResult | null }) {
             )}
             {s.grounding && <span className="pill pill-dim">{s.grounding.checked} sayı kontrol edildi</span>}
           </div>
+          {stepLine(s) && <div className="trace-line">{stepLine(s)}</div>}
           <details>
             <summary className="muted small">Girdi / çıktı</summary>
             <pre>{JSON.stringify({ girdi: s.input_summary, çıktı: s.output_summary, hata: s.error ?? undefined }, null, 1)}</pre>
