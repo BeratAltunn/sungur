@@ -328,3 +328,17 @@ caption { caption-side: bottom; text-align: left; padding-top: 8px; }
   .shell.chat-open .app { padding-right: 0; }
   .chat { width: min(440px, 100vw); }
 }
+
+/* ---------- blind labelling ---------- */
+.label-intro { max-width: 760px; margin: 32px auto; padding: 24px 28px; }
+.label-intro h1 { font-size: 22px; margin-bottom: 10px; }
+.label-intro ul { list-style: none; padding: 0; display: grid; gap: 6px; }
+.label-name { display: flex; gap: 10px; margin-top: 16px; }
+.label-name input { flex: 1; }
+.label-form { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.label-form input { min-width: 260px; }
+.label-levels { display: flex; gap: 6px; flex-wrap: wrap; }
+.label-levels .level { cursor: pointer; background: transparent; font: inherit; font-weight: 700; }
+.level-unpicked { opacity: .55; }
+.level-picked { opacity: 1; box-shadow: 0 0 0 2px currentColor; }
+.linklike { background: none; border: none; color: var(--accent); cursor: pointer; padding: 0 0 0 6px; font-size: 12px; }

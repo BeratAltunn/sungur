@@ -15,12 +15,19 @@ interface Props {
   t: number;
   focus: Focus;
   onFocus: (f: Focus) => void;
+  /** Blind labelling: vehicle paths in one neutral colour (colours would reveal scores). */
+  blind?: boolean;
 }
 
-const trackColor = (tr: TrackPath) =>
-  tr.role === "vehicle" ? LEVEL_COLOR[scoreLevel(tr.score ?? 0)] : tr.role === "undetected" ? "#94a3b8" : "#64748b";
-
-export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus }: Props) {
+export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind = false }: Props) {
+  const trackColor = (tr: TrackPath) =>
+    tr.role === "vehicle"
+      ? blind
+        ? "#38bdf8"
+        : LEVEL_COLOR[scoreLevel(tr.score ?? 0)]
+      : tr.role === "undetected"
+        ? "#94a3b8"
+        : "#64748b";
   const mapRef = useRef<MLMap | null>(null);
   const vehicleMarkers = useRef<Record<string, Marker>>({});
   const pinMarkers = useRef<Record<string, Marker>>({});

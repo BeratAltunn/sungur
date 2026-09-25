@@ -10,6 +10,8 @@ Bu dosya, bu depoda çalışan LLM agent'ları (Claude Code, Codex, Cursor, Copi
 
 NÖBETÇİ, bir askerî üssü çevreleyen 8 bölgeden gelen drone karelerini risk sırasına dizen bir ajandır. Her kare için 6 adım çalışır: **(1) araç tespiti (YOLO) → (2) pikselden koordinata → (3) araçları 2 saatlik hareket izleriyle eşleme + kinematik (hız, yaklaşma, duraklama, ETA) → (4) saha raporlarını raporun *kendi saatindeki* duruma göre doğrulama → (5) açıklanabilir kural tabanlı risk skoru + taban kuralları → (6) LLM'in her sayısı kanıtla kontrol edilen (grounding) Türkçe brief yazması.** 1–5 deterministik Python'dur; LLM hesap yapmaz, yalnızca yazar. Ayrıca araç çağıran bir sohbet paneli ve operatör için bir web arayüzü (triage kuyruğu + kare detayı + zaman kaydırıcısı) vardır.
 
+**Değerlendirme kriterleri:** Kaggle skoru (Aşama 1 tespit modeli) %20 · teknik kalite ve mimari %15 · problemin önemi ve çözümün sağladığı iş değeri %20 · çalışan ürün ortaya koyabilme %20 · ürün düşüncesi ve kullanıcı deneyimi %20 · sunum ve demo %5. Resmî veri paketi, Kaggle ekibinin modeli ve hackathon GLM anahtarı sonra gelecek; sistem şu an dev verisi, geçici YOLO modeli ve Evren üzerindeki glm-5.3 ile çalışıyor.
+
 Ürün/tasarım gerekçeleri: `ROKETSAN HACKATHON/PROJECT_DESIGN.md` · modül ayrıntıları: `ROKETSAN HACKATHON/STAGE2_ARCHITECTURE.md` · kullanım: `ROKETSAN HACKATHON/stage2/README.md`.
 
 ## 2. Depo haritası
@@ -39,7 +41,9 @@ sungur/                                   ← git kökü
       web/                                ← React + Vite + TypeScript + MapLibre arayüzü
         src/pages  src/components  src/lib
       tests/{unit,contract,security,integration}/
-      scripts/                            ← validate_data, precompute, compare_detectors
+      scripts/                            ← validate_data, precompute, compare_detectors, calibrate, stopwatch
+      calibration/                        ← kör etiketler (labels/*.jsonl) + kronometre (stopwatch.csv) — depoda
+      DEMO.md                             ← canlı demo akışı ve B planları
       cache/{detections,llm}/             ← demo önbelleği — depoda (internetsiz/LLM'siz demo için)
       runs/                               ← trace.jsonl, decisions.jsonl — git'e girmez
       models/                             ← YOLO ağırlıkları — git'e girmez, `make weights` indirir
@@ -65,7 +69,7 @@ docker compose up --build -d    # ilk derleme birkaç dakika (~2,6 GB imaj)
 Arayüz: http://127.0.0.1:8000 · loglar: `docker compose logs -f` · durdurma: `docker compose down`
 Testler imajın içinde: `docker compose run --rm --no-deps nobetci python -m pytest -q`
 
-Notlar: Docker içinde Apple GPU (MPS) yok; YOLO CPU'da çalışır (tespitler önbellekte olduğu için fark edilmez). `runs/` ve `cache/` host'a bağlıdır. Konteyner `restart: unless-stopped` ile açılır; `make app` ile yerel çalıştırmadan önce `docker compose down` yap (port 8000 çakışır).
+Notlar: Docker içinde Apple GPU (MPS) yok; YOLO CPU'da çalışır (tespitler önbellekte olduğu için fark edilmez). `runs/`, `cache/` ve `calibration/` (kör etiketler) host'a bağlıdır. Konteyner `restart: unless-stopped` ile açılır; `make app` ile yerel çalıştırmadan önce `docker compose down` yap (port 8000 çakışır).
 
 ### Yol B — Doğrudan makinede (geliştirme için daha hızlı döngü)
 
@@ -85,10 +89,10 @@ Arayüz üzerinde çalışırken: bir terminalde `make app` açık kalsın, diğ
 
 | Komut | Beklenen |
 |---|---|
-| `make check` | ruff "All checks passed!", pytest'te hata yok (yazıldığı an 68 test) |
+| `make check` | ruff "All checks passed!", pytest'te hata yok (yazıldığı an 71 test) |
 | `make validate` | `SONUÇ: temiz`, 40 kare / 226 track / 137 rapor, 20 tuzak track |
 | `curl -s http://127.0.0.1:8000/api/health` | `"detector": "yolo:yolov8n"`, `"detector_fallback": null`, `"llm": {"error": null}` (anahtar varsa), `warmup.done == 40` |
-| `make demo-check` | `✓ img_000860: seviye KRİTİK … grounding True`, `demo-check YEŞİL` |
+| `make demo-check` | tüm satırlar ✓, `demo-check YEŞİL (7/7)` (demo kareleri, aha anı raporları, karşıt kare, önbellekteki brief'ler; `config.yaml → demo`) |
 | `make demo` | img_000860 için KRİTİK brief, T0122 kamyon, 12:25/12:35 raporları ✗ ÇELİŞİYOR |
 | `cd web && npm run typecheck` | hata yok |
 
@@ -162,6 +166,8 @@ python3 -m sentinel evaluate img_000860      # (PYTHONPATH=src ya da make instal
 | Yeni sohbet aracı | `agent/tools.py` (`TOOL_SPECS` + handler; koordinat sızdırmadan, sayımları kendisi versin) + `prompts/chat_vN.md` | `tests/contract/test_chat.py` |
 | Yeni API ucu | `service.py` metodu → `interfaces/api.py` ince uç → `web/src/lib/api.ts` + `types.ts` | `tests/integration/test_api.py` |
 | Arayüz ekranı/bileşeni | `web/src/pages/*`, `web/src/components/*`, stil `web/src/styles.css` | `cd web && npm run typecheck && npm run build`, tarayıcıda dene |
+| Risk kalibrasyonu | Ekip `#/label` ile kör etiketler → `make calibrate` → `runs/calibration.md`'ye göre `config.yaml → risk` | recall %100 ve yanlış alarm ≤ %20 hedefi; seviye değişirse `config.yaml → demo` ve `DEMO.md` |
+| Demo senaryosu | `stage2/DEMO.md`, `config.yaml → demo` | `make demo-check`, `make demo-check-chat` |
 | Resmî veri paketi | önce `make validate` (ya da `SENTINEL_DATA_DIR=/yol python3 scripts/validate_data.py`); format farkı yalnızca `data/adapters.py`'de düzeltilir | `make check` |
 
 ## 7. Tuzaklar
@@ -182,6 +188,8 @@ make validate       veri paketi doğrulama                     make docker-up   
 make demo           img_000860 CLI değerlendirmesi            make docker-test  testler konteynerde
 make demo-check     demo karelerinin beklenen seviyesi        make docker-down  Docker'ı durdur
 make batch          40 kare, risk sıralı triage
+make calibrate      altın set ↔ sistem + ağırlık duyarlılığı   make demo-check-chat  demo + sohbet soruları (LLM)
+make stopwatch      kronometre testi özeti
 python3 scripts/precompute.py            40 kare için tespit + LLM brief önbelleği
 python3 scripts/compare_detectors.py     yeni detektör kabul raporu
 python3 -m sentinel reports --zone "Dogu Yolu"    raporların zaman-duyarlı doğrulaması
@@ -192,3 +200,4 @@ python3 -m sentinel reports --zone "Dogu Yolu"    raporların zaman-duyarlı do�
 - `main` her zaman çalışır durumda kalır. İşi kısa ömürlü bir dalda yap, merge'den önce `make check` (arayüze dokunduysan `npm run typecheck && npm run build`) yeşil olsun.
 - Her değişiklik en az bir test ile gelir (altın sayı, sözleşme ya da duman testi). Arayüz değişikliğini tarayıcıda gerçekten dene.
 - Demo yolu kutsaldır: merge'den önce `make demo-check` yeşil kalmalı.
+- Güncel iş sırası ve kimin ne yapacağı: kökteki `TODO.md`.

@@ -1,6 +1,6 @@
 # Aşama 2: Saha Raporu Destekli Risk Ajanı (Mimari Taslağı)
 
-> Durum: taslak v0 (25 Eylül). Tespit modeli Kaggle ekibinden gelecek. O zamana kadar her şey
+> Durum: taslak v0. Resmî veri paketi ve tespit modeli (Kaggle ekibinden) sonra gelecek. O zamana kadar her şey
 > `Detector` arayüzü üzerinden bir yedek modelle geliştirilecek.
 
 ## 1. Görev özeti
@@ -9,13 +9,23 @@ Bir üssü koruyoruz. Etrafında 8 bölge var ve bu bölgeler drone'larla izleni
 **üs için risk var mı, ne kadar kritik, neden** sorularına kısa ve gerekçeli bir brief üretmesi gerekiyor.
 
 Zorunlu 4 adım (bilgilendirme dokümanı + slayt 11):
-1. Görseldeki araçları tespit et (1. günün modeli)
+1. Görseldeki araçları tespit et (Aşama 1'in modeli)
 2. Piksel konumlarını harita bilgisiyle gerçek koordinatlara çevir
 3. Koordinatları hareket verisiyle eşle, son 2 saatin hızını, yönünü ve rotasını çıkar
 4. Bulguları saha raporlarıyla birlikte değerlendir ve risk analizi yap. Raporların bir kısmı **yanlış ya da ilgisiz**, bu yüzden kendi tespitimize güveniyoruz.
 
-Puanlama şöyle işliyor: Kaggle Private LB + **mentor puanı (teknik kalite ve mimari, kod oturumu)** + jüri puanı
-(iş değeri, çalışan ürün, ürün/UX, sunum/demo). Demoda ajanın en az 1–2 görüntüde gerçekten çalıştığını göstermemiz gerekiyor.
+Değerlendirme kriterleri:
+
+| Kriter | Ağırlık |
+|---|---|
+| Kaggle skoru (Aşama 1 tespit modeli) | %20 |
+| Teknik kalite ve mimari | %15 |
+| Problemin önemi ve çözümün sağladığı iş değeri | %20 |
+| Çalışan ürün ortaya koyabilme | %20 |
+| Ürün düşüncesi ve kullanıcı deneyimi | %20 |
+| Sunum ve demo | %5 |
+
+Demoda ajanın en az 1–2 görüntüde gerçekten çalıştığını göstermemiz gerekiyor.
 LLM için takım başına 15 $ GLM API kredisi var; anahtarlar 2. aşamada dağıtılacak.
 
 ## 2. Veri: doğrulanmış gerçekler
@@ -228,17 +238,7 @@ Ekipten istenecekler:
 - Mac'te (MPS/CPU) görüntü başına süre. Demo için 40 karenin tespitleri önceden hesaplanıp önbelleğe alınacak, canlıda 1–2 görüntü gerçekten çalıştırılacak.
 - Operasyonel eşik için öneri: sınıf başına precision–recall eğrisi varsa τ_op seçimine yardımcı olur.
 
-## 8. Yol haritası
-
-| Zaman | İş |
-|---|---|
-| Cuma akşam | Repo iskeleti, domain modelleri, repository, geo + tracking + kinematik + testler (dev verisiyle) |
-| Cumartesi sabah | Rapor parser + verifier, risk motoru, EvidencePacket, CLI, `MockLLM`; geçici `CocoYoloDetector` |
-| Cumartesi öğlen | Kaggle kapanır. Resmi veri + GLM anahtarı gelir → loader doğrulama, GLM entegrasyonu, ekibin modelini bağlama |
-| Cumartesi akşam | Web arayüzü (FastAPI + React) + triage paneli, 40 kare batch, risk kalibrasyonu, prompt iyileştirme |
-| Pazar | Demo senaryosu (ör. img_000860 + yanıltıcı raporlu bir kare), sunum, README/kod temizliği, mentor oturumu hazırlığı |
-
-## 9. Organizatöre sorulacaklar (Cumartesi)
+## 8. Organizatöre sorulacaklar
 
 - Resmi dosyalar slayt 13–14'teki formatta mı? Track'ler karedeki bütün araçlar için mi var?
 - 40 görüntünün tam çözünürlükleri; `corner_coordinates` her zaman eksene hizalı mı?

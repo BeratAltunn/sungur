@@ -157,6 +157,31 @@ def chat(body: ChatIn) -> dict:
     return {**turn.model_dump(), "run_id": run_id}
 
 
+class GoldIn(BaseModel):
+    labeler: str
+    level: RiskLevel
+    note: str = ""
+
+
+@app.get("/api/gold/{labeler}")
+def gold_progress(labeler: str) -> dict:
+    """Blind labelling progress. Returns no system output (level/score) on purpose."""
+    try:
+        return svc().gold_progress(labeler)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+
+
+@app.post("/api/frames/{image_id}/gold")
+def gold_label(image_id: str, body: GoldIn) -> dict:
+    _check_frame(image_id)
+    try:
+        with _decision_lock:
+            return svc().record_gold(image_id, body.labeler, body.level, body.note)
+    except ValueError as e:
+        raise HTTPException(422, str(e)) from e
+
+
 class DecisionIn(BaseModel):
     run_id: str
     action: str

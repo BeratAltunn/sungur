@@ -4,9 +4,11 @@ import { api } from "./lib/api";
 import { storage } from "./lib/format";
 import type { Health, TriageRow } from "./lib/types";
 import { FramePage } from "./pages/Frame";
+import { LabelPage } from "./pages/Label";
 import { TriagePage } from "./pages/Triage";
 
-// Hash routing keeps the app a single static bundle served by FastAPI:  #/  and  #/frame/img_000860
+// Hash routing keeps the app a single static bundle served by FastAPI:
+//   #/  ·  #/frame/img_000860  ·  #/label[/img_000860]  (blind gold-set labelling)
 function useRoute() {
   const [hash, setHash] = useState(() => window.location.hash || "#/");
   useEffect(() => {
@@ -15,7 +17,10 @@ function useRoute() {
     return () => window.removeEventListener("hashchange", on);
   }, []);
   const m = hash.match(/^#\/frame\/([\w-]+)/);
-  return m ? { page: "frame" as const, id: m[1] } : { page: "triage" as const };
+  if (m) return { page: "frame" as const, id: m[1] };
+  const l = hash.match(/^#\/label(?:\/([\w-]+))?/);
+  if (l) return { page: "label" as const, id: l[1] ?? null };
+  return { page: "triage" as const };
 }
 
 export const go = (path: string) => {
@@ -39,7 +44,7 @@ export default function App() {
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
-      if (e.key === "/" && tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") {
+      if (e.key === "/" && tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT" && !window.location.hash.startsWith("#/label")) {
         e.preventDefault();
         toggleChat(true);
       }
@@ -74,6 +79,9 @@ export default function App() {
       window.clearInterval(id);
     };
   }, [refreshQueue]);
+
+  // Blind labelling: no chat (it could reveal the system's levels).
+  if (route.page === "label") return <LabelPage id={route.id} health={health} />;
 
   return (
     <div className={`shell ${chatOpen ? "chat-open" : ""}`}>

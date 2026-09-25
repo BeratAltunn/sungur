@@ -25,7 +25,7 @@ class DecisionLog:
             action=action,  # type: ignore[arg-type]
             level=level,
             reason=reason,
-            at=datetime.now().isoformat(timespec="seconds"),
+            at=datetime.now().astimezone().isoformat(timespec="seconds"),
         )
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self.path.open("a", encoding="utf-8") as fh:

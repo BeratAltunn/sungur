@@ -14,7 +14,9 @@ export function EvidenceTabs({
   focusReport,
   onPickReport,
   onRef,
+  only,
 }: {
+  only?: TabId[];
   packet: EvidencePacket;
   res: EvaluationResult | null;
   tab: TabId;
@@ -24,12 +26,13 @@ export function EvidenceTabs({
   onRef: (id: string) => void;
 }) {
   const n = (v: VerdictT) => packet.reports.filter((r) => r.verdict === v).length;
-  const tabs: [TabId, string][] = [
+  const all: [TabId, string][] = [
     ["why", "Neden?"],
     ["reports", `Raporlar ✓${n("DOĞRULANDI")} ✗${n("ÇELİŞİYOR")} ?${n("DOĞRULANAMAZ")} —${n("İLGİSİZ")}`],
     ["vehicles", `Araçlar (${packet.vehicles.length})`],
     ["trace", "Ajan izi"],
   ];
+  const tabs = all.filter(([id]) => !only || only.includes(id));
   return (
     <section className="panel tabs">
       <div role="tablist" className="tablist">

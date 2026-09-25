@@ -42,7 +42,7 @@ class Tracer:
             raise
         finally:
             rec["duration_ms"] = round((time.perf_counter() - t0) * 1000, 2)
-            rec["at"] = datetime.now().isoformat(timespec="seconds")
+            rec["at"] = datetime.now().astimezone().isoformat(timespec="seconds")
             self.steps.append(rec)
             self._write(rec)
 

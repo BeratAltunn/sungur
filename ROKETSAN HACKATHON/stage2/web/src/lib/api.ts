@@ -47,6 +47,15 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ question, history, image_id: imageId }),
     }),
+  goldProgress: (labeler: string) =>
+    http<{ labeler: string; done: Record<string, Level>; order: string[]; total: number }>(
+      `/api/gold/${encodeURIComponent(labeler)}`,
+    ),
+  gold: (id: string, body: { labeler: string; level: Level; note?: string }) =>
+    http<{ image_id: string; labeler: string; level: Level; at: string }>(`/api/frames/${id}/gold`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
   decide: (id: string, body: { run_id: string; action: Decision["action"]; level?: Level; reason?: string }) =>
     http<{ decision: Decision | null }>(`/api/frames/${id}/decisions`, {
       method: "POST",

@@ -46,3 +46,14 @@ def test_chat_endpoint(client):
     assert r.status_code == 200
     body = r.json()
     assert {"answer", "tool_calls", "grounded", "run_id"} <= body.keys()
+
+
+def test_blind_labelling_endpoints(client, settings):
+    prog = client.get("/api/gold/tester").json()
+    assert prog["total"] == 40 and "level" not in str(prog).lower().replace("labeler", "")
+    r = client.post("/api/frames/img_000860/gold", json={"labeler": "tester", "level": "YÜKSEK"})
+    assert r.status_code == 200 and r.json()["level"] == "YÜKSEK"
+    assert client.get("/api/gold/tester").json()["done"]["img_000860"] == "YÜKSEK"
+    assert (
+        client.post("/api/frames/img_000860/gold", json={"labeler": "  ", "level": "ORTA"}).status_code == 422
+    )

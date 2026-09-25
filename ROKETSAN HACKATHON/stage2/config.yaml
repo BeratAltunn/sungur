@@ -90,3 +90,19 @@ llm:
 
 observability:
   runs_dir: runs
+  labels_dir: calibration/labels    # kör altın set etiketleri (git'e girer, ekip paylaşır)
+
+# Canlı demonun dayandığı şeyler (make demo-check korur). Senaryo: DEMO.md
+demo:
+  frames:
+    img_000860: KRİTİK              # ana kare: 4 araçlık konvoy, kamyon T0122, ETA ~4,5 dk
+    img_006388: ORTA                # karşıt kare: üsse 1,7 km ama yaklaşan yok, rapor doğrulanmış
+  contradicted:
+    img_000860: [R069, R075]        # aha anı: 12:25 "bize bağlı otomobil", 12:35 "hareketleri olağan"
+  no_contradiction: [img_006388]
+  chat:                             # yalnızca `demo-check --chat` ile (LLM çağırır)
+    - question: "Bu karedeki en riskli araç neden riskli?"
+      image_id: img_000860
+    - question: "T0122 12:35'te neredeydi?"
+  chat_max_s: 45
+

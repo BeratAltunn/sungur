@@ -16,6 +16,7 @@ def settings(tmp_path_factory):
     s.detector.kind = "oracle"
     s.llm.cache = False
     s.observability.runs_dir = tmp_path_factory.mktemp("runs")
+    s.observability.labels_dir = tmp_path_factory.mktemp("labels")
     return s
 
 

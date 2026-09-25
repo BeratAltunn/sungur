@@ -45,7 +45,7 @@ Her çalıştırma `runs/trace.jsonl`'e adım adım iz yazar (`run_id` ile). Ope
 
 ```
 src/sentinel/
-  domain/models.py        tüm pydantic modeller (Cumartesi 12:00'de dondurulur)
+  domain/models.py        tüm pydantic modeller (ekip sözleşmesi)
   data/                   adapters (dosya formatı) + Repository (zaman ızgarası, uzay-zaman sorguları)
   perception/             Detector arayüzü: oracle (test) · ultralytics (yedek / Kaggle .pt) · callable (Kaggle predict) · cache
   geo/                    eşdikdörtgen geodesy · bilineer georef · bölge (sektör) indeksi
@@ -81,6 +81,13 @@ Her ekranda sağ alttaki **Sohbet** düğmesi (<kbd>/</kbd>) yan paneli açar. A
 - Sayımları araçlar verir (`toplam`, `kaynaklara_gore` …); LLM saymaz.
 - Prompt: `src/sentinel/agent/prompts/chat_v1.md`. Her tur `runs/trace.jsonl`'e araç çağrılarıyla birlikte yazılır.
 - Yanıt süresi büyük ölçüde LLM uç noktasına bağlı: Evren/glm-5.3 ile ölçülen 5–45 sn.
+
+## Kalibrasyon, kör etiketleme, kronometre, demo
+
+- **Kör etiketleme (altın set):** http://127.0.0.1:8000/#/label — etiketleyici adını girer; kareler çekim saatine göre gelir, sistemin seviyesi/skoru/brief'i ve araç renkleri gizlidir. Klavye: <kbd>1</kbd>–<kbd>4</kbd> seviye (DÜŞÜK→KRİTİK), <kbd>Enter</kbd> kaydet ve sonraki, <kbd>J</kbd>/<kbd>K</kbd> gez. Etiketler `calibration/labels/<ad>.jsonl`'e yazılır (git'e girer).
+- **Kalibrasyon raporu:** `make calibrate` → `runs/calibration.md`: etiketleyici uyumu (ağırlıklı Cohen's κ), sistem ↔ altın set karışıklık matrisi, YÜKSEK/KRİTİK recall (hedef %100), yanlış alarm oranı (hedef ≤ %20) ve her ağırlık ±%20 değişince kaç karenin seviyesinin değiştiği.
+- **Kronometre testi:** `python3 scripts/stopwatch.py manual <kare> --who <ad>` (yalnızca ham dosyalar) ve `… system <başka kare> …` (arayüzle); özet `make stopwatch`. Sonuçlar `calibration/stopwatch.csv`.
+- **Demo:** akış ve B planları `DEMO.md`. Demo kareleri ve beklentiler `config.yaml → demo`; `make demo-check` (LLM çağırmaz) ve `make demo-check-chat` (sohbet soruları da).
 
 ## Kaggle modelini bağlamak (Ekip-1)
 

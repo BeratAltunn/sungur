@@ -17,9 +17,6 @@ from sentinel.fmt import dec, km
 from sentinel.geo.zones import zone_display
 from sentinel.service import SentinelService
 
-# Expected levels for the demo frames (make demo-check). Update after calibration.
-DEMO_EXPECT = {"img_000860": "KRİTİK"}
-
 
 def _print_eval(res: EvaluationResult) -> None:
     p, b = res.packet, res.brief
@@ -136,15 +133,54 @@ def cmd_reports(svc: SentinelService, a: argparse.Namespace) -> int:
 
 
 def cmd_demo_check(svc: SentinelService, a: argparse.Namespace) -> int:
-    ok = True
-    for img, expect in DEMO_EXPECT.items():
-        res = svc.evaluate(img, use_llm=not a.no_llm)
-        good = res.brief.risk_level.value == expect and res.grounding.passed
-        ok &= good
-        print(
-            f"{'✓' if good else '✗'} {img}: seviye {res.brief.risk_level.value} (beklenen {expect}), grounding {res.grounding.passed}"
+    """Guards the live demo path (config.yaml → demo). Brief checks never call the LLM: a demo frame
+    whose brief is not in the LLM cache is reported, since on stage it would take seconds or fail."""
+    import time
+
+    demo = svc.s.demo
+    results: list[bool] = []
+
+    def check(good: bool, text: str) -> None:
+        results.append(good)
+        print(f"{'✓' if good else '✗'} {text}")
+
+    for img, expect in demo.frames.items():
+        res = svc.evaluate(img, use_llm=not a.no_llm, llm_cache_only=True)
+        lv = res.brief.risk_level.value
+        check(
+            lv == expect and res.grounding.passed,
+            f"{img}: seviye {lv} (beklenen {expect}), grounding {res.grounding.passed}",
         )
-    print("demo-check " + ("YEŞİL" if ok else "KIRMIZI"))
+        if not a.no_llm and svc.llm is not None:
+            check(
+                res.brief_source == "llm_cache", f"{img}: brief LLM önbelleğinde hazır ({res.brief_source})"
+            )
+        verdicts = {r.report_id: r.verdict for r in res.packet.reports}
+        for rid in demo.contradicted.get(img, []):
+            check(
+                verdicts.get(rid) == Verdict.CELISIYOR,
+                f"{img}: {rid} ✗ ÇELİŞİYOR ({verdicts.get(rid, 'yok')})",
+            )
+        if img in demo.no_contradiction:
+            bad = [rid for rid, v in verdicts.items() if v == Verdict.CELISIYOR]
+            check(not bad, f"{img}: çelişen rapor yok {bad or ''}")
+
+    if a.chat:
+        for q in demo.chat:
+            t0 = time.perf_counter()
+            turn, _ = svc.chat(q.question, [], q.image_id)
+            dt = time.perf_counter() - t0
+            check(
+                turn.grounded and bool(turn.tool_calls) and turn.note is None,
+                f"sohbet: “{q.question}” → {len(turn.tool_calls)} araç çağrısı, doğrulandı={turn.grounded}, {dt:.0f} sn",
+            )
+            if dt > demo.chat_max_s:
+                print(
+                    f"  ! yanıt {dt:.0f} sn sürdü (> {demo.chat_max_s:g} sn); demoda bu soruyu önceden sorup önbelleğe alın"
+                )
+
+    ok = all(results)
+    print(f"demo-check {'YEŞİL' if ok else 'KIRMIZI'} ({sum(results)}/{len(results)})")
     return 0 if ok else 1
 
 
@@ -161,8 +197,9 @@ def main(argv: list[str] | None = None) -> int:
     b.add_argument("--no-llm", action="store_true")
     r = sub.add_parser("reports", help="tüm raporları zaman-duyarlı doğrula")
     r.add_argument("--zone", default=None)
-    d = sub.add_parser("demo-check", help="demo karelerinin beklenen seviyeleri")
+    d = sub.add_parser("demo-check", help="demo yolunu doğrula (config.yaml → demo)")
     d.add_argument("--no-llm", action="store_true")
+    d.add_argument("--chat", action="store_true", help="demo sohbet sorularını da sor (LLM çağırır)")
     a = ap.parse_args(argv)
 
     svc = SentinelService(use_llm=not getattr(a, "no_llm", False))

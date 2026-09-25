@@ -1,6 +1,6 @@
 # NÖBETÇİ: Saha Raporu Destekli Üs Risk Ajanı (Proje Tasarımı)
 
-> Level Up AI | ROKETSAN Yapay Zekâ Hackathonu, Aşama 2 · Tasarım v1 · 25 Eylül 2026
+> Level Up AI | ROKETSAN Yapay Zekâ Hackathonu, Aşama 2 · Tasarım v1
 > Modül düzeyindeki teknik ayrıntılar: [STAGE2_ARCHITECTURE.md](STAGE2_ARCHITECTURE.md). Bu doküman ürün, mimari ve plan kararlarını içerir.
 > Bu dokümandaki sayıların hepsi `stage2_dev_data/` üzerinde ölçüldü. Ölçülmeyen her sayının başında **Varsayım** etiketi var.
 
@@ -20,15 +20,25 @@
 
 **Mimari tek cümlede:** Sayıları deterministik Python çekirdeği üretiyor, LLM (GLM) sadece gerekçeli brief'i yazıyor. Brief'teki her sayı kanıt paketiyle karşılaştırılıyor (grounding). LLM erişilemezse ürün şablon brief ile çalışmaya devam ediyor.
 
-**Plan tek cümlede:** Cuma gece yarısı LLM'siz, uçtan uca çalışan bir CLI iskeleti; Cumartesi 10:00'da arayüzlü dikey dilim; Cumartesi 12:00'dan sonra ekip 4 paralel hatta çalışıyor; Cumartesi 22:00'de feature freeze.
+**Plan tek cümlede:** Önce LLM'siz, uçtan uca çalışan bir çekirdek; ardından arayüz, LLM ve sohbet. Resmî veri paketi ve Kaggle ekibinin modeli sonra gelecek; tak-çıkar arayüzler sayesinde gelince bağlanıp kalibre edilecek.
+
+**Değerlendirme kriterleri:**
+
+| Kriter | Ağırlık |
+|---|---|
+| Kaggle skoru (Aşama 1 tespit modeli) | %20 |
+| Teknik kalite ve mimari | %15 |
+| Problemin önemi ve çözümün sağladığı iş değeri | %20 |
+| Çalışan ürün ortaya koyabilme | %20 |
+| Ürün düşüncesi ve kullanıcı deneyimi | %20 |
+| Sunum ve demo | %5 |
 
 ### Genel varsayımlar
 
 - **Varsayım V1:** Ekip toplam 4 kişi (sen + 3). 3 ya da 5 kişi için görev dağılımı §4.3'te.
-- **Varsayım V2:** Final sunumu Pazar öğleden sonra. Code freeze Pazar 10:00.
 - **Varsayım V3:** GLM fiyatı milyon token başına yaklaşık 0,6 $ girdi ve 2,2 $ çıktı (GLM-4.5/4.6 sınıfı). Gerçek fiyat farklıysa §3.8'deki maliyet tablosu doğrusal ölçeklenir.
 - **Varsayım V4:** Resmi Aşama 2 paketi dev verisiyle aynı şemada (slayt 13–14). Farklıysa sadece adaptör katmanı değişir.
-- **Varsayım V5:** Bir karenin elle analizi ~6 dk sürüyor. Cumartesi kronometreyle ölçülecek (§5.2).
+- **Varsayım V5:** Bir karenin elle analizi ~6 dk sürüyor. kronometre testiyle ölçülecek (§5.2).
 
 ---
 
@@ -185,7 +195,7 @@ Seviyelerin eylem karşılığı olmazsa operatör için sadece birer etiket ola
 7. `trace.jsonl` ve arayüzde "Ajan izi" sekmesi (organizatör örneğindeki 1…N adım).
 8. Organizatörün sayılarıyla altın birim testleri. CLI yedek demo yolu olarak kalıyor.
 
-**Should: jüri etkisini büyük ölçüde artırıyor, Cumartesi yapılacak**
+**Should: jüri etkisini büyük ölçüde artırıyor**
 1. **Zaman kaydırıcısı ve iz oynatma** (aha anının taşıyıcısı).
 2. Drone karesinin haritaya köşe koordinatlarıyla oturtulması (pydeck BitmapLayer).
 3. Sohbet: araç çağıran döngü, en fazla 6 adım.
@@ -385,9 +395,9 @@ sequenceDiagram
 | Katman | Seçim | Gerekçe | Değerlendirilen alternatif ve neden seçilmedi |
 |---|---|---|---|
 | Dil ve ortam | Python 3.12 + **uv** (kilit dosyası) | Mentor tek komutla (`uv sync`) aynı ortamı kurabiliyor. Kurulum saniyeler sürüyor. | pip + venv: kilit dosyası yok, tekrarlanabilir değil. conda: yavaş ve ağır. |
-| Arayüz | **FastAPI + React (Vite, TypeScript) + MapLibre** *(26 Eylül'de Streamlit'ten değiştirildi, bkz. Ek A-9)* | Zaman kaydırıcısı ve iz oynatma tarayıcıda akıcı çalışıyor; rapora tıklayınca harita ve kaydırıcı birlikte hareket ediyor; klavye kısayolları ve harekât odası düzeni kurulabiliyor. `SentinelService` REST'e birebir açıldığı için backend ince kaldı. Derlenmiş arayüz FastAPI'den sunuluyor, internetsiz çalışıyor. | Streamlit: her etkileşimde tüm sayfayı yeniden çalıştırıyor (kaydırıcı takılıyor), bileşenler arası tıklama zinciri özel bileşen gerektiriyor, görünümü prototip izlenimi veriyor. Gradio: sohbet odaklı. |
+| Arayüz | **FastAPI + React (Vite, TypeScript) + MapLibre** *(ilk taslakta Streamlit'ti, bkz. Ek A-9)* | Zaman kaydırıcısı ve iz oynatma tarayıcıda akıcı çalışıyor; rapora tıklayınca harita ve kaydırıcı birlikte hareket ediyor; klavye kısayolları ve harekât odası düzeni kurulabiliyor. `SentinelService` REST'e birebir açıldığı için backend ince kaldı. Derlenmiş arayüz FastAPI'den sunuluyor, internetsiz çalışıyor. | Streamlit: her etkileşimde tüm sayfayı yeniden çalıştırıyor (kaydırıcı takılıyor), bileşenler arası tıklama zinciri özel bileşen gerektiriyor, görünümü prototip izlenimi veriyor. Gradio: sohbet odaklı. |
 | Harita | **pydeck** (BitmapLayer + PathLayer + ScatterplotLayer) | Drone karesi köşe koordinatlarıyla haritaya birebir oturtulabiliyor. Altlık haritası olmadan da çalışıyor, internet kesilirse sadece vektör çizim kalıyor. | folium + st_folium: her etkileşimde yeniden çizim, yavaş. Plotly mapbox: bitmap yerleştirmesi zayıf. |
-| Tespit | Ultralytics YOLO arayüzü. **Birincil:** Kaggle modeli. **Yedek:** önceden eğitilmiş detektör. | Ekip büyük olasılıkla ultralytics kullanıyor, çıktı formatı (`label conf x y w h`) ortak. **Varsayım:** COCO modelleri tepeden (nadir) çekilmiş drone görüntüsünde zayıf kalıyor. VisDrone ile eğitilmiş ağırlıklar (car/van/truck/bus sınıfları birebir var) daha iyi bir yedek adayı. Cuma gecesi 5 karede test edilecek. | torchvision Faster R-CNN: MPS'te yavaş. Bulut vision API: internet ve gizlilik sorunu. |
+| Tespit | Ultralytics YOLO arayüzü. **Birincil:** Kaggle modeli. **Yedek:** önceden eğitilmiş detektör. | Ekip büyük olasılıkla ultralytics kullanıyor, çıktı formatı (`label conf x y w h`) ortak. **Varsayım:** COCO modelleri tepeden (nadir) çekilmiş drone görüntüsünde zayıf kalıyor. VisDrone ile eğitilmiş ağırlıklar (car/van/truck/bus sınıfları birebir var) daha iyi bir yedek adayı. *(Ölçüldü: COCO yolov8n, dev verisinde track'lerin ~%82'sini buluyor; seçilen yedek bu.)* | torchvision Faster R-CNN: MPS'te yavaş. Bulut vision API: internet ve gizlilik sorunu. |
 | Eşleme | `scipy.optimize.linear_sum_assignment` + mesafe kapısı | Bire bir ve optimal eşleme ~5 satırda. İki tespitin aynı track'e düşmesi engelleniyor. | Açgözlü en yakın komşu: kenardaki 20 "tuzak" track'te çift eşleme riski var. |
 | Coğrafya | Eşdikdörtgen yaklaşım (~30 satırlık kendi modülümüz) | Organizatör verisi bu formülle üretilmiş, organizatörün sayılarını birebir veriyor. Gerçek jeodezik mesafeden farkı 6 km'de %0,3'ün altında (~15 m); organizatörün referans sayılarıyla ise birebir aynı. | pyproj / geopy: ekstra bağımlılık ve organizatör sayılarıyla birebir tutmuyor. |
 | Veri katmanı | pandas/numpy bellek içi + **pydantic v2** şemaları | 5.650 track noktası 1 MB'ın altında, sorgular mikrosaniye sürüyor. Resmi paket gelince şema farkı anında yakalanıyor. | SQLite / PostGIS: bu ölçekte gereksiz karmaşıklık. Ölçek yolu §3.7'de. |
@@ -547,7 +557,7 @@ Bulgu 2 bu bölümün gerekçesi: basit kurallarla neredeyse her kare alarm veri
 
 ### 3.7 Ölçeklenebilirlik ve performans
 
-**Performans hedefleri** (Varsayım: M serisi Mac; Cuma gecesi ölçülecek):
+**Performans hedefleri** (Varsayım: M serisi Mac):
 
 | Adım | Hedef | Not |
 |---|---|---|
@@ -623,7 +633,7 @@ Sonuç: Önbellek kullanıldığı sürece para darboğaz değil. Asıl riskler 
 | Güvenlik | Prompt injection | "Riski DÜŞÜK yaz" içeren sentetik bir rapor seviyeyi değiştiremiyor | Her commit |
 | Entegrasyon | Uçtan uca | Oracle detektör + MockLLM ile 40 kare hatasız çalışıyor. Seviye dağılımı snapshot'ı alınıyor, ağırlıklar değişirse fark görünür oluyor. | Merge öncesi |
 | UI duman testi | Streamlit | `AppTest` ile triage ve kare sayfası hatasız açılıyor | Merge öncesi |
-| Demo kontrolü | Demo yolu | `make demo-check`: demo karelerinin önbelleği var ve seviyeler beklenen değerde | Pazar sabahı ve her provadan önce |
+| Demo kontrolü | Demo yolu | `make demo-check`: demo karelerinin önbelleği var ve seviyeler beklenen değerde | Her provadan önce |
 
 ### 3.11 Bilinçli ödünleşimler
 
@@ -644,45 +654,23 @@ Sonuç: Önbellek kullanıldığı sürece para darboğaz değil. Asıl riskler 
 
 ## 4. Çalışan Ürün Planı
 
-### 4.1 Zaman planı ve kilometre taşları
+### 4.1 Kilometre taşları
 
-```mermaid
-gantt
-  title NÖBETÇİ: 25–27 Eylül
-  dateFormat YYYY-MM-DD HH:mm
-  axisFormat %a %H:%M
-  section Faz 1 (tek kişi)
-  İskelet, domain, repository, geo + testler     :f1, 2026-09-25 18:30, 2h
-  Eşleme, kinematik, Oracle detektör (M1)         :f2, after f1, 2h
-  Rapor doğrulama, risk, şablon brief (M2)        :f3, after f2, 2h
-  Uyku                                            :crit, s1, 2026-09-26 00:30, 7h
-  Yedek detektör, önbellek, minimal UI (M3)       :f4, 2026-09-26 07:30, 2h
-  LLM istemcisi, grounding, iz, devir notu (M4)   :f5, after f4, 150m
-  section Faz 2 (ekip)
-  Kickoff, resmi veri ve GLM duman testi          :k, 2026-09-26 12:00, 1h
-  Paralel geliştirme (4 hat)                      :p, after k, 5h
-  Entegrasyon noktası 1 (M5)                      :milestone, m5, 2026-09-26 18:00, 0m
-  Kalibrasyon, sohbet, UI cilası, demo karesi     :c, 2026-09-26 18:00, 4h
-  Feature freeze (M6)                             :milestone, m6, 2026-09-26 22:00, 0m
-  Prova 1 ve hata listesi                         :r1, 2026-09-26 22:00, 2h
-  Düzeltmeler, son önbellek, yedek video          :z, 2026-09-27 08:00, 2h
-  Code freeze (M7)                                :milestone, m7, 2026-09-27 10:00, 0m
-  Provalar, sunum, mentor hazırlığı               :r2, 2026-09-27 10:00, 3h
-```
+Resmî veri paketi ve Kaggle ekibinin tespit modeli sonra gelecek. Kilometre taşları bu yüzden takvime değil, sıraya ve kabul kriterine bağlı; her biri bir öncekinin üzerine kurulur ve zinciri kırmaz.
 
-| Kilometre taşı | Zaman | Kabul kriteri (gözle doğrulanabilir) |
-|---|---|---|
-| **M1: Kanıt motoru** | Cuma 22:30 | `sentinel evaluate img_000860 --json` komutu T0122'yi < 1 m eşleme ve 5,5 → 1,6 km ile döndürüyor, altın testler yeşil |
-| **M2: Yürüyen iskelet** | **Cuma 24:00** | `sentinel batch` 40 karenin hepsinde LLM'siz şablon brief ve seviye üretiyor; 12:35 raporu ✗ |
-| **M3: Arayüzlü dikey dilim** | Cumartesi 09:30 | Streamlit'te triage ve kare detayı çalışıyor, gerçek (yedek) detektör kullanılıyor, tespitler önbellekte |
-| **M4: Ekibe devir** | Cumartesi 12:00 | MockLLM ile grounding çalışıyor, `trace.jsonl` yazılıyor, README'de "5 dakikada kurulum" bölümü ve görev kartları hazır |
-| **M5: Gerçek bileşenler** | Cumartesi 18:00 | Kaggle modeli ve GLM bağlı, 40 kare yeniden hesaplandı, main dalı yeşil |
-| **M6: Feature freeze** | Cumartesi 22:00 | Demo senaryosu baştan sona hatasız çalışıyor. Bu noktadan sonra sadece düzeltme ve cila yapılıyor. |
-| **M7: Code freeze** | Pazar 10:00 | `make check` ve `make demo-check` yeşil, yedek video kaydedilmiş, sunum dosyası hazır |
+| Kilometre taşı | Kabul kriteri (gözle doğrulanabilir) |
+|---|---|
+| **M1: Kanıt motoru** | `sentinel evaluate img_000860 --json` komutu T0122'yi < 1 m eşleme ve 5,5 → 1,6 km ile döndürüyor, altın testler yeşil |
+| **M2: Yürüyen iskelet** | `sentinel batch` 40 karenin hepsinde LLM'siz şablon brief ve seviye üretiyor; 12:35 raporu ✗ |
+| **M3: Arayüzlü dikey dilim** | Web arayüzünde triage ve kare detayı çalışıyor, gerçek (yedek) detektör kullanılıyor, tespitler önbellekte |
+| **M4: Ekibe devir** | LLM ile grounding çalışıyor, `trace.jsonl` yazılıyor, `AGENTS.md` ve README'de kurulum ve görev kartları hazır |
+| **M5: Gerçek bileşenler** | Resmî veri, Kaggle modeli ve GLM bağlı, 40 kare yeniden hesaplandı, main dalı yeşil |
+| **M6: Özellik dondurma** | Demo senaryosu baştan sona hatasız çalışıyor. Bu noktadan sonra sadece düzeltme ve cila yapılıyor. |
+| **M7: Kod dondurma** | `make check` ve `make demo-check` yeşil, yedek video kaydedilmiş, sunum dosyası hazır |
 
 ### 4.2 Dikey dilim yaklaşımı
 
-**Uçtan uca çalışan ilk sürüm Cuma gece yarısı hazır oluyor (M2).** O noktada her katmanın en basit hâli çalışıyor:
+**Uçtan uca çalışan ilk sürüm önce hazırlanıyor (M2).** O noktada her katmanın en basit hâli çalışıyor:
 - Oracle detektör (track noktalarını piksele geri projekte ediyor)
 - Doğrusal georef
 - Hungarian eşleme
@@ -693,45 +681,45 @@ gantt
 Sonraki her adım bir katmanı güçlendiriyor ama zinciri kırmıyor:
 - Oracle yerine yedek model, sonra Kaggle modeli geliyor.
 - Şablon brief yerine MockLLM, sonra GLM geliyor.
-- CLI'ın yanına Streamlit ekleniyor.
+- CLI'ın yanına web arayüzü ekleniyor.
 
 Aşama 1 modeli ya da GLM anahtarı hiç gelmese bile **her an demo yapılabilir bir sürüm** var.
 
-**Cuma akşamı ekibe küçük, Kaggle'ı aksatmayan iki talep (toplam 15 dk):**
+**Kaggle ekibinden küçük, işlerini aksatmayan iki talep (toplam 15 dk):**
 1. Çıktı sözleşmesini onaylamak: `predict(image_path) -> list[(label, conf, x, y, w, h)]`.
-2. İlk checkpoint'i, mAP'i düşük olsa bile Cuma gecesi paylaşmak. Böylece gerçek sınıf seti (van dahil) erken test edilebilir.
+2. İlk checkpoint'i, mAP'i düşük olsa bile erkenden paylaşmak. Böylece gerçek sınıf seti (van dahil) erken test edilebilir.
 
 ### 4.3 Görev dağılımı (Faz 2, Varsayım V1: 4 kişi)
 
-| Kişi | Rol | Cumartesi 12–18 | Cumartesi 18–22 | Pazar |
+| Kişi | Rol | Entegrasyon (veri ve model gelince) | Kalibrasyon ve cila | Demo hazırlığı |
 |---|---|---|---|---|
 | **Sen** | Teknik lider / ajan | GLM entegrasyonu, prompt v1, grounding ayarı, sohbet araç döngüsü, PR incelemeleri | Kalibrasyonla entegrasyon, hata düzeltme | Mentor kod turu (README → `pipeline.py` → testler), canlı demoyu sen sürüyorsun |
 | **Ekip-1** | ML / algı | Kaggle modelini `KaggleModelDetector`'a bağlamak, sınıf eşleme, MPS süre ölçümü, τ_op seçimi, 40 karenin tespit önbelleği, 5 demo karesinde elle P/R kontrolü | Altın set etiketleme (etiketleyici 1) | Sunumda "model ve tespit" bölümü |
 | **Ekip-2** | UI / UX | Kare detayı: harita, BitmapLayer, izler, zaman kaydırıcısı, kanıt çipleri. Durum ekranları (boş, yükleme, hata). Koyu tema. | Triage cilası, nöbet devri kartı, karar butonları | Demo ekran akışı, yedek video kaydı |
 | **Ekip-3** | Ürün / veri / sunum | Resmi veri doğrulama betiği, 40 raporun elle etiketlenmesi, kronometre testi (3 kare elle), demo karesi adayları | Altın set (etiketleyici 2), `calibrate.py` ile duyarlılık tablosu, sunum iskeleti | Sunum dosyası, konuşma metni, 3 prova ve süre tutma |
 
-- **3 kişilik ekip:** Ekip-3'ün işleri bölünüyor. Veri ve kalibrasyon işi, model entegrasyonu bitince Ekip-1'e geçiyor (~15:00). Sunum işi Cumartesi akşamı Ekip-2'ye geçiyor.
+- **3 kişilik ekip:** Ekip-3'ün işleri bölünüyor. Veri ve kalibrasyon işi, model entegrasyonu bitince Ekip-1'e geçiyor. Sunum işi kalibrasyon aşamasında Ekip-2'ye geçiyor.
 - **5 kişilik ekip:** Beşinci kişi "kalite ve demo sahibi" oluyor. Testleri, `demo-check`'i, yedek laptopu ve yedek videoyu üstleniyor. Senin PR inceleme yükün hafifliyor.
 
 **Çalışma kuralları:**
 - `main` dalı her zaman çalışır durumda. İş kısa ömürlü dallarda yapılıyor, merge'den önce `make check` çalışıyor.
-- Pydantic domain modelleri Cumartesi 12:00'da donduruluyor. Değişiklik gerekirse sen onaylıyorsun.
-- Her saat başı 5 dakikalık bir senkron toplantısı yapılıyor.
+- Pydantic domain modelleri ekip sözleşmesidir. Değişiklik gerekirse sen onaylıyorsun.
+- Düzenli, kısa senkron toplantıları yapılıyor.
 
 ### 4.4 Riskler ve B planları
 
 | # | Risk | Olasılık / etki | Erken uyarı | B planı |
 |---|---|---|---|---|
-| 1 | Kaggle modeli geç geliyor ya da entegrasyonu bozuk | Orta / yüksek | Cumartesi 14:00'e kadar bağlanamaması | Yedek detektör ve önbellekle devam edilir, rozet "Yedek model" olur. Oracle detektör pipeline'ı model olmadan test etmeye devam eder. |
-| 2 | COCO tabanlı yedek model tepeden çekilmiş görüntüde zayıf kalıyor | Yüksek / orta | Cuma gecesi 5 karede recall < %50 | VisDrone ağırlıkları denenir (lisansı ve kaynağı kontrol edilerek), ya da ekibin Cuma gecesi checkpoint'i kullanılır. Eksik tespitler "tespitsiz track" olarak belirsizlik başlığı altında gösterilir. |
-| 3 | GLM anahtarı geç geliyor, API çöküyor ya da hız limitine takılıyor | Orta / orta | Duman testi başarısız | MockLLM ve şablon brief kullanılır. 40 karenin brief'leri Cumartesi önbelleğe kaydedilir. Demoda 1 canlı çağrı yapılır, başarısız olursa önbellekten gösterilir. |
+| 1 | Kaggle modeli geç geliyor ya da entegrasyonu bozuk | Orta / yüksek | Entegrasyon aşamasında bağlanamaması | Yedek detektör ve önbellekle devam edilir, rozet "Yedek model" olur. Oracle detektör pipeline'ı model olmadan test etmeye devam eder. |
+| 2 | COCO tabanlı yedek model tepeden çekilmiş görüntüde zayıf kalıyor | Yüksek / orta | 5 karede recall < %50 | VisDrone ağırlıkları denenir (lisansı ve kaynağı kontrol edilerek), ya da ekibin ilk checkpoint'i kullanılır. Eksik tespitler "tespitsiz track" olarak belirsizlik başlığı altında gösterilir. |
+| 3 | GLM anahtarı geç geliyor, API çöküyor ya da hız limitine takılıyor | Orta / orta | Duman testi başarısız | MockLLM ve şablon brief kullanılır. 40 karenin brief'leri önceden önbelleğe kaydedilir. Demoda 1 canlı çağrı yapılır, başarısız olursa önbellekten gösterilir. |
 | 4 | Bütçe aşımı | Düşük / orta | Bütçe göstergesi %60'ın üstünde | Bütçe bekçisi $12'de durdurur. Sohbette adım sınırı ve token tavanı var. Geliştirme MockLLM ile yapılır. |
-| 5 | Resmi veri formatı dev verisinden farklı | Orta / orta | 12:00'daki doğrulama betiği hata veriyor | Adaptör katmanı var ve pydantic hataları satır numarasıyla geliyor. Resmi `width_px` (ör. 960×540) config'ten okunuyor. |
+| 5 | Resmi veri formatı dev verisinden farklı | Orta / orta | Doğrulama betiği (`make validate`) hata veriyor | Adaptör katmanı var ve pydantic hataları satır numarasıyla geliyor. Resmi `width_px` (ör. 960×540) config'ten okunuyor. |
 | 6 | LLM uydurma sayı üretiyor veya seviyeyi yanlış veriyor | Orta / yüksek | Grounding hata oranı | Bir kez yeniden sorulur, yine olmazsa şablon brief'e dönülür. Seviye ±1 ve taban kuralı ile sınırlı. |
 | 7 | Risk seviyeleri anlamsız dağılıyor (alarm yorgunluğu) | Yüksek / yüksek | Altın setle uyum düşük | Duyarlılık tablosuyla ağırlıklar ayarlanır. Taban kurallarına ağırlaştırıcı şartı eklenir (§3.6). |
 | 8 | Sunum salonunda internet yok | Orta / yüksek | Salon testi | `SENTINEL_DEMO=1` çevrimdışı modu önbellekten çalışır, harita altlıksız vektör olarak çizilir. Canlı çağrının yerine "önbellek" rozeti görünür. |
 | 9 | Demo laptopu çöküyor | Düşük / çok yüksek | — | İkinci laptopta repo, önbellek ve `.env` hazır tutulur. 4 dakikalık yedek ekran kaydı var. |
-| 10 | 4 kişiyle entegrasyon kaosu | Orta / yüksek | Merge çatışmaları | Domain modelleri donduruluyor, arayüz sözleşmesi belli, entegrasyon saat 18:00'de. Feature freeze Cumartesi 22:00'de kesin. |
+| 10 | 4 kişiyle entegrasyon kaosu | Orta / yüksek | Merge çatışmaları | Domain modelleri donduruluyor, arayüz sözleşmesi belli, entegrasyon tek noktada yapılıyor. Özellik dondurmadan (M6) sonra yeni özellik eklenmiyor. |
 
 ### 4.5 "Bitti" tanımı, repo yapısı ve çalıştırma
 
@@ -748,7 +736,7 @@ Aşama 1 modeli ya da GLM anahtarı hiç gelmese bile **her an demo yapılabilir
 stage2/
   pyproject.toml · uv.lock · Makefile · config.yaml · .env.example · README.md
   src/sentinel/
-    domain/models.py                         # tüm pydantic modeller (Cumartesi 12:00'de donduruluyor)
+    domain/models.py                         # tüm pydantic modeller (ekip sözleşmesi)
     data/{repository,adapters}.py            # adapters: resmi paket ile dev verisi arasındaki farklar
     perception/{base,kaggle_model,fallback,oracle,cache}.py
     geo/{georef,geodesy,zones}.py
@@ -785,7 +773,7 @@ uv sync && cp .env.example .env && make precompute && make app
 | 1:00–2:00 | Kare detayı, **canlı çalıştırma** | "Yeniden değerlendir" butonuna basılıyor, `st.status` adımları tek tek ilerliyor: tespit → koordinat (39.92531, 32.87183) → T0122 ile 1 m'nin altında eşleşme → kinematik. Haritada drone karesi yerine oturuyor ve 2 saatlik iz görünüyor: duraklamalar ve son 10 dakikadaki atak. | Organizatörün 4 adımı canlı olarak görülüyor (şart karşılanıyor) |
 | 2:00–2:50 | Raporlar + zaman kaydırıcısı (**AHA**) | "Resmi rapor 'olağan' diyor. Sadece konuma baksaydık bu rapor uyumlu çıkardı." Kaydırıcı 12:35'e çekiliyor: kamyon 5,6 km uzakta, noktada kimse yok. Ardından 12:25'teki "otomobil, bize bağlı unsur" raporu gösteriliyor: aynı nokta, yine o saatte orada araç yok, üstelik biz kamyon görüyoruz. İki rapor da ✗. "Çelişen kimlik iddiası riski düşürmüyor, artırıyor." | Jürinin hatırlayacağı an |
 | 2:50–3:20 | Brief | Manşet, ETA ~4 dk, önerilen eylem. "✓ 11/11 sayı kanıtla doğrulandı" rozeti. Bir sayıya tıklanınca kanıtı açılıyor. "LLM hesap yapmıyor, sadece yorumluyor." | Güven ve teknik derinlik |
-| 3:20–3:50 | Karşıt kare | Üsse yakın ama araçları duran ve raporları tutarlı bir kare: seviye DÜŞÜK veya ORTA. "Yakınlık tek başına alarm sebebi değil. Basit bir kural 40 karenin 39'unu işaretliyordu." *(Kare Cumartesi kalibrasyondan sonra seçilecek.)* | Yanlış alarm azalıyor |
+| 3:20–3:50 | Karşıt kare | Üsse yakın ama araçları duran ve raporları tutarlı bir kare: seviye DÜŞÜK veya ORTA. "Yakınlık tek başına alarm sebebi değil. Basit bir kural 40 karenin 39'unu işaretliyordu." *(Seçilen kare: img_006388; kalibrasyondan sonra `config.yaml → demo` ile teyit edilir.)* | Yanlış alarm azalıyor |
 | 3:50–4:10 | Sohbet (opsiyonel) | "Doğu Yolu'nda gün boyu kaç ağır araç vardı?" sorusu soruluyor, araç çağrıları görünüyor. | Ajanın esnekliği |
 | 4:10–4:30 | Etki slaytı | ~13 dk → < 2 dk; kare başına 6 dk → 1 dk; brief başına ~0,003 $; on-prem'e hazır; üsler, sınır karakolları ve kritik altyapı. | İş değeri ile kapanış |
 
@@ -800,21 +788,23 @@ uv sync && cp .env.example .env && make precompute && make app
 
 ### 5.1 Kriter bazında puan
 
-| Kriter | Puan | Gerekçe |
+Kaggle skoru (%20) Aşama 1'in tespit modeline, sunum ve demo (%5) sunumun kendisine bağlı; aşağıda bu ürünün doğrudan etkilediği dört kriter var.
+
+| Kriter (ağırlık) | Puan | Gerekçe |
 |---|---|---|
-| **Teknik kalite ve mimari** | **8/10** | Deterministik çekirdek ile grounding'li LLM ayrımı net. `Detector` ve LLM tak-çıkar. Organizatörün sayılarıyla altın testler, adım izi, prompt injection savunması ve taban kuralları var. **Eksi:** Risk ağırlıkları sezgisel; test kapsamı zaman baskısına bağlı; Streamlit ile iş mantığının ayrımı disiplin gerektiriyor. |
-| **Problemin önemi ve iş değeri** | **7/10** | Acı noktalar veriden ölçüldü (2,5 dakikada bir bilgi, %28 zaman çelişkisi, 40 karenin 39'unda "yaklaşan" alarmı, ETA 4,4 dk ile ~13 dk farkındalık süresi). Genişleme yolu somut. **Eksi:** Zaman tasarrufu ve kuyruk hesabı varsayıma dayanıyor, gerçek bir operatörle doğrulanmadı. |
-| **Çalışan ürün** | **8/10** | Yürüyen iskelet Cuma gece yarısı hazır. Her katmanda yedek var, demo çevrimdışı çalışabiliyor, canlılık şartı karşılanıyor. **Eksi:** 40 Aşama 2 karesinde tespit kalitesini ölçecek etiket yok, Kaggle modelinin entegrasyon zamanı belirsiz. |
-| **Ürün düşüncesi ve UX** | **7/10** | Triage, ters piramit brief, kanıt çipleri ve zaman kaydırıcısı var. Durumların tamamı ele alındı, geri alınabilir kararlar tutuluyor. **Eksi:** Streamlit'in sınırları (klavye kısayolu yok, yeniden çizim gecikmesi). Gerçek kullanıcıyla test yapılmadı. |
+| **Teknik kalite ve mimari** (%15) | **8/10** | Deterministik çekirdek ile grounding'li LLM ayrımı net. `Detector` ve LLM tak-çıkar. Organizatörün sayılarıyla altın testler, adım izi, prompt injection savunması ve taban kuralları var. **Eksi:** Risk ağırlıkları sezgisel; test kapsamı zaman baskısına bağlı; iki kod tabanı (Python + TypeScript) var. |
+| **Problemin önemi ve iş değeri** (%20) | **7/10** | Acı noktalar veriden ölçüldü (2,5 dakikada bir bilgi, %28 zaman çelişkisi, 40 karenin 39'unda "yaklaşan" alarmı, ETA 4,4 dk ile ~13 dk farkındalık süresi). Genişleme yolu somut. **Eksi:** Zaman tasarrufu ve kuyruk hesabı varsayıma dayanıyor, gerçek bir operatörle doğrulanmadı. |
+| **Çalışan ürün** (%20) | **8/10** | Yürüyen iskelet ilk iş olarak hazırlandı. Her katmanda yedek var, demo çevrimdışı çalışabiliyor, canlılık şartı karşılanıyor. **Eksi:** 40 Aşama 2 karesinde tespit kalitesini ölçecek etiket yok, Kaggle modelinin entegrasyon zamanı belirsiz. |
+| **Ürün düşüncesi ve UX** (%20) | **7/10** | Triage, ters piramit brief, kanıt çipleri ve zaman kaydırıcısı var. Durumların tamamı ele alındı, geri alınabilir kararlar tutuluyor. **Eksi:** Arayüz testleri yok. Gerçek kullanıcıyla test yapılmadı. |
 
 ### 5.2 En zayıf 3 nokta ve somut iyileştirmeler
 
 1. **Risk kalibrasyonunun gerçek bir referansı yok.**
    - 40 karelik kör altın set iki kişi tarafından bağımsız etiketleniyor ve aralarındaki uyum Cohen's kappa ile raporlanıyor.
    - Ağırlıklar ±%20 değiştirildiğinde seviye değişimini gösteren duyarlılık tablosu hazırlanıyor.
-   - Cumartesi akşamı bir ROKETSAN mentorundan 10 dakika içinde 10 kare etiketlemesi rica ediliyor ve sunumda "uzman uyumu" olarak gösteriliyor.
+   - Bir ROKETSAN mentorundan 10 dakika içinde 10 kare etiketlemesi rica ediliyor ve sunumda "uzman uyumu" olarak gösteriliyor.
 2. **Operasyonel değer rakamları varsayım.**
-   - Cumartesi Ekip-3 kronometre testi yapıyor: 3 kareyi sadece CSV ve harita ile elle analiz ediyor, ardından aynı 3 kareyi sistemle değerlendiriyor. Sunumda gerçek süreler kullanılıyor.
+   - Ekip-3 kronometre testi yapıyor: 3 kareyi sadece ham dosyalar ve harita ile elle analiz ediyor, ardından başka 3 kareyi sistemle değerlendiriyor (aynı kareyi iki kez ölçmek ikinci ölçümü hafızayla kısaltır). Sunumda gerçek süreler kullanılıyor.
    - Kuyruk hesabı bu ölçülen süreyle güncelleniyor.
 3. **40 Aşama 2 karesinde tespit kalitesi bilinmiyor** (bu karelerin etiketi yok).
    - 5 demo karesi elle etiketleniyor (~15 dk) ve τ_op eşiğinde precision/recall ölçülüyor.

@@ -1,7 +1,7 @@
 PY ?= python3
 export PYTHONPATH := src
 
-.PHONY: install weights check lint test validate precompute batch demo demo-check web app dev-web docker-up docker-test docker-down
+.PHONY: install weights calibrate stopwatch demo-check-chat check lint test validate precompute batch demo demo-check web app dev-web docker-up docker-test docker-down
 
 install:
 	$(PY) -m pip install -e '.[dev,ui,detector]'
@@ -34,6 +34,18 @@ demo:
 
 demo-check:
 	$(PY) -m sentinel demo-check
+
+# Demo yolu + sohbet soruları (LLM çağırır, ~1 dk; soruları önbelleğe alır)
+demo-check-chat:
+	$(PY) -m sentinel demo-check --chat
+
+# Kalibrasyon raporu: altın set ↔ sistem + ağırlık duyarlılığı → runs/calibration.md
+calibrate:
+	$(PY) scripts/calibrate.py
+
+# Kronometre testi özeti (ölçüm: python3 scripts/stopwatch.py manual|system <kare> --who <ad>)
+stopwatch:
+	$(PY) scripts/stopwatch.py summary
 
 web:
 	cd web && npm install --no-audit --no-fund && npm run build

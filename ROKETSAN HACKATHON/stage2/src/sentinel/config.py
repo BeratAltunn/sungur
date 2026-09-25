@@ -112,8 +112,24 @@ class LLMCfg(BaseModel):
     max_level_deviation: int = 1
 
 
+class DemoChatQ(BaseModel):
+    question: str
+    image_id: str | None = None
+
+
+class DemoCfg(BaseModel):
+    """What `make demo-check` guards: the frames, reports and chat questions the live demo relies on."""
+
+    frames: dict[str, str] = Field(default_factory=lambda: {"img_000860": "KRİTİK"})
+    contradicted: dict[str, list[str]] = Field(default_factory=dict)  # frame → reports that must be ÇELİŞİYOR
+    no_contradiction: list[str] = Field(default_factory=list)  # frames whose reports must not contradict
+    chat: list[DemoChatQ] = Field(default_factory=list)
+    chat_max_s: float = 45.0
+
+
 class ObservabilityCfg(BaseModel):
     runs_dir: Path = Path("runs")
+    labels_dir: Path = Path("calibration/labels")  # blind gold-set labels (committed to git)
 
 
 class Settings(BaseModel):
@@ -126,6 +142,7 @@ class Settings(BaseModel):
     risk: RiskCfg = Field(default_factory=RiskCfg)
     llm: LLMCfg = Field(default_factory=LLMCfg)
     observability: ObservabilityCfg = Field(default_factory=ObservabilityCfg)
+    demo: DemoCfg = Field(default_factory=DemoCfg)
 
     def path(self, p: Path | str) -> Path:
         """Resolve a config-relative path."""

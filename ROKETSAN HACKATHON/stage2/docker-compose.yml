@@ -15,8 +15,10 @@ services:
     volumes:
       - ./runs:/app/stage2/runs     # iz (trace.jsonl) ve operatör kararları kalıcı
       - ./cache:/app/stage2/cache   # tespit ve LLM önbelleği host ile paylaşılır
+      - ./calibration:/app/stage2/calibration   # kör etiketler host'a yazılır (git'e girer)
       # Resmî veri paketi gelince:
       # - ../data:/app/data:ro
-    # environment:
-    #   SENTINEL_DATA_DIR: /app/data
+    environment:
+      TZ: "<+03>-3"                 # Türkiye saati (sabit UTC+3; imajda tzdata gerekmez)
+      # SENTINEL_DATA_DIR: /app/data   # resmî veri paketi için yukarıdaki volume ile birlikte açın
     restart: unless-stopped

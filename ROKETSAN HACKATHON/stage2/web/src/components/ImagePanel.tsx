@@ -1,18 +1,24 @@
 import { LABEL_TR, LEVEL_COLOR, dec, scoreLevel } from "../lib/format";
 import type { EvidencePacket } from "../lib/types";
 
+const NEUTRAL = "#38bdf8";
+
 /** Drone frame with detection boxes. Boxes are in image_meta pixel space, so the SVG uses that viewBox. */
 export function ImagePanel({
   packet,
   url,
   focusTrack,
   onFocusTrack,
+  blind = false,
 }: {
   packet: EvidencePacket;
   url: string;
   focusTrack: string | null;
   onFocusTrack: (trackId: string | null) => void;
+  /** Blind labelling: one neutral colour, so box colours do not reveal the system's scores. */
+  blind?: boolean;
 }) {
+  const colorOf = (score: number) => (blind ? NEUTRAL : LEVEL_COLOR[scoreLevel(score)]);
   const { width_px: W, height_px: H } = packet.frame;
   return (
     <figure className="image-panel">
@@ -21,7 +27,7 @@ export function ImagePanel({
         <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden>
           {packet.vehicles.map((v) => {
             const [x, y, w, h] = v.bbox;
-            const color = LEVEL_COLOR[scoreLevel(v.score)];
+            const color = colorOf(v.score);
             const focused = !!v.track_id && v.track_id === focusTrack;
             return (
               <g
@@ -57,7 +63,7 @@ export function ImagePanel({
               className={v.track_id && v.track_id === focusTrack ? "active" : ""}
               onMouseEnter={() => onFocusTrack(v.track_id)}
             >
-              <span className="swatch" style={{ background: LEVEL_COLOR[scoreLevel(v.score)] }} />
+              <span className="swatch" style={{ background: colorOf(v.score) }} />
               <b>{v.ref}</b> {LABEL_TR[v.label]} · {v.track_id ?? "hareket kaydı yok"} · güven {dec(v.conf, 2)}
               {v.promoted ? " · track ile terfi" : ""}
             </li>

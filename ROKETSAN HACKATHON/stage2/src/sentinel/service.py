@@ -86,6 +86,9 @@ class SentinelService:
 
         self.chat_agent = ChatAgent(llm, ChatTools(self), load_prompt(PROMPT_FILE))
         self.decisions = DecisionLog(self.runs_dir)
+        from sentinel.risk.calibration import LabelStore
+
+        self.labels = LabelStore(self.s.path(self.s.observability.labels_dir))
         self._packets: dict[str, EvidencePacket] = {}
         self._results: dict[str, EvaluationResult] = {}
 
@@ -328,6 +331,20 @@ class SentinelService:
             image_id = None
         turn = self.chat_agent.ask(question, msgs, image_id, Tracer(self.runs_dir, run_id, image_id))
         return turn, run_id
+
+    # ================================================================ blind gold-set labelling
+    def record_gold(self, image_id: str, labeler: str, level: RiskLevel, note: str = "") -> dict:
+        if image_id not in self.repo.meta:
+            raise KeyError(image_id)
+        lab = self.labels.add(image_id, labeler, level, note)
+        return {"image_id": lab.image_id, "labeler": lab.labeler, "level": lab.level.value, "at": lab.at}
+
+    def gold_progress(self, labeler: str) -> dict:
+        done = self.labels.progress(labeler)
+        order = [
+            m.image_id for m in self.repo.frames()
+        ]  # capture-time order: no hint of the system's ranking
+        return {"labeler": labeler, "done": done, "order": order, "total": len(order)}
 
     # ================================================================ decisions / health
     def record_decision(
