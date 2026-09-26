@@ -2,6 +2,7 @@ import type { Map as MLMap, Marker } from "maplibre-gl";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { go } from "../App";
 import { MapView, fc, htmlMarker, line, setGeo } from "../components/MapView";
+import { grid } from "../lib/geo";
 import { baseSymbol, classSymbol } from "../lib/symbols";
 import { ReplayBar, useReplay } from "../components/Replay";
 import { DecisionPill, ErrorState, Kbd, LevelBadge, Loading, SummaryContext, TopBar } from "../components/ui";
@@ -441,6 +442,8 @@ function arrowHtml(m: FrameMotion) {
 
 /** Main map opens tilted; right-drag / Ctrl+drag re-orients the plane, the compass resets it. */
 const MAP_3D = { pitch: 45, maxPitch: 70 };
+/** Faint 1 km reference grid around the base (vehicles reach ~8 km): shows the plane's tilt and heading. */
+const GRID = { halfM: 10_000, stepM: 1_000 };
 const CARD_W = 340;
 const CARD_GAP = 28;
 
@@ -493,6 +496,15 @@ function OverviewMap({
     Object.values(arrows.current).forEach((m) => m.remove());
     markers.current = {};
     arrows.current = {};
+    setGeo(map, "grid", fc(grid(ctx.base.center, GRID.halfM, GRID.stepM).map((l) => line(l))));
+    if (!map.getLayer("grid"))
+      map.addLayer({
+        id: "grid",
+        type: "line",
+        source: "grid",
+        // faint on the plain background; a little stronger over the satellite texture, where 0.14 vanishes
+        paint: { "line-color": "#9fbcdb", "line-opacity": map.getTerrain() ? 0.3 : 0.14, "line-width": 1 },
+      });
     setGeo(map, "rings", fc(ctx.rings.map((r) => line(r.ring, { km: r.km }))));
     if (!map.getLayer("rings"))
       map.addLayer({

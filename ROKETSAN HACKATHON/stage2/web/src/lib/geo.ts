@@ -40,6 +40,22 @@ export function circle(center: LngLat, radiusM: number, n = 48): LngLat[] {
   return out;
 }
 
+/** North–south and east–west lines every stepM around a point, out to halfM: a reference grid that shows the
+ *  map plane's tilt and rotation (equirectangular, fine over ~20 km). */
+export function grid(center: LngLat, halfM: number, stepM: number): LngLat[][] {
+  const [lon, lat] = center;
+  const kx = 111320 * Math.cos((lat * Math.PI) / 180);
+  const n = Math.floor(halfM / stepM);
+  const [dx, dy] = [halfM / kx, halfM / 111320];
+  const out: LngLat[][] = [];
+  for (let i = -n; i <= n; i++) {
+    const x = lon + (i * stepM) / kx;
+    const y = lat + (i * stepM) / 111320;
+    out.push([[x, lat - dy], [x, lat + dy]], [[lon - dx, y], [lon + dx, y]]);
+  }
+  return out;
+}
+
 export function bounds(points: LngLat[]): [LngLat, LngLat] {
   let [minX, minY, maxX, maxY] = [Infinity, Infinity, -Infinity, -Infinity];
   for (const [x, y] of points) {
