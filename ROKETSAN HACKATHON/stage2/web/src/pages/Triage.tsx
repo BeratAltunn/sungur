@@ -2,11 +2,12 @@ import type { Map as MLMap, Marker } from "maplibre-gl";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { go } from "../App";
 import { MapView, fc, htmlMarker, line, setGeo } from "../components/MapView";
-import { baseSymbol } from "../lib/symbols";
+import { LEVEL_LEGEND, VERDICT_LEGEND, baseSymbol } from "../lib/symbols";
 import { ReplayBar, useReplay } from "../components/Replay";
 import { DecisionPill, ErrorState, Kbd, LevelBadge, Loading, SummaryContext, TopBar } from "../components/ui";
 import { api } from "../lib/api";
-import { LEVELS, LEVEL_ACTION, LEVEL_CLASS, LEVEL_COLOR, LEVEL_ICON, dec, km, secs, storage, zoneName } from "../lib/format";
+import { LEVELS, LEVEL_ACTION, LEVEL_CLASS, LEVEL_ICON, dec, km, secs, storage, zoneName } from "../lib/format";
+import { LEVEL_VAR, token } from "../lib/theme";
 import type { Health, Level, MapContext, ShiftSummary, TriageRow } from "../lib/types";
 
 export function TriagePage({ health, queue }: { health: Health | null; queue: TriageRow[] | null }) {
@@ -55,7 +56,8 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
       if (tag === "SELECT" || (tag === "INPUT" && e.key !== "Enter" && e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
       if (e.key === "j" || e.key === "ArrowDown") setCursor((c) => Math.min(c + 1, rows.length - 1));
       else if (e.key === "k" || e.key === "ArrowUp") setCursor((c) => Math.max(c - 1, 0));
-      else if (e.key === "Enter" && rows[cursor]) go(`/frame/${rows[cursor].image_id}`);
+      // The cursor is reset to 0 one render after a filter change; clamp so a fast Enter still opens the row shown.
+      else if (e.key === "Enter" && rows.length) go(`/frame/${rows[Math.min(cursor, rows.length - 1)].image_id}`);
       else if (e.key === " " && replay.state && tag !== "INPUT") replay.set({ playing: !replay.state.playing });
       else return;
       e.preventDefault();
@@ -191,7 +193,7 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
                       <span className="row-tags">
                         {r.n_approaching > 0 && (
                           <span className="tag" title={`${r.n_approaching} araç üsse yaklaşıyor`}>
-                            ⇢{r.n_approaching}
+                            {r.n_approaching} yaklaşan
                           </span>
                         )}
                         {r.n_heavy > 0 && (
@@ -294,12 +296,12 @@ function ShiftStrip({ summary, onReplay }: { summary: ShiftSummary; onReplay: ()
         </span>
         <span className="muted">
           {summary.contradicted_reports} rapor çelişiyor · {summary.decided} karar ·{" "}
-          <strong className={summary.awaiting_high ? "warn-text" : ""}>{summary.awaiting_high} YÜKSEK/KRİTİK karar bekliyor</strong>
+          <strong className={summary.awaiting_high ? "attn-text" : ""}>{summary.awaiting_high} YÜKSEK/KRİTİK karar bekliyor</strong>
         </span>
         <DecisionMetrics summary={summary} />
         <span className="shift-links">
           <button className="btn btn-ghost btn-sm" onClick={onReplay} title="Günü simüle saatle oynat: kareler çekim saatinde kuyruğa düşer">
-            ▶ Vardiyayı oynat
+            Vardiyayı oynat
           </button>
           <a className="btn btn-ghost btn-sm" href="#/handover" title="Amir için kurala dayalı vardiya özeti (yazdırılabilir)">
             Vardiya devri özeti →
@@ -342,7 +344,7 @@ function Preview({ row: r }: { row: TriageRow | null }) {
           Kareyi aç → <Kbd>Enter</Kbd>
         </button>
         <p className="preview-headline">{r.headline}</p>
-        <div className="action" role="note" style={{ ["--act" as string]: LEVEL_COLOR[r.level] }}>
+        <div className="action" role="note" style={{ ["--act" as string]: `var(${LEVEL_VAR[r.level]})` }}>
           <span className="action-label">Seviye eylemi</span>
           {LEVEL_ACTION[r.level]}
         </div>
@@ -393,7 +395,7 @@ function OverviewMap({
         id: "rings",
         type: "line",
         source: "rings",
-        paint: { "line-color": "#3a5775", "line-width": 1, "line-dasharray": [3, 3] },
+        paint: { "line-color": token("--line-strong"), "line-width": 1, "line-dasharray": [3, 3] },
       });
     htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base");
     for (const z of ctx.zones) htmlMarker(map, z.center, z.label, "mk mk-zone");
@@ -433,12 +435,18 @@ function OverviewMap({
   return <MapView className="overview-map" onReady={onReady} initial={{ center: ctx.base.center, zoom: 11.6 }} />;
 }
 
+/** Legend from the symbol vocabulary (lib/symbols.ts): levels with their action, then report verdicts. */
 function Legend() {
   return (
     <div className="legend">
-      {LEVELS.map((l) => (
-        <span key={l} className={`level ${LEVEL_CLASS[l]} level-sm`}>
-          {LEVEL_ICON[l]} {l}: {LEVEL_ACTION[l]}
+      {LEVEL_LEGEND.map((l) => (
+        <span key={l.level} className={`level ${LEVEL_CLASS[l.level]} level-sm`}>
+          {l.icon} {l.level}: {l.action}
+        </span>
+      ))}
+      {VERDICT_LEGEND.map((v) => (
+        <span key={v.icon} className="legend-verdict">
+          <b aria-hidden>{v.icon}</b> {v.text}
         </span>
       ))}
     </div>

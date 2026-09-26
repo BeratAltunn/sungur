@@ -274,7 +274,7 @@ export function FramePage({ id, health, queue, onChanged }: Props) {
                 </span>
               )}
               <button className="btn btn-ghost" onClick={runLive} disabled={!!live} title="Tespit önbelleğini atlayıp 6 adımı yeniden çalıştırır">
-                {live ? `Çalışıyor… ${live.done.length}/6` : "↻ Canlı yeniden değerlendir"}
+                {live ? `Çalışıyor… ${live.done.length}/6` : "Canlı yeniden değerlendir"}
               </button>
               <DecisionBar
                 res={res}

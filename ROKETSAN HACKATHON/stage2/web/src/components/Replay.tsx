@@ -100,7 +100,7 @@ function Lane({ name, sim, frames, t, which }: { name: string; sim: number; fram
       <b>{name}</b>
       <span className="muted small">{dec(sim)} dk/kare</span>
       <span>{current ? <>inceleniyor: <span className="mono">{current.image_id}</span></> : <span className="muted">boşta</span>}</span>
-      <span className={waiting ? "warn-text" : "muted"}>{waiting} kare bekliyor</span>
+      <span className={waiting ? "attn-text" : "muted"}>{waiting} kare bekliyor</span>
       <span className="muted">{decided} karar</span>
     </div>
   );
@@ -148,7 +148,7 @@ export function ReplayBar({ r }: { r: ReturnType<typeof useReplay> }) {
       <div className="replay-controls">
         <span className="shift-title">Vardiya oynatma</span>
         <button className="btn btn-sm" onClick={() => r.set({ playing: !state.playing })} aria-label={state.playing ? "Durdur" : "Oynat"}>
-          {state.playing ? "❚❚ Durdur" : "▶ Oynat"}
+          {state.playing ? "Durdur" : "Oynat"}
         </button>
         <span className="mono big" aria-live="off">
           {hhmm(t)}

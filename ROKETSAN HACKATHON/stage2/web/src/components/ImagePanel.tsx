@@ -1,7 +1,6 @@
-import { LABEL_TR, LEVEL_COLOR, dec } from "../lib/format";
+import { LABEL_TR, dec } from "../lib/format";
+import { levelColor, token } from "../lib/theme";
 import type { EvidencePacket, Level } from "../lib/types";
-
-const NEUTRAL = "#38bdf8";
 
 /** Drone frame with detection boxes. Boxes are in image_meta pixel space, so the SVG uses that viewBox. */
 export function ImagePanel({
@@ -21,7 +20,7 @@ export function ImagePanel({
   /** Blind labelling: one neutral colour, so box colours do not reveal the system's scores. */
   blind?: boolean;
 }) {
-  const colorOf = (ref: string) => (blind || !levels?.[ref] ? NEUTRAL : LEVEL_COLOR[levels[ref]]);
+  const colorOf = (ref: string) => (blind || !levels?.[ref] ? token("--text-2") : levelColor(levels[ref]));
   const { width_px: W, height_px: H } = packet.frame;
   return (
     <figure className="image-panel">
@@ -45,12 +44,12 @@ export function ImagePanel({
                   width={w}
                   height={h}
                   fill="none"
-                  stroke={focused ? "#fff" : color}
+                  stroke={focused ? token("--text") : color}
                   strokeWidth={focused ? 4 : 2.5}
                   strokeDasharray={v.track_id ? undefined : "6 4"}
                   vectorEffect="non-scaling-stroke"
                 />
-                <text x={x} y={Math.max(12, y - 4)} className="box-label" fill={focused ? "#fff" : color}>
+                <text x={x} y={Math.max(12, y - 4)} className="box-label" fill={focused ? token("--text") : color}>
                   {v.ref}
                 </text>
               </g>

@@ -3,6 +3,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import type { Feature, FeatureCollection } from "geojson";
 import { useEffect, useRef, useState } from "react";
 import { storage } from "../lib/format";
+import { token } from "../lib/theme";
 
 // No glyphs/sprites: the map works offline. Text is drawn with HTML markers.
 function style(basemap: boolean): StyleSpecification {
@@ -19,7 +20,7 @@ function style(basemap: boolean): StyleSpecification {
         }
       : {},
     layers: [
-      { id: "bg", type: "background", paint: { "background-color": "#0a0f15" } },
+      { id: "bg", type: "background", paint: { "background-color": token("--bg") } },
       ...(basemap ? [{ id: "carto", type: "raster" as const, source: "carto", paint: { "raster-opacity": 0.55 } }] : []),
     ],
   };

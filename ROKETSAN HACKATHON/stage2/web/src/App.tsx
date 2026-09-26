@@ -111,7 +111,7 @@ export default function App() {
       )}
       {!chatOpen && (
         <button className="chat-fab btn btn-primary" onClick={() => toggleChat(true)} title="Sohbeti aç (/)">
-          💬 Sohbet <kbd className="kbd">/</kbd>
+          Sohbet <kbd className="kbd">/</kbd>
         </button>
       )}
       <ChatPanel open={chatOpen} onClose={() => toggleChat(false)} imageId={route.page === "frame" || route.page === "brief" ? route.id : null} />

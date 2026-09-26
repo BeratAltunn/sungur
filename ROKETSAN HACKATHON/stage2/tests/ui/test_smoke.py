@@ -164,10 +164,12 @@ def test_blind_labelling_never_shows_system_level(page: Page):
           for (const sel of ['.brief', '.score', '.why', '.chat', '.chat-fab']) {
             if (document.querySelector(sel)) out.push('öğe: ' + sel);
           }
+          // Compare as computed rgb() so a hex attribute and a CSS variable of the same colour count once.
+          const norm = (c) => { const i = document.createElement('i'); i.style.color = c; document.body.appendChild(i); const v = getComputedStyle(i).color; i.remove(); return v; };
           const colours = new Set();
-          document.querySelectorAll('.box rect').forEach((r) => colours.add(r.getAttribute('stroke')));
-          document.querySelectorAll('.mk-veh.mk-vehicle').forEach((m) => colours.add(m.style.getPropertyValue('--c')));
-          document.querySelectorAll('.map-legend .sym-legend path').forEach((p) => colours.add(getComputedStyle(p).fill === 'rgb(56, 189, 248)' ? '#38bdf8' : getComputedStyle(p).fill));
+          document.querySelectorAll('.box rect').forEach((r) => colours.add(norm(r.getAttribute('stroke'))));
+          document.querySelectorAll('.mk-veh.mk-vehicle').forEach((m) => colours.add(norm(m.style.getPropertyValue('--c'))));
+          document.querySelectorAll('.map-legend .sym-legend path').forEach((p) => colours.add(getComputedStyle(p).fill));
           if (colours.size > 1) out.push('renkler: ' + [...colours].join(','));
           return out;
         }"""

@@ -174,7 +174,7 @@ export function ChatPanel({ open, onClose, imageId }: { open: boolean; onClose: 
               {m.turn && m.turn.tool_calls.length > 0 && (
                 <details className="tools">
                   <summary>
-                    🔧 {m.turn.tool_calls.length} kayıt sorgusu · {dec(m.turn.duration_ms / 1000)} sn
+                    {m.turn.tool_calls.length} kayıt sorgusu · {dec(m.turn.duration_ms / 1000)} sn
                   </summary>
                   <ul>
                     {m.turn.tool_calls.map((c, j) => (
@@ -197,7 +197,7 @@ export function ChatPanel({ open, onClose, imageId }: { open: boolean; onClose: 
                 <div className={`grounding ${m.turn.grounded ? "g-ok" : "g-warn"}`}>
                   {m.turn.grounded
                     ? "✓ Sayılar kayıtlarla doğrulandı"
-                    : `⚠ Doğrulanamayan değerler: ${m.turn.unverified.slice(0, 4).join(", ")}. Teyit edin.`}
+                    : `Doğrulanamayan değerler: ${m.turn.unverified.slice(0, 4).join(", ")}. Teyit edin.`}
                 </div>
               )}
               {m.error && i === msgs.length - 1 && lastQuestion && (

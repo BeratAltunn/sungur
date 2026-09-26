@@ -180,7 +180,7 @@ function ReportsTab({
               </td>
               <td>
                 <span className={`pill pill-dim ${r.source === "official" ? "" : "pill-3p"}`}>{SOURCE_TR[r.source]}</span>
-                {r.identity_claim && <span className="pill pill-warn">kimlik iddiası</span>}
+                {r.identity_claim && <span className="pill pill-strong">kimlik iddiası</span>}
               </td>
               <td>
                 <div className="report-text">{r.text}</div>
