@@ -3,7 +3,8 @@ import { ChatPanel } from "./components/ChatPanel";
 import { SummaryContext } from "./components/ui";
 import { api } from "./lib/api";
 import { storage } from "./lib/format";
-import type { Health, ShiftSummary, TriageRow } from "./lib/types";
+import type { Health, ShiftSummary, TriageRow, VehicleFocus } from "./lib/types";
+import { DRAG_TYPE, readDrag } from "./lib/vehicles";
 import { EscalationCard, HandoverPage } from "./pages/Handover";
 import { FramePage } from "./pages/Frame";
 import { ImpactPage } from "./pages/Impact";
@@ -49,6 +50,28 @@ export default function App() {
       return next;
     });
   }, []);
+  // A vehicle in the chat's focus (dragged in, or "Sor" on a vehicle chip) and the queue's selected frame.
+  const [chatFocus, setChatFocus] = useState<VehicleFocus | null>(null);
+  const [triageSel, setTriageSel] = useState<string | null>(null);
+  const focusVehicle = useCallback(
+    (f: VehicleFocus) => {
+      setChatFocus(f);
+      toggleChat(true);
+    },
+    [toggleChat],
+  );
+  useEffect(() => {
+    const on = (e: Event) => focusVehicle((e as CustomEvent<VehicleFocus>).detail);
+    window.addEventListener("sentinel:chat-focus", on);
+    return () => window.removeEventListener("sentinel:chat-focus", on);
+  }, [focusVehicle]);
+  // The chat's frame: the open frame, or the queue's selected one. Opening another frame drops a vehicle focus
+  // that belonged to a different frame.
+  const routeFrame = route.page === "frame" || route.page === "brief" ? route.id : null;
+  const pageFrame = routeFrame ?? (route.page === "triage" ? triageSel : null);
+  useEffect(() => {
+    if (routeFrame) setChatFocus((f) => (f && f.image_id !== routeFrame ? null : f));
+  }, [routeFrame]);
 
   // "/" opens the chat from anywhere (outside text fields).
   useEffect(() => {
@@ -107,14 +130,26 @@ export default function App() {
       ) : route.page === "impact" ? (
         <ImpactPage health={health} />
       ) : (
-        <TriagePage health={health} queue={queue} />
+        <TriagePage health={health} queue={queue} onSelect={setTriageSel} />
       )}
       {!chatOpen && (
-        <button className="chat-fab btn btn-primary" onClick={() => toggleChat(true)} title="Sohbeti aç (/)">
+        <button
+          className="chat-fab btn btn-primary"
+          onClick={() => toggleChat(true)}
+          title="Sohbeti aç (/) · bir aracı buraya sürükleyerek de açabilirsiniz"
+          onDragOver={(e) => {
+            if (e.dataTransfer.types.includes(DRAG_TYPE)) e.preventDefault();
+          }}
+          onDrop={(e) => {
+            const f = readDrag(e.dataTransfer);
+            document.body.classList.remove("dragging-vehicle");
+            if (f) focusVehicle(f);
+          }}
+        >
           Sohbet <kbd className="kbd">/</kbd>
         </button>
       )}
-      <ChatPanel open={chatOpen} onClose={() => toggleChat(false)} imageId={route.page === "frame" || route.page === "brief" ? route.id : null} />
+      <ChatPanel open={chatOpen} onClose={() => toggleChat(false)} imageId={pageFrame} focus={chatFocus} onFocus={setChatFocus} />
     </div>
     </SummaryContext.Provider>
   );

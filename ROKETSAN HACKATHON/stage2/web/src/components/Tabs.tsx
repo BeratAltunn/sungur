@@ -3,6 +3,8 @@ import { api } from "../lib/api";
 import { LABEL_TR, SOURCE_TR, STEP_TR, VERDICT_CLASS, dec, km, zoneName } from "../lib/format";
 import type { EvaluationResult, EvidencePacket, LiveRun, TraceStep, VerdictT } from "../lib/types";
 import { RefText, VerdictBadge } from "./ui";
+import { VehicleChip } from "./VehicleChip";
+import { anomalies } from "../lib/vehicles";
 
 export type TabId = "why" | "reports" | "vehicles" | "trace";
 
@@ -233,7 +235,7 @@ function VehiclesTab({ packet, onRef }: { packet: EvidencePacket; onRef: (id: st
           return (
             <tr key={v.ref}>
               <td>
-                <RefText text={`${v.ref} ${v.track_id ?? ""}`} onRef={onRef} />
+                {anomalies(v).length ? <VehicleChip imageId={packet.image_id} v={v} /> : <RefText text={`${v.ref} ${v.track_id ?? ""}`} onRef={onRef} />}
               </td>
               <td>
                 {LABEL_TR[v.label]} · {dec(v.conf, 2)}

@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, explain } from "../lib/api";
-import { dec, smooth, storage } from "../lib/format";
-import type { ChatTurn } from "../lib/types";
+import { LABEL_TR, dec, smooth, storage } from "../lib/format";
+import type { ChatTurn, Suggestion, VehicleFocus } from "../lib/types";
+import { DRAG_TYPE, readDrag } from "../lib/vehicles";
 import { RefText } from "./ui";
 
 interface Msg {
@@ -10,6 +11,7 @@ interface Msg {
   turn?: ChatTurn;
   error?: boolean;
   imageId?: string | null;
+  vehicle?: string | null; // "V7 · T0122" when a vehicle was in focus
 }
 
 const TOOL_TR: Record<string, string> = {
@@ -19,14 +21,6 @@ const TOOL_TR: Record<string, string> = {
   find_reports: "rapor ara",
   zone_summary: "bölge özeti",
 };
-
-const GENERAL = [
-  "En riskli 3 kare hangileri ve neden?",
-  "T0122 12:35'te neredeydi?",
-  "12:00–13:00 arasında hangi resmî raporlar kanıtla çelişiyor?",
-  "Doğu Yolu bölgesinde gün boyu kaç ağır araç görüldü?",
-];
-const IN_FRAME = ["Bu karedeki en riskli araç neden riskli?", "Bu karenin hangi raporları çelişiyor ve neden?"];
 
 /** Evidence chips in answers: frame ids navigate, V/T/R ids are handed to the open frame page. */
 export function emitRef(id: string) {
@@ -79,14 +73,34 @@ function Inline({ text }: { text: string }) {
   );
 }
 
-export function ChatPanel({ open, onClose, imageId }: { open: boolean; onClose: () => void; imageId: string | null }) {
+/** Chat with the evidence: the questions offered change with the situation (open frame, dragged vehicle,
+ *  last answer). `imageId` is the page's frame (the selected one on the queue); `focus` a dragged vehicle. */
+export function ChatPanel({
+  open,
+  onClose,
+  imageId,
+  focus,
+  onFocus,
+}: {
+  open: boolean;
+  onClose: () => void;
+  imageId: string | null;
+  focus: VehicleFocus | null;
+  onFocus: (f: VehicleFocus | null) => void;
+}) {
   const [msgs, setMsgs] = useState<Msg[]>(() => storage.get<Msg[]>("chat", []));
   const [input, setInput] = useState("");
   const [pending, setPending] = useState<number | null>(null); // start time
   const [elapsed, setElapsed] = useState(0);
+  const [situation, setSituation] = useState<Suggestion[]>([]);
+  const [dropping, setDropping] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  // A dragged vehicle brings its own frame; otherwise the page's frame; otherwise the whole queue.
+  const ctxImage = focus?.image_id ?? imageId;
+  const vehicleLabel = focus ? `${focus.ref}${focus.track_id ? ` · ${focus.track_id}` : ""}` : null;
 
   useEffect(() => storage.set("chat", msgs.slice(-40)), [msgs]);
   useEffect(() => {
@@ -94,49 +108,103 @@ export function ChatPanel({ open, onClose, imageId }: { open: boolean; onClose: 
   }, [msgs, pending]);
   useEffect(() => {
     if (open) inputRef.current?.focus();
-  }, [open]);
+  }, [open, focus]);
   useEffect(() => {
     if (pending === null) return;
     const h = window.setInterval(() => setElapsed(Math.round((Date.now() - pending) / 1000)), 500);
     return () => window.clearInterval(h);
   }, [pending]);
+  // Situation questions for the current context (rule-based on the server, no LLM call).
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    api
+      .suggestions(ctxImage, focus?.ref ?? null)
+      .then((r) => alive && setSituation(r.suggestions))
+      .catch(() => alive && setSituation([]));
+    return () => {
+      alive = false;
+    };
+  }, [open, ctxImage, focus?.ref]);
 
-  const send = async (question: string) => {
-    const q = question.trim();
-    if (!q || pending !== null) return;
-    const history = msgs.filter((m) => !m.error).slice(-8).map(({ role, content }) => ({ role, content }));
-    setMsgs((m) => [...m, { role: "user", content: q, imageId }]);
-    setInput("");
-    setElapsed(0);
-    setPending(Date.now());
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-    try {
-      const turn = await api.chat(q, history, imageId, ctrl.signal);
-      setMsgs((m) => [...m, { role: "assistant", content: turn.answer, turn, error: turn.note === "llm_hata" }]);
-    } catch (e) {
-      const content = ctrl.signal.aborted ? "Soru iptal edildi." : `Soru yanıtlanamadı. ${explain(e)}`;
-      setMsgs((m) => [...m, { role: "assistant", content, error: true }]);
-    } finally {
-      abortRef.current = null;
-      setPending(null);
-    }
-  };
+  const send = useCallback(
+    async (question: string) => {
+      const q = question.trim();
+      if (!q || pending !== null) return;
+      const history = msgs.filter((m) => !m.error).slice(-8).map(({ role, content }) => ({ role, content }));
+      setMsgs((m) => [...m, { role: "user", content: q, imageId: ctxImage, vehicle: vehicleLabel }]);
+      setInput("");
+      setElapsed(0);
+      setPending(Date.now());
+      const ctrl = new AbortController();
+      abortRef.current = ctrl;
+      try {
+        const turn = await api.chat(q, history, ctxImage, focus?.ref ?? null, ctrl.signal);
+        setMsgs((m) => [...m, { role: "assistant", content: turn.answer, turn, error: turn.note === "llm_hata" }]);
+      } catch (e) {
+        const content = ctrl.signal.aborted ? "Soru iptal edildi." : `Soru yanıtlanamadı. ${explain(e)}`;
+        setMsgs((m) => [...m, { role: "assistant", content, error: true }]);
+      } finally {
+        abortRef.current = null;
+        setPending(null);
+      }
+    },
+    [msgs, pending, ctxImage, focus?.ref, vehicleLabel],
+  );
 
-  // Suggestions not asked yet: shown when the chat is empty and as follow-ups under the last answer.
+  // Quick questions: the last answer's follow-ups (same context), else the situation questions; never one asked.
   const asked = new Set(msgs.filter((m) => m.role === "user").map((m) => m.content));
-  const suggestions = (imageId ? [...IN_FRAME, ...GENERAL.slice(1, 3)] : GENERAL).filter((s) => !asked.has(s));
+  const last = msgs[msgs.length - 1];
+  const lastUser = [...msgs].reverse().find((m) => m.role === "user");
+  const sameCtx = !!lastUser && (lastUser.imageId ?? null) === ctxImage && (lastUser.vehicle ?? null) === vehicleLabel;
+  const followups = last?.role === "assistant" && sameCtx ? (last.turn?.followups ?? []) : [];
+  const quick = (followups.length ? followups : situation).filter((s) => !asked.has(s.text)).slice(0, 4);
 
-  const lastQuestion = [...msgs].reverse().find((m) => m.role === "user")?.content;
+  // 1–4 asks a quick question (Alt+1–4 while typing, so a question may still start with a digit).
+  useEffect(() => {
+    if (!open) return;
+    const on = (e: KeyboardEvent) => {
+      const typing = (e.target as HTMLElement).tagName === "TEXTAREA" || (e.target as HTMLElement).tagName === "INPUT";
+      const m = e.code.match(/^Digit([1-4])$/);
+      if (!m || (typing && !e.altKey) || (!typing && (e.ctrlKey || e.metaKey))) return;
+      const inChat = (e.target as HTMLElement).closest?.(".chat");
+      if (!inChat && typing) return;
+      const s = quick[Number(m[1]) - 1];
+      if (!s) return;
+      e.preventDefault();
+      send(s.text);
+    };
+    window.addEventListener("keydown", on);
+    return () => window.removeEventListener("keydown", on);
+  }, [open, quick, send]);
+
+  const lastQuestion = lastUser?.content;
 
   if (!open) return null;
   return (
-    <aside className="chat" aria-label="Sohbet">
+    <aside
+      className={`chat ${dropping ? "chat-dropping" : ""}`}
+      aria-label="Sohbet"
+      onDragOver={(e) => {
+        if (!e.dataTransfer.types.includes(DRAG_TYPE)) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = "copy";
+        setDropping(true);
+      }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropping(false);
+      }}
+      onDrop={(e) => {
+        const f = readDrag(e.dataTransfer);
+        setDropping(false);
+        document.body.classList.remove("dragging-vehicle");
+        if (!f) return;
+        e.preventDefault();
+        onFocus(f);
+      }}
+    >
       <div className="chat-head">
-        <div>
-          <b>Sohbet</b>
-          <span className="muted small"> · {imageId ? `bağlam: ${imageId}` : "tüm veri"}</span>
-        </div>
+        <b>Sohbet</b>
         <div className="chat-head-actions">
           {msgs.length > 0 && (
             <button className="btn btn-ghost btn-sm" onClick={() => setMsgs([])} title="Konuşmayı temizle">
@@ -151,22 +219,17 @@ export function ChatPanel({ open, onClose, imageId }: { open: boolean; onClose: 
 
       <div className="chat-list" ref={listRef} role="log" aria-live="polite" aria-label="Sohbet geçmişi">
         {msgs.length === 0 && (
-          <div className="chat-empty">
-            <p className="muted">
-              Kareler, araçların geçmişi ve saha raporları hakkında soru sorun. Cevaptaki her sayı sistemin kayıtlarından gelir;
-              kimliklere tıklayarak kanıtı açabilirsiniz.
-            </p>
-            {suggestions.map((s) => (
-              <button key={s} className="suggestion" onClick={() => send(s)}>
-                {s}
-              </button>
-            ))}
-          </div>
+          <p className="muted chat-intro">
+            Kareler, araçların geçmişi ve saha raporları hakkında sorun. Cevaptaki her sayı sistemin kayıtlarından gelir.
+            Anormal bir aracı buraya sürükleyin: sorular o araca göre değişir.
+          </p>
         )}
         {msgs.map((m, i) =>
           m.role === "user" ? (
             <div key={i} className="msg msg-user">
-              {m.imageId && <span className="muted small mono">{m.imageId} · </span>}
+              {(m.imageId || m.vehicle) && (
+                <span className="muted small mono">{[m.imageId, m.vehicle].filter(Boolean).join(" · ")} · </span>
+              )}
               {m.content}
             </div>
           ) : (
@@ -201,24 +264,18 @@ export function ChatPanel({ open, onClose, imageId }: { open: boolean; onClose: 
                 </div>
               )}
               {m.error && i === msgs.length - 1 && lastQuestion && (
-                <button className="btn btn-ghost btn-sm" onClick={() => {
-                  setMsgs((x) => x.slice(0, -2));
-                  send(lastQuestion);
-                }}>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={() => {
+                    setMsgs((x) => x.slice(0, -2));
+                    send(lastQuestion);
+                  }}
+                >
                   Tekrar dene
                 </button>
               )}
             </div>
           ),
-        )}
-        {pending === null && msgs.length > 0 && msgs[msgs.length - 1].role === "assistant" && suggestions.length > 0 && (
-          <div className="followups" aria-label="Önerilen sorular">
-            {suggestions.slice(0, 2).map((s) => (
-              <button key={s} className="suggestion suggestion-sm" onClick={() => send(s)}>
-                {s}
-              </button>
-            ))}
-          </div>
         )}
         {pending !== null && (
           <div className="msg msg-bot msg-pending" role="status">
@@ -232,7 +289,7 @@ export function ChatPanel({ open, onClose, imageId }: { open: boolean; onClose: 
                   <span />
                 </div>
                 <p className="muted small">
-                  Yanıtlar genelde 5–45 sn sürer. Kanıt ekranda hazır; beklerken karede çalışmaya devam edebilirsiniz.
+                  Yanıtlar genelde 10–25 sn sürer. Kanıt ekranda hazır; beklerken karede çalışmaya devam edebilirsiniz.
                 </p>
               </>
             )}
@@ -241,8 +298,37 @@ export function ChatPanel({ open, onClose, imageId }: { open: boolean; onClose: 
             </button>
           </div>
         )}
+        {pending === null && quick.length > 0 && (
+          <div className="quick" aria-label={followups.length ? "Sıradaki sorular" : "Duruma göre sorular"}>
+            <span className="quick-title">{followups.length ? "Sıradaki sorular" : "Duruma göre sorular"}</span>
+            {quick.map((s, i) => (
+              <button key={s.text} className="suggestion" onClick={() => send(s.text)}>
+                <kbd className="kbd">{i + 1}</kbd>
+                <span className="quick-text">{s.text}</span>
+                <span className="quick-reason">{s.reason}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
+      {dropping && <div className="chat-drop">Aracı bırakın: sorular bu araca göre değişir</div>}
+
+      <div className="chat-context" aria-label="Sohbet bağlamı">
+        <span className="muted small">Bağlam:</span>
+        <span className="ctx-pill mono">{ctxImage ?? "tüm kareler"}</span>
+        {focus ? (
+          <span className="ctx-pill ctx-vehicle">
+            <b>{focus.ref}</b> {LABEL_TR[focus.label]}
+            {focus.track_id && <span className="mono"> · {focus.track_id}</span>}
+            <button className="ctx-clear" onClick={() => onFocus(null)} aria-label="Araç odağını kaldır">
+              ✕
+            </button>
+          </span>
+        ) : (
+          <span className="muted small">araç yok · bir aracı buraya sürükleyin</span>
+        )}
+      </div>
       <form
         className="chat-input"
         onSubmit={(e) => {
@@ -254,7 +340,7 @@ export function ChatPanel({ open, onClose, imageId }: { open: boolean; onClose: 
           ref={inputRef}
           rows={2}
           value={input}
-          placeholder={imageId ? "Bu kare hakkında sorun…" : "Bir soru sorun…"}
+          placeholder={focus ? `${focus.ref} hakkında sorun… (Alt+1–4: hazır soru)` : ctxImage ? "Bu kare hakkında sorun… (Alt+1–4: hazır soru)" : "Bir soru sorun… (Alt+1–4: hazır soru)"}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {

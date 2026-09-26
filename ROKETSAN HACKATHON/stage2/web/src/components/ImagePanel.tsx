@@ -1,5 +1,6 @@
 import { LABEL_TR, dec } from "../lib/format";
 import { levelColor, token } from "../lib/theme";
+import { DRAG_TYPE, toFocus } from "../lib/vehicles";
 import type { EvidencePacket, Level } from "../lib/types";
 
 /** Drone frame with detection boxes. Boxes are in image_meta pixel space, so the SVG uses that viewBox. */
@@ -62,8 +63,17 @@ export function ImagePanel({
           {packet.vehicles.map((v) => (
             <li
               key={v.ref}
-              className={v.track_id && v.track_id === focusTrack ? "active" : ""}
+              className={`${v.track_id && v.track_id === focusTrack ? "active" : ""} ${blind ? "" : "draggable"}`}
               onMouseEnter={() => onFocusTrack(v.track_id)}
+              // any vehicle can be dragged into the chat (not in blind labelling: no chat there)
+              draggable={!blind}
+              title={blind ? undefined : "Sohbete sürükleyin"}
+              onDragStart={(e) => {
+                e.dataTransfer.setData(DRAG_TYPE, JSON.stringify(toFocus(packet.image_id, v)));
+                e.dataTransfer.effectAllowed = "copy";
+                document.body.classList.add("dragging-vehicle");
+              }}
+              onDragEnd={() => document.body.classList.remove("dragging-vehicle")}
             >
               <span className="swatch" style={{ background: colorOf(v.ref) }} />
               <b>{v.ref}</b> {LABEL_TR[v.label]} · {v.track_id ?? "hareket kaydı yok"} · güven {dec(v.conf, 2)}

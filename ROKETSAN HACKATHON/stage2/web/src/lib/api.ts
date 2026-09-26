@@ -11,6 +11,7 @@ import type {
   MapContext,
   ShiftHandover,
   ShiftSummary,
+  Suggestion,
   TraceStep,
   TriageRow,
 } from "./types";
@@ -114,12 +115,25 @@ export const api = {
   /** Same run, streamed: step start/end, the packet after step 5, then the result. */
   evaluateStream: (id: string, live: boolean, onEvent: (ev: LiveEvent) => void) =>
     ndjson(`/api/frames/${id}/evaluate/stream?live=${live}`, { method: "POST" }, onEvent),
-  chat: (question: string, history: { role: string; content: string }[], imageId: string | null, signal?: AbortSignal) =>
+  chat: (
+    question: string,
+    history: { role: string; content: string }[],
+    imageId: string | null,
+    vehicleRef: string | null,
+    signal?: AbortSignal,
+  ) =>
     http<ChatTurn>("/api/chat", {
       method: "POST",
-      body: JSON.stringify({ question, history, image_id: imageId }),
+      body: JSON.stringify({ question, history, image_id: imageId, vehicle_ref: vehicleRef }),
       signal,
     }),
+  /** Questions for the situation: the frame (and dragged vehicle), or the queue when no frame is given. */
+  suggestions: (imageId: string | null, vehicleRef: string | null) => {
+    const q = new URLSearchParams();
+    if (imageId) q.set("image_id", imageId);
+    if (vehicleRef) q.set("vehicle_ref", vehicleRef);
+    return http<{ suggestions: Suggestion[] }>(`/api/chat/suggestions?${q}`);
+  },
   goldProgress: (labeler: string) =>
     http<{ labeler: string; done: Record<string, Level>; order: string[]; total: number }>(
       `/api/gold/${encodeURIComponent(labeler)}`,

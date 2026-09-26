@@ -191,6 +191,7 @@ class ChatIn(BaseModel):
     question: str
     history: list[dict] = []
     image_id: str | None = None
+    vehicle_ref: str | None = None  # a vehicle of image_id dragged into the chat (V7)
 
 
 @app.post("/api/chat")
@@ -199,8 +200,14 @@ def chat(body: ChatIn) -> dict:
     q = body.question.strip()
     if not q:
         raise HTTPException(422, "soru boş")
-    turn, run_id = svc().chat(q[:2000], body.history[-8:], body.image_id)
+    turn, run_id = svc().chat(q[:2000], body.history[-8:], body.image_id, body.vehicle_ref)
     return {**turn.model_dump(), "run_id": run_id}
+
+
+@app.get("/api/chat/suggestions")
+def chat_suggestions(image_id: str | None = None, vehicle_ref: str | None = None) -> dict:
+    """Questions for the current situation (rule-based, no LLM call)."""
+    return {"suggestions": [s.model_dump() for s in svc().chat_suggestions(image_id, vehicle_ref)]}
 
 
 class GoldIn(BaseModel):

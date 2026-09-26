@@ -5,17 +5,27 @@ import { LayerMenu, useLayers } from "../components/LayerMenu";
 import { MapView, fc, htmlMarker, line, setGeo } from "../components/MapView";
 import { LEVEL_LEGEND, VERDICT_LEGEND, baseSymbol } from "../lib/symbols";
 import { ReplayBar, useReplay } from "../components/Replay";
+import { AnomalyChips } from "../components/VehicleChip";
 import { DecisionPill, ErrorState, Kbd, LevelBadge, Loading, SummaryContext, TopBar } from "../components/ui";
 import { api } from "../lib/api";
 import { LEVELS, LEVEL_ACTION, LEVEL_CLASS, LEVEL_ICON, dec, km, secs, storage, zoneName } from "../lib/format";
 import { LEVEL_VAR, token } from "../lib/theme";
-import type { Health, Level, MapContext, ShiftSummary, TriageRow } from "../lib/types";
+import type { EvidencePacket, Health, Level, MapContext, ShiftSummary, TriageRow } from "../lib/types";
 
 /** An active alert: YÜKSEK/KRİTİK with no operator decision yet. These are the cards on top of the rail. */
 const isAlert = (r: TriageRow) => !r.decision && (r.level === "KRİTİK" || r.level === "YÜKSEK");
 const eta = (r: TriageRow) => (r.min_eta_min === null ? "yaklaşan yok" : `ETA ~${dec(r.min_eta_min)} dk`);
 
-export function TriagePage({ health, queue }: { health: Health | null; queue: TriageRow[] | null }) {
+export function TriagePage({
+  health,
+  queue,
+  onSelect,
+}: {
+  health: Health | null;
+  queue: TriageRow[] | null;
+  /** The selected frame is the chat's context on this screen. */
+  onSelect?: (imageId: string | null) => void;
+}) {
   const summary = useContext(SummaryContext);
   const [mapCtx, setMapCtx] = useState<MapContext | null>(null);
   const [error, setError] = useState<unknown>(null);
@@ -86,6 +96,8 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
   const nFilters = [zone, level, status].filter(Boolean).length;
 
   const selected = rows[cursor] ?? null;
+  useEffect(() => onSelect?.(selected?.image_id ?? null), [selected?.image_id, onSelect]);
+  useEffect(() => () => onSelect?.(null), [onSelect]);
 
   return (
     <div className="app">
@@ -369,6 +381,7 @@ function ShiftStrip({ summary, onReplay }: { summary: ShiftSummary; onReplay: ()
 
 /** Focus card: the selected frame in brief (headline, action, three facts); the frame page has the evidence. */
 function Preview({ row: r }: { row: TriageRow | null }) {
+  const packet = usePacket(r?.image_id ?? null);
   if (!r)
     return (
       <aside className="panel preview" aria-label="Seçili kare">
@@ -409,6 +422,7 @@ function Preview({ row: r }: { row: TriageRow | null }) {
         <button className="btn btn-primary preview-open" onClick={() => go(`/frame/${r.image_id}`)}>
           Kareyi aç → <Kbd>Enter</Kbd>
         </button>
+        {packet?.image_id === r.image_id && <AnomalyChips imageId={r.image_id} vehicles={packet.vehicles} max={4} />}
         <details className="preview-more">
           <summary>Görüntü ve skor</summary>
           <p className="muted small">Risk skoru {r.score} / 100</p>
@@ -417,6 +431,29 @@ function Preview({ row: r }: { row: TriageRow | null }) {
       </div>
     </aside>
   );
+}
+
+/** The selected frame's evidence packet (vehicles for the chat chips), fetched once per frame. */
+const packetCache = new Map<string, EvidencePacket>();
+function usePacket(imageId: string | null) {
+  const [packet, setPacket] = useState<EvidencePacket | null>(null);
+  useEffect(() => {
+    if (!imageId) return;
+    const hit = packetCache.get(imageId);
+    if (hit) return setPacket(hit);
+    let alive = true;
+    api
+      .packet(imageId)
+      .then((p) => {
+        packetCache.set(imageId, p);
+        if (alive) setPacket(p);
+      })
+      .catch(() => undefined);
+    return () => {
+      alive = false;
+    };
+  }, [imageId]);
+  return packet;
 }
 
 type OverviewLayer = "rings" | "zones" | "minor" | "decided";

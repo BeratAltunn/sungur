@@ -83,7 +83,14 @@ def test_chat_endpoint(client):
     r = client.post("/api/chat", json={"question": "Durum?", "image_id": "img_000860", "history": []})
     assert r.status_code == 200
     body = r.json()
-    assert {"answer", "tool_calls", "grounded", "run_id"} <= body.keys()
+    assert {"answer", "tool_calls", "grounded", "run_id", "followups"} <= body.keys()
+
+
+def test_chat_suggestions_endpoint(client):
+    frame = client.get("/api/chat/suggestions", params={"image_id": "img_000860"}).json()["suggestions"]
+    assert frame and {"text", "reason", "refs"} <= frame[0].keys()
+    queue = client.get("/api/chat/suggestions").json()["suggestions"]
+    assert queue and queue != frame
 
 
 def test_blind_labelling_endpoints(client, settings):

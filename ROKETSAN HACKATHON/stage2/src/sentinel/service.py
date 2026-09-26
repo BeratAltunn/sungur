@@ -484,16 +484,52 @@ class SentinelService:
         }
 
     # ================================================================ chat
-    def chat(self, question: str, history: list | None = None, image_id: str | None = None):
-        """One chat turn (tool-calling loop). history: [{role, content}] of the visible conversation."""
+    def chat(
+        self,
+        question: str,
+        history: list | None = None,
+        image_id: str | None = None,
+        focus_ref: str | None = None,
+    ):
+        """One chat turn (tool-calling loop). history: [{role, content}] of the visible conversation.
+        focus_ref: a vehicle of the open frame (V7) the operator dragged in; its track comes from the packet."""
+        from sentinel.agent import suggest
         from sentinel.agent.chat import ChatMessage
 
         run_id = new_run_id()
         msgs = [m if isinstance(m, ChatMessage) else ChatMessage.model_validate(m) for m in history or []]
         if image_id is not None and image_id not in self.repo.meta:
             image_id = None
-        turn = self.chat_agent.ask(question, msgs, image_id, Tracer(self.runs_dir, run_id, image_id))
+        vehicle = self._vehicle(image_id, focus_ref)
+        focus = (
+            f"{vehicle.ref} · {vehicle.track_id}"
+            if vehicle and vehicle.track_id
+            else vehicle.ref
+            if vehicle
+            else None
+        )
+        turn = self.chat_agent.ask(
+            question, msgs, image_id, Tracer(self.runs_dir, run_id, image_id), focus=focus
+        )
+        asked = [m.content for m in msgs if m.role == "user"] + [question]
+        base = self.chat_suggestions(image_id, vehicle.ref if vehicle else None, limit=8)
+        turn.followups = suggest.followups(base, turn.answer, asked, vehicle.ref if vehicle else None)
         return turn, run_id
+
+    def chat_suggestions(self, image_id: str | None = None, focus_ref: str | None = None, limit: int = 4):
+        """Questions that fit the situation: the open frame (or the dragged vehicle), else the queue."""
+        from sentinel.agent import suggest
+
+        if image_id is not None and image_id in self.repo.meta:
+            vehicle = self._vehicle(image_id, focus_ref)
+            return suggest.frame_suggestions(self.packet(image_id), vehicle.ref if vehicle else None, limit)
+        return suggest.general_suggestions(self.triage(), limit)
+
+    def _vehicle(self, image_id: str | None, ref: str | None):
+        """A vehicle of the frame by ref, or None (unknown refs are dropped, like unknown frames)."""
+        if not image_id or not ref or image_id not in self.repo.meta:
+            return None
+        return next((v for v in self.packet(image_id).vehicles if v.ref == ref), None)
 
     # ================================================================ blind gold-set labelling
     def record_gold(self, image_id: str, labeler: str, level: RiskLevel, note: str = "") -> dict:

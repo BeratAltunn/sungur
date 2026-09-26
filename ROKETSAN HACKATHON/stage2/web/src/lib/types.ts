@@ -357,4 +357,20 @@ export interface ChatTurn {
   duration_ms: number;
   note: string | null;
   run_id: string;
+  followups: Suggestion[];
+}
+
+/** A question that fits the situation (GET /api/chat/suggestions, or follow-ups of an answer). */
+export interface Suggestion {
+  text: string;
+  reason: string;
+  refs: string[];
+}
+
+/** A vehicle the operator drags into the chat: the frame and its ref; the track is resolved by the backend. */
+export interface VehicleFocus {
+  image_id: string;
+  ref: string;
+  track_id: string | null;
+  label: Label;
 }

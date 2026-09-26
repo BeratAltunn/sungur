@@ -176,3 +176,27 @@ def test_blind_labelling_never_shows_system_level(page: Page):
     )
     assert leaks == [], f"kör modda sistem çıktısı sızıyor: {leaks}"
     expect(page.locator(".posture")).to_have_count(0)  # the status bar posture would reveal levels
+
+
+def test_drag_vehicle_into_chat_changes_the_questions(page: Page):
+    page.goto(f"/#/frame/{DEMO}")
+    expect(page.locator(".brief .level")).to_be_visible()
+    page.get_by_role("button", name=re.compile("^Sohbet")).click()
+    quick = page.locator(".quick .suggestion")
+    expect(quick.first).to_be_visible()  # situation questions for the open frame, before any question
+    chip = page.locator(".col-left .vchip").filter(has_text="T0122")
+    ref = chip.locator("b").inner_text()  # V-number of the truck's track in this run
+    chip.drag_to(page.locator(".chat"))
+    expect(page.locator(".chat-context")).to_contain_text("T0122")
+    expect(quick.first).to_contain_text("T0122")  # the questions were refetched for the dragged vehicle
+    for q in quick.all_inner_texts():
+        assert "T0122" in q or ref in q, q  # every question is about that vehicle
+    first = quick.first.locator(".quick-text").inner_text()
+    page.keyboard.press("Alt+1")  # quick question from the keyboard, even with the cursor in the text box
+    expect(page.locator(".msg-user").last).to_contain_text(first)
+    expect(page.locator(".msg-user").last).to_contain_text("T0122")  # the question carried the vehicle
+    expect(page.locator(".msg-bot").last).to_contain_text("Kayıtlara göre")
+    expect(page.get_by_label("Sıradaki sorular")).to_be_visible()  # follow-ups keep the loop going
+    assert first not in page.locator(".quick").inner_text()
+    page.get_by_role("button", name="Araç odağını kaldır").click()
+    expect(page.locator(".chat-context")).not_to_contain_text("T0122")

@@ -80,6 +80,30 @@ def test_frame_context_and_history_are_passed(svc):
     assert msgs[1]["content"] == "önceki" and msgs[-1]["content"].startswith("[Açık kare: img_000860]")
 
 
+def test_dragged_vehicle_comes_after_the_frame_context(svc):
+    llm = Scripted("Tamam.")
+    agent(svc, llm).ask("Bu araç nereden geldi?", image_id="img_000860", focus="V4 · T0122")
+    assert (
+        llm.seen[0][-1]["content"]
+        == "[Açık kare: img_000860]\n[Odak araç: V4 · T0122]\nBu araç nereden geldi?"
+    )
+
+
+def test_service_resolves_the_focus_track_and_adds_followups(settings):
+    s = SentinelService(
+        settings, llm=Scripted(("get_track", {"track_id": "T0122"}), "T0122 üsse yaklaşıyor.")
+    )
+    ref = next(v.ref for v in s.packet("img_000860").vehicles if v.track_id == "T0122")
+    turn, _ = s.chat("Bu araç nereden geldi?", [], "img_000860", ref)
+    user = [m for m in s.chat_agent.llm.seen[0] if m["role"] == "user"][-1]["content"]
+    assert f"[Odak araç: {ref} · T0122]" in user  # the track comes from the packet, not the client
+    assert turn.followups and all(ref in f.refs for f in turn.followups)
+    # an unknown vehicle is dropped, like an unknown frame
+    s2 = SentinelService(settings, llm=Scripted("Tamam."))
+    s2.chat("Durum?", [], "img_000860", "V99")
+    assert "Odak araç" not in s2.chat_agent.llm.seen[0][-1]["content"]
+
+
 def test_tools_never_leak_absolute_coordinates(svc):
     tools = ChatTools(svc)
     out = json.dumps(
