@@ -233,3 +233,8 @@ ROKETSAN HACKATHON/*.pdf
 
 # Python şablonundaki "lib/" kuralı arayüz kodunu da yok sayar; geri aç
 !ROKETSAN HACKATHON/stage2/web/src/lib/
+
+# Resmî Aşama 2 paketi, Kaggle kontrol noktaları ve kökteki teslim klasörü: depoya girmez, ekip ayrıca paylaşır
+ROKETSAN HACKATHON/data/
+*.pth
+/stage2/

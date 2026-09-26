@@ -66,23 +66,32 @@ class Analyst:
             {"role": "user", "content": render_user_message(packet, masked)},
         ]
         if cache_only:
+            # replay the same conversation the live path would have had, correction round included
             peek = getattr(self.llm, "peek", None)
             with tracer.step(
                 "6_llm_önbellek", {"model": self.llm.model, "prompt": self.cfg.prompt_version}
             ) as st:
-                resp = peek(messages, json_mode=True) if peek else None
-                st["cache_hit"] = resp is not None
-                brief, _ = self._parse(resp.content, packet) if resp else (None, "")
-                if brief is not None:
-                    g = grounding.check(brief, packet, masked, self.cfg.max_level_deviation)
-                    st["grounding"] = {
-                        "checked": g.checked,
-                        "failed": g.failed,
-                        "unknown_refs": g.unknown_refs,
-                    }
-                    if g.passed:
-                        st["output_summary"] = {"seviye": brief.risk_level.value, "manşet": brief.headline}
-                        return BriefOutcome(brief, "llm_cache", g)
+                for _attempt in (1, 2):
+                    resp = peek(messages, json_mode=True) if peek else None
+                    st["cache_hit"] = resp is not None
+                    if resp is None:
+                        break
+                    brief, issue = self._parse(resp.content, packet)
+                    if brief is not None:
+                        g = grounding.check(brief, packet, masked, self.cfg.max_level_deviation)
+                        st["grounding"] = {
+                            "checked": g.checked,
+                            "failed": g.failed,
+                            "unknown_refs": g.unknown_refs,
+                        }
+                        if g.passed:
+                            st["output_summary"] = {
+                                "seviye": brief.risk_level.value,
+                                "manşet": brief.headline,
+                            }
+                            return BriefOutcome(brief, "llm_cache", g)
+                        issue = _grounding_feedback(g)
+                    messages = _with_correction(messages, resp.content, issue)
                 st["output_summary"] = {"sorun": "önbellekte geçerli yanıt yok"}
             return self._template(packet, masked, tracer, CACHE_MISS_NOTE)
         last_issue = ""
@@ -114,13 +123,7 @@ class Analyst:
                     issue = _grounding_feedback(g)
                 st["output_summary"] = {"sorun": issue}
                 last_issue = issue
-            messages = messages + [
-                {"role": "assistant", "content": resp.content or ""},
-                {
-                    "role": "user",
-                    "content": f"Brief reddedildi: {issue}\nKurallara uyarak JSON'u yeniden üret.",
-                },
-            ]
+            messages = _with_correction(messages, resp.content, issue)
         return self._template(
             packet, masked, tracer, f"LLM brief'i doğrulamadan geçemedi ({last_issue}); kural tabanlı brief"
         )
@@ -146,6 +149,13 @@ class Analyst:
             st["output_summary"] = {"seviye": b.risk_level.value, "manşet": b.headline}
             st["grounding"] = {"checked": g.checked, "failed": g.failed, "unknown_refs": g.unknown_refs}
         return BriefOutcome(b, "template", g, note)
+
+
+def _with_correction(messages: list[dict[str, Any]], answer: str | None, issue: str) -> list[dict[str, Any]]:
+    return messages + [
+        {"role": "assistant", "content": answer or ""},
+        {"role": "user", "content": f"Brief reddedildi: {issue}\nKurallara uyarak JSON'u yeniden üret."},
+    ]
 
 
 def _usage(r: LLMResponse, prompt_version: str) -> dict[str, Any]:

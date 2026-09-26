@@ -1,7 +1,7 @@
 # Aşama 2 geliştirme verisi (resmi değil)
 
 Bu klasördeki dosyalar, organizatörün sunumda (slayt 26) paylaştığı **Saha Haritası**
-sayfasına gömülü veriden yeniden üretildi. Resmi 2. aşama paketi Cumartesi dağıtılacak.
+sayfasına gömülü veriden yeniden üretildi. Resmi 2. aşama paketi sonra dağıtılacak.
 O gelene kadar pipeline'ı bu veriyle geliştirip test etmek için var.
 
 | Dosya | İçerik |

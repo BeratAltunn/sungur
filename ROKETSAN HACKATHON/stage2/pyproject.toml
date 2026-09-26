@@ -16,8 +16,9 @@ dependencies = [
 
 [project.optional-dependencies]
 ui = ["fastapi>=0.110", "uvicorn>=0.29"]
-detector = ["ultralytics>=8.2"]
+detector = ["ultralytics>=8.2", "transformers>=4.55,<4.56"]   # D-FINE yükleyicisi 4.55 ile test edildi (5.x ana sürüm, denenmedi)
 dev = ["pytest>=8.0", "ruff>=0.5"]
+e2e = ["playwright>=1.45"]   # tests/ui: sistem Chrome'u kullanır (channel="chrome")
 
 [project.scripts]
 sentinel = "sentinel.interfaces.cli:main"

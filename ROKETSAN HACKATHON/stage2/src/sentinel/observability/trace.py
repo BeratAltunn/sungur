@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import time
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
@@ -16,12 +16,23 @@ def new_run_id() -> str:
     return f"{datetime.now():%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:6]}"
 
 
+# listener(kind, payload): kind is "start" ({"step": name}) or "step" (the finished record).
+TraceListener = Callable[[str, dict[str, Any]], None]
+
+
 class Tracer:
-    def __init__(self, runs_dir: Path | None, run_id: str, image_id: str | None = None):
+    def __init__(
+        self,
+        runs_dir: Path | None,
+        run_id: str,
+        image_id: str | None = None,
+        listener: TraceListener | None = None,
+    ):
         self.run_id = run_id
         self.image_id = image_id
         self.path = Path(runs_dir) / "trace.jsonl" if runs_dir else None
         self.steps: list[dict[str, Any]] = []
+        self.listener = listener  # live progress (the UI's step-by-step run); never affects the result
 
     @contextmanager
     def step(self, name: str, input_summary: Any = None) -> Iterator[dict[str, Any]]:
@@ -35,6 +46,8 @@ class Tracer:
             "error": None,
         }
         t0 = time.perf_counter()
+        if self.listener:
+            self.listener("start", {"step": name})
         try:
             yield rec
         except Exception as e:
@@ -42,9 +55,11 @@ class Tracer:
             raise
         finally:
             rec["duration_ms"] = round((time.perf_counter() - t0) * 1000, 2)
-            rec["at"] = datetime.now().isoformat(timespec="seconds")
+            rec["at"] = datetime.now().astimezone().isoformat(timespec="seconds")
             self.steps.append(rec)
             self._write(rec)
+            if self.listener:
+                self.listener("step", rec)
 
     def _write(self, rec: dict[str, Any]) -> None:
         if self.path is None:

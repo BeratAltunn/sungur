@@ -386,6 +386,16 @@ class EvaluationResult(BaseModel):
     timings_ms: dict[str, float] = Field(default_factory=dict)
 
 
+class OperatorDecision(BaseModel):
+    decision_id: str
+    run_id: str
+    image_id: str
+    action: Literal["approve", "override", "escalate", "undo"]
+    level: RiskLevel | None = None
+    reason: str = ""
+    at: str
+
+
 class TriageRow(BaseModel):
     image_id: str
     zone: str
@@ -397,13 +407,10 @@ class TriageRow(BaseModel):
     n_vehicles: int
     reports_contradicted: int
     reports_confirmed: int
-
-
-class OperatorDecision(BaseModel):
-    decision_id: str
-    run_id: str
-    image_id: str
-    action: Literal["approve", "override", "escalate", "undo"]
-    level: RiskLevel | None = None
-    reason: str = ""
-    at: str
+    # Queue scanability (added for the operator row; all from the packet, nothing new is computed)
+    min_eta_min: float | None = Field(None, description="yaklaşan araçlar arasında en kısa ETA")
+    n_approaching: int = 0
+    n_heavy: int = Field(0, description="kamyon/otobüs sayısı")
+    decision: OperatorDecision | None = Field(
+        None, description="operatörün geçerli kararı (geri alınanlar düşülür)"
+    )

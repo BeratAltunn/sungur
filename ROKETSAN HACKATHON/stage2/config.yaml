@@ -1,11 +1,11 @@
 # NÖBETÇİ yapılandırması. Yollar bu dosyanın klasörüne göre çözülür.
 # Sabit kodlanmış eşik yok: tüm eşikler ve ağırlıklar burada.
 
-data_dir: ../stage2_dev_data        # resmi paket gelince: data/
+data_dir: ../data                   # resmî Aşama 2 paketi (git'e girmez); dev verisi: ../stage2_dev_data
 images_subdir: images
 
 detector:
-  kind: ultralytics                 # oracle (test) | ultralytics (geçici yolov8n / Kaggle .pt) | callable
+  kind: dfine                       # oracle (test) | dfine (Kaggle ekibinin modeli) | ultralytics (yedek yolov8n) | callable
   cache: true
   cache_dir: cache/detections
   tau_op: 0.4                       # operasyonel eşik (Kaggle eşiğinden ayrı)
@@ -20,6 +20,12 @@ detector:
     min_conf: 0.05                  # τ_op altı kutular "düşük güven" katmanına düşer, silinmez
     agnostic_nms: true              # aynı araca çizilen car+bus çift kutularını birleştir
     class_map: {car: car, van: van, truck: truck, bus: bus}
+  dfine:                            # Kaggle ekibinin D-FINE-M modeli (EMA ağırlıkları, git'e girmez), transformers ile
+    weights: models/dfine_m_kaggle.pth
+    input_size: [800, 1408]         # (h, w) eğitim boyutu; çapa ızgarasından çıkarıldı, Ekip-1 teyit etti (cv2 düz gerdirme, letterbox yok)
+    class_names: [car, truck, van, bus]   # indeks sırası; yarışma sayfasındaki sıradan FARKLI (Ekip-1 teyit etti)
+    device: null                    # null → otomatik (mps/cuda/cpu)
+    min_conf: 0.05                  # τ_op altı kutular "düşük güven" katmanına düşer, silinmez
   callable:
     target: null                    # "paket.modul:predict" → predict(path) -> [(label, conf, x, y, w, h)]
 
@@ -75,7 +81,7 @@ risk:
 
 llm:
   provider: openai_compat           # openai_compat (GLM, anahtar yoksa şablon brief) | mock (test)
-  prompt_version: analyst_v2
+  prompt_version: analyst_v3
   temperature: 0.2
   max_tokens: 3000
   reasoning_effort: low             # düşünen modeller (glm-5.3) bütçeyi düşünmeye harcamasın; null = gönderme
@@ -90,3 +96,27 @@ llm:
 
 observability:
   runs_dir: runs
+  labels_dir: calibration/labels    # kör altın set etiketleri (git'e girer, ekip paylaşır)
+
+# Canlı demonun dayandığı şeyler (make demo-check korur). Senaryo: DEMO.md
+impact:                             # vardiya simülasyonu (#/impact, triage'da oynatma); model, kanıt değil
+  manual_min_assumed: 6.0           # elle kare başına dk (tasarım V5); kronometre ölçümü ≥ 3 ise o kullanılır
+  system_min_assumed: 1.0           # sistemle kare başına dk; açılış→karar ölçümü ya da kronometre ≥ 3 ise o
+  min_measurements: 3
+
+demo:
+  frames:
+    img_000860: KRİTİK              # ana kare: 4 araçlık konvoy, kamyon T0122, ETA ~4,5 dk
+    img_001733: DÜŞÜK               # karşıt kare: üsse 2,7 km, yaklaşan yok; 13:40 "kamyon" raporu tespitle çelişiyor
+  contradicted:
+    img_000860: [R119, R125]        # aha anı: 12:25 "bize bağlı otomobil", 12:35 "hareketleri olağan"
+    img_001733: [R042]              # rapor "yüklü kamyon" diyor, T0206 görüntüde otomobil: rapor tehdidi abartıyor
+  no_contradiction: []
+  chat:                             # yalnızca `demo-check --chat` ile (LLM çağırır)
+    - question: "Bu karedeki en riskli araç neden riskli?"
+      image_id: img_000860
+    - question: "Bu karedeki kamyon neden riskli?"   # demo sorusu: 4 araç 100 puanda eşit, anlatı kamyon üzerine
+      image_id: img_000860
+    - question: "T0122 12:35'te neredeydi?"
+  chat_max_s: 45
+

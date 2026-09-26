@@ -65,6 +65,16 @@ def test_detector_falls_back_to_cache_when_model_missing(settings, repo, tmp_pat
         d.detect(repo.image_path("img_004530"))
 
 
+def test_detection_cache_is_keyed_by_data_package(settings, tmp_path):
+    # same image ids, different pixels (dev 900x506 vs. official native): boxes must not be reused
+    other = tmp_path / "pkg"
+    other.mkdir()
+    (other / "image_meta.json").write_text("{}")
+    s = settings.model_copy(deep=True)
+    s.data_dir = other
+    assert _name_and_params(s) != _name_and_params(settings)
+
+
 def test_adaptive_gate_matches_big_box_but_not_small():
     m = TrackMatcher(gate_m=10)
     det = np.array([[0.0, 0.0], [100.0, 0.0]])

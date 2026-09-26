@@ -27,8 +27,18 @@ class CallableCfg(BaseModel):
     target: str | None = None
 
 
+class DFineCfg(BaseModel):
+    """Kaggle team's D-FINE checkpoint (original D-FINE/DEIM format), run via transformers."""
+
+    weights: str = "models/dfine_m_kaggle.pth"
+    input_size: tuple[int, int] = (800, 1408)  # (h, w) the model was trained at; pinned by its anchors
+    class_names: list[str] = Field(default_factory=lambda: ["car", "truck", "van", "bus"])  # index order
+    device: str | None = None
+    min_conf: float = 0.05
+
+
 class DetectorCfg(BaseModel):
-    kind: Literal["oracle", "ultralytics", "callable"] = "oracle"
+    kind: Literal["oracle", "ultralytics", "dfine", "callable"] = "oracle"
     cache: bool = True
     cache_dir: Path = Path("cache/detections")
     tau_op: float = 0.4
@@ -36,6 +46,7 @@ class DetectorCfg(BaseModel):
     # longest box side on the ground; None = off (dev frames' pixel scale does not match their corners)
     plausible_size_m: tuple[float, float] | None = None
     ultralytics: UltralyticsCfg = Field(default_factory=UltralyticsCfg)
+    dfine: DFineCfg = Field(default_factory=DFineCfg)
     callable: CallableCfg = Field(default_factory=CallableCfg)
 
 
@@ -97,7 +108,7 @@ class RiskCfg(BaseModel):
 
 class LLMCfg(BaseModel):
     provider: Literal["mock", "openai_compat"] = "mock"
-    prompt_version: str = "analyst_v2"
+    prompt_version: str = "analyst_v3"
     temperature: float = 0.2
     max_tokens: int = 3000
     # reasoning models (glm-5.3) otherwise spend the whole token budget thinking; null = don't send
@@ -112,8 +123,34 @@ class LLMCfg(BaseModel):
     max_level_deviation: int = 1
 
 
+class DemoChatQ(BaseModel):
+    question: str
+    image_id: str | None = None
+
+
+class DemoCfg(BaseModel):
+    """What `make demo-check` guards: the frames, reports and chat questions the live demo relies on."""
+
+    frames: dict[str, str] = Field(default_factory=lambda: {"img_000860": "KRİTİK"})
+    contradicted: dict[str, list[str]] = Field(default_factory=dict)  # frame → reports that must be ÇELİŞİYOR
+    no_contradiction: list[str] = Field(default_factory=list)  # frames whose reports must not contradict
+    chat: list[DemoChatQ] = Field(default_factory=list)
+    chat_max_s: float = 45.0
+
+
+class ImpactCfg(BaseModel):
+    """Shift simulation (#/impact, triage replay). Measured handling times win over these assumptions:
+    manual ← calibration/stopwatch.csv (mode=manual); system ← opening→decision log, else stopwatch (mode=system)."""
+
+    manual_min_assumed: float = 6.0  # PROJECT_DESIGN §1.2, Varsayım V5
+    system_min_assumed: float = 1.0  # §1.4
+    min_measurements: int = 3
+    stopwatch_file: Path = Path("calibration/stopwatch.csv")
+
+
 class ObservabilityCfg(BaseModel):
     runs_dir: Path = Path("runs")
+    labels_dir: Path = Path("calibration/labels")  # blind gold-set labels (committed to git)
 
 
 class Settings(BaseModel):
@@ -126,6 +163,8 @@ class Settings(BaseModel):
     risk: RiskCfg = Field(default_factory=RiskCfg)
     llm: LLMCfg = Field(default_factory=LLMCfg)
     observability: ObservabilityCfg = Field(default_factory=ObservabilityCfg)
+    demo: DemoCfg = Field(default_factory=DemoCfg)
+    impact: ImpactCfg = Field(default_factory=ImpactCfg)
 
     def path(self, p: Path | str) -> Path:
         """Resolve a config-relative path."""

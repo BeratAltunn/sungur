@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { api } from "../lib/api";
-import { LEVELS, LEVEL_ICON, zoneName } from "../lib/format";
+import { api, explain } from "../lib/api";
+import { DECISION_TR, LEVELS, LEVEL_COLOR, LEVEL_ICON, zoneName } from "../lib/format";
 import type { Decision, EvaluationResult, Level } from "../lib/types";
-import { Kbd, LevelBadge, RefText } from "./ui";
+import { Kbd, LevelBadge, RefText, useSlow } from "./ui";
 
 const SOURCE_TR = { llm: "LLM", llm_cache: "LLM (önbellek)", template: "Kural tabanlı şablon" } as const;
 
@@ -10,10 +10,13 @@ export function BriefPanel({
   res,
   onRef,
   activeRef,
+  onRetryLLM,
 }: {
   res: EvaluationResult | null;
   onRef: (id: string) => void;
   activeRef: string | null;
+  /** Template brief (LLM unreachable, budget, grounding): ask the LLM again. Level and evidence do not change. */
+  onRetryLLM?: () => void;
 }) {
   if (!res) return <BriefSkeleton />;
   const { brief: b, packet: p, grounding: g } = res;
@@ -37,7 +40,7 @@ export function BriefPanel({
       <h1 className="headline">
         <RefText text={b.headline} onRef={onRef} active={activeRef} />
       </h1>
-      <div className="action" role="note">
+      <div className="action" role="note" style={{ ["--act" as string]: LEVEL_COLOR[b.risk_level] }}>
         <span className="action-label">Önerilen eylem</span>
         {b.recommended_action}
       </div>
@@ -58,6 +61,11 @@ export function BriefPanel({
         </span>
       </div>
       {res.llm_note && <p className="muted small">{res.llm_note}</p>}
+      {res.brief_source === "template" && onRetryLLM && (
+        <button className="btn btn-ghost btn-sm" onClick={onRetryLLM} title="Seviye ve kanıt değişmez; yalnızca brief metni yeniden yazılır">
+          ↻ LLM ile tekrar dene
+        </button>
+      )}
       {b.uncertainties.length > 0 && (
         <details className="uncertain" open>
           <summary>Belirsizlikler ({b.uncertainties.length})</summary>
@@ -114,6 +122,7 @@ export function DecisionBar({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const slow = useSlow(busy);
   if (!res) return null;
   const id = res.packet.image_id;
 
@@ -126,7 +135,7 @@ export function DecisionBar({
       setOverriding(false);
       setReason("");
     } catch (e) {
-      setErr(String((e as Error).message));
+      setErr(explain(e));
     } finally {
       setBusy(false);
     }
@@ -145,7 +154,7 @@ export function DecisionBar({
     } catch {
       /* clipboard may be blocked; the decision is still recorded */
     }
-    await send("escalate", {}, "Amire iletildi · brief panoya kopyalandı");
+    await send("escalate", {}, "Amire iletildi · brief panoya kopyalandı · yazdırılabilir kart: 🖨 Eskalasyon kartı");
   };
 
   return (
@@ -169,6 +178,11 @@ export function DecisionBar({
         <button className="btn btn-ghost" disabled={busy} onClick={() => send("undo", {}, "Son karar geri alındı")}>
           Geri al
         </button>
+      )}
+      {decision?.action === "escalate" && (
+        <a className="btn btn-ghost" href={`#/brief/${id}`} title="Amir için yazdırılabilir eskalasyon kartı">
+          🖨 Eskalasyon kartı
+        </a>
       )}
       {overriding && (
         <form
@@ -197,9 +211,13 @@ export function DecisionBar({
           </button>
         </form>
       )}
+      {slow && (
+        <span className="muted small" role="status">
+          <span className="spinner" aria-hidden /> İşleniyor…
+        </span>
+      )}
       {err && <span className="err">{err}</span>}
     </div>
   );
 }
 
-const DECISION_TR = { approve: "onaylandı", override: "seviye değişti", escalate: "amire iletildi", undo: "geri alındı" };

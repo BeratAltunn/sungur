@@ -1,9 +1,11 @@
 import type { Map as MLMap, Marker } from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
-import { LEVEL_COLOR, VERDICT_CLASS, VERDICT_ICON, hhmm, scoreLevel } from "../lib/format";
+import { LEVEL_COLOR, SOURCE_TR, VERDICT_CLASS, VERDICT_ICON, dec, flyMs, hhmm } from "../lib/format";
+import { baseSymbol, vehicleSymbol } from "../lib/symbols";
 import { bounds, circle, fullPath, pathUntil, positionAt } from "../lib/geo";
-import type { FrameInfo, FrameTracks, LngLat, MapContext, TrackPath } from "../lib/types";
+import type { FrameInfo, FrameTracks, LngLat, MapContext, ReportVerification, TrackPath } from "../lib/types";
 import { MapView, fc, htmlMarker, line, polygon, setGeo } from "./MapView";
+import { RefText, VerdictBadge } from "./ui";
 
 export type Focus = { kind: "track"; id: string } | { kind: "report"; id: string } | null;
 
@@ -15,12 +17,19 @@ interface Props {
   t: number;
   focus: Focus;
   onFocus: (f: Focus) => void;
+  /** Blind labelling: vehicle paths in one neutral colour (colours would reveal scores). */
+  blind?: boolean;
 }
 
-const trackColor = (tr: TrackPath) =>
-  tr.role === "vehicle" ? LEVEL_COLOR[scoreLevel(tr.score ?? 0)] : tr.role === "undetected" ? "#94a3b8" : "#64748b";
-
-export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus }: Props) {
+export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind = false }: Props) {
+  const trackColor = (tr: TrackPath) =>
+    tr.role === "vehicle"
+      ? blind
+        ? "#38bdf8"
+        : (tr.level ? LEVEL_COLOR[tr.level] : "#64748b")
+      : tr.role === "undetected"
+        ? "#94a3b8"
+        : "#475569"; // report-related tracks: white label on this slate is 7.6:1
   const mapRef = useRef<MLMap | null>(null);
   const vehicleMarkers = useRef<Record<string, Marker>>({});
   const pinMarkers = useRef<Record<string, Marker>>({});
@@ -35,9 +44,9 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus }: Prop
     const map = mapRef.current;
     if (!map) return;
     const pts: LngLat[] = [...frameCorners, ...data.tracks.flatMap((tr) => fullPath(tr.points))];
-    map.fitBounds(bounds(pts), { padding: 48, duration: 600, maxZoom: 16 });
+    map.fitBounds(bounds(pts), { padding: 48, duration: flyMs(600), maxZoom: 16 });
   };
-  const fitFrame = () => mapRef.current?.fitBounds(bounds(frameCorners), { padding: 24, duration: 600 });
+  const fitFrame = () => mapRef.current?.fitBounds(bounds(frameCorners), { padding: 24, duration: flyMs(600) });
 
   const onReady = (map: MLMap) => {
     mapRef.current = map;
@@ -75,10 +84,19 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus }: Prop
       paint: { "line-color": "#f8fafc", "line-width": 1, "line-dasharray": [2, 2], "line-opacity": 0.8 },
     });
 
-    htmlMarker(map, ctx.base.center, `<span>◆</span><b>${ctx.base.name}</b>`, "mk mk-base");
+    // Projection vectors (vehicle at capture → base), drawn under the markers.
+    setGeo(map, "projections", fc([]));
+    map.addLayer({
+      id: "projections",
+      type: "line",
+      source: "projections",
+      paint: { "line-color": ["get", "color"], "line-width": 2, "line-dasharray": [1.5, 1.5], "line-opacity": 0.9 },
+    });
+
+    htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base");
     for (const tr of data.tracks) {
       const label = tr.vehicle_ref ? `${tr.vehicle_ref}` : tr.track_id;
-      const m = htmlMarker(map, [0, 0], label, `mk mk-veh mk-${tr.role}`, () => onFocusRef.current({ kind: "track", id: tr.track_id }));
+      const m = htmlMarker(map, [0, 0], vehicleSymbol(label), `mk mk-veh mk-${tr.role}`, () => onFocusRef.current({ kind: "track", id: tr.track_id }));
       m.getElement().style.setProperty("--c", trackColor(tr));
       m.getElement().title = `${tr.vehicle_ref ?? ""} ${tr.track_id}`.trim();
       vehicleMarkers.current[tr.track_id] = m;
@@ -143,7 +161,21 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus }: Prop
       setGeo(map, "links", fc([]));
     }
     for (const [id, m] of Object.entries(pinMarkers.current)) m.getElement().classList.toggle("mk-focus", id === pin?.report_id);
-  }, [t, focusedTrack, pin, data, ready]);
+    // Projection is from the capture moment: shown only when the slider is there.
+    const atCapture = t >= data.window.end;
+    setGeo(
+      map,
+      "projections",
+      fc(
+        atCapture
+          ? data.projections.map((p) =>
+              line([[p.lon, p.lat], ctx.base.center], { color: blind ? "#d4d8dd" : LEVEL_COLOR[p.level] }),
+            )
+          : [],
+      ),
+    );
+
+  }, [t, focusedTrack, pin, data, ready, blind, ctx]);
 
   // Focusing a report frames the pin and its vehicles so the gap is visible at a glance.
   useEffect(() => {
@@ -155,12 +187,38 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus }: Prop
         const p = positionAt(tr.points, pin.t_min);
         if (p) pts.push(p);
       }
-    map.fitBounds(bounds(pts), { padding: 70, duration: 700, maxZoom: 15 });
+    map.fitBounds(bounds(pts), { padding: 70, duration: flyMs(700), maxZoom: 15 });
   }, [pin, data]);
 
   return (
     <div className="frame-map">
       <MapView onReady={onReady} initial={{ center: [frame.center_lon, frame.center_lat], zoom: 13 }} />
+      {/* Projection readout (HUD): the soonest arrival, first in the backend's order; vectors are on the map. */}
+      {data.projections.length > 0 && (
+        <div className={`map-hud ${t >= data.window.end ? "" : "map-hud-off"}`} role="status">
+          <span className="legend-dash" aria-hidden />
+          {data.projections.length > 1 ? `${data.projections.length} araç üsse yaklaşıyor · ` : ""}
+          en kısa ETA <b>~{dec(data.projections[0].eta_min)} dk</b> ({data.projections[0].vehicle_ref})
+          {t < data.window.end && <span className="muted"> · çekim anında geçerli</span>}
+        </div>
+      )}
+      <div className={`map-legend ${blind ? "map-legend-blind" : ""}`} aria-label="Harita işaretleri">
+        <span>
+          <span className="sym-base sym-base-sm" aria-hidden>
+            ÜS
+          </span>{" "}
+          dost (üs)
+        </span>
+        <span>
+          <svg className="sym sym-legend" viewBox="-1 -1 22 22" aria-hidden>
+            <path d="M6,6 A4.3,4.3 0 1 1 14,6 A4.3,4.3 0 1 1 14,14 A4.3,4.3 0 1 1 6,14 A4.3,4.3 0 1 1 6,6 Z" />
+          </svg>{" "}
+          araç: kimliği belirsiz{blind ? "" : ", renk = risk"}
+        </span>
+        <span>
+          <span className="legend-dash" aria-hidden /> tahmini varış (çekim anı)
+        </span>
+      </div>
       <div className="map-actions">
         <button className="btn btn-ghost btn-sm" onClick={fitAll}>
           Tüm izler
@@ -169,6 +227,47 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus }: Prop
           Kareye odaklan
         </button>
       </div>
+    </div>
+  );
+}
+
+/** The focused report on the map: what it claims and the verifier's verdict at the report's own time.
+ *  Text and reason come verbatim from the evidence packet; nothing is computed here. */
+export function ReportCallout({
+  report,
+  atReportTime,
+  onSeek,
+  onClose,
+  onRef,
+}: {
+  report: ReportVerification;
+  atReportTime: boolean;
+  onSeek: () => void;
+  onClose: () => void;
+  onRef: (id: string) => void;
+}) {
+  return (
+    <div className={`callout ${VERDICT_CLASS[report.verdict]}-callout`} role="status" aria-live="polite">
+      <div className="callout-head">
+        <VerdictBadge verdict={report.verdict} />
+        <span className="mono">
+          {report.report_id} · {report.time}
+        </span>
+        <span className={`pill pill-dim ${report.source === "official" ? "" : "pill-3p"}`}>{SOURCE_TR[report.source]}</span>
+        {report.identity_claim && <span className="pill pill-warn">kimlik iddiası</span>}
+        <button className="btn btn-ghost btn-sm callout-close" onClick={onClose} aria-label="Raporu kapat">
+          ✕
+        </button>
+      </div>
+      <p className="callout-text">“{report.text}”</p>
+      <p className="callout-reason">
+        → <RefText text={report.reason} onRef={onRef} />
+      </p>
+      {!atReportTime && (
+        <button className="btn btn-ghost btn-sm" onClick={onSeek}>
+          ⟲ Rapor saatine git ({report.time})
+        </button>
+      )}
     </div>
   );
 }
