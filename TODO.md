@@ -21,7 +21,7 @@ Komutlar `ROKETSAN HACKATHON/stage2` içinden çalışır; kurulum için köktek
 - Docker ortamı, `AGENTS.md`
 - Kalibrasyon altyapısı: `make calibrate` (etiketleyici uyumu, karışıklık matrisi, recall / yanlış alarm, ±%20 duyarlılık)
 - Kör etiketleme modu: `http://127.0.0.1:8000/#/label`
-- Demo senaryosu: `stage2/DEMO.md`, `config.yaml → demo` (ana kare img_000860 KRİTİK, karşıt kare img_006388 ORTA), `make demo-check`, `make demo-check-chat`
+- Demo senaryosu: `stage2/DEMO.md`, `config.yaml → demo` (ana kare img_000860 KRİTİK, karşıt kare img_001733 DÜŞÜK), `make demo-check`, `make demo-check-chat`
 - Kronometre aracı: `scripts/stopwatch.py`
 - Arayüz duman testi: `make ui-test` (Playwright + sistem Chrome'u; demo yolu ve kör modda seviye sızmaması)
 - Arayüz/UX turu: aha rapor kartı, ETA'lı sıkı kuyruk, kuyrukta kararlar + "Sonraki bekleyen" (N), canlı değerlendirmede adım adım ilerleme, sohbette iptal/takip soruları, kare arama

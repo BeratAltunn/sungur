@@ -1,7 +1,8 @@
 # NÖBETÇİ: web arayüzü + API tek imajda.
-# Derleme bağlamı "ROKETSAN HACKATHON/" klasörüdür (stage2 + stage2_dev_data gerekir):
+# Derleme bağlamı "ROKETSAN HACKATHON/" klasörüdür (stage2 + stage2_dev_data gerekir; .dockerignore'a bak):
 #   docker compose -f stage2/docker-compose.yml up --build
-# Not: Docker içinde Apple GPU (MPS) yoktur; YOLO CPU'da çalışır. Tespitler önbellekte olduğu için
+# Resmî veri paketi ve D-FINE ağırlıkları imaja girmez, docker-compose.yml volume ile bağlar.
+# Not: Docker içinde Apple GPU (MPS) yoktur; D-FINE CPU'da çalışır. Tespitler önbellekte olduğu için
 # demo akışı etkilenmez, yalnızca "canlı yeniden değerlendir" birkaç saniye sürer.
 
 # ---------------------------------------------------------------- 1) arayüz derlemesi
@@ -40,7 +41,7 @@ print("\n".join(deps))
 EOF
 RUN pip install -r /tmp/requirements.txt
 
-# Geçici tespit modeli: Ultralytics'in resmî COCO ağırlıkları (depoda tutulmuyor)
+# Yedek tespit modeli: Ultralytics'in resmî COCO ağırlıkları (depoda tutulmuyor)
 RUN mkdir -p models \
  && python -c "from ultralytics import YOLO; YOLO('models/yolov8n.pt')" \
  && test -f models/yolov8n.pt

@@ -4,7 +4,7 @@ import json
 
 from sentinel.agent import grounding
 from sentinel.agent.analyst import Analyst
-from sentinel.agent.llm import LLMError, MockLLM, default_mock_responder, extract_packet
+from sentinel.agent.llm import CachedLLM, LLMError, MockLLM, default_mock_responder, extract_packet
 from sentinel.agent.masking import mask_packet
 from sentinel.agent.template import template_brief
 from sentinel.domain.models import RiskLevel, Verdict
@@ -90,6 +90,23 @@ def test_llm_fixed_on_retry_is_accepted(settings, packet_860):
     assert out.source == "llm" and len(calls) == 2
 
 
+def test_cache_replays_the_correction_round(settings, packet_860, tmp_path):
+    # a brief that passed only after the correction round must also open from cache (demo previews)
+    calls = []
+
+    def flaky(messages, json_mode, tools):
+        calls.append(1)
+        d = json.loads(default_mock_responder(messages, json_mode, tools))
+        if len(calls) == 1:
+            d["headline"] = "ETA 1,1 dk."
+        return json.dumps(d, ensure_ascii=False)
+
+    analyst = Analyst(CachedLLM(MockLLM(flaky), tmp_path, "ns"), settings)
+    assert analyst.brief(packet_860, Tracer(None, "t")).source == "llm"
+    out = analyst.brief(packet_860, Tracer(None, "t"), cache_only=True)
+    assert out.source == "llm_cache" and out.grounding.passed and len(calls) == 2
+
+
 def test_llm_outage_degrades_to_template(settings, packet_860):
     def down(messages, json_mode, tools):
         raise LLMError("timeout")
@@ -120,3 +137,13 @@ def test_free_text_may_not_restate_a_verdict_differently(settings, packet_860):
     assert any(rid in f for f in g.failed)
     b.key_findings[0].statement = f"{rid} raporu kanıtla çelişiyor."
     assert grounding.check(b, packet_860, m).passed
+
+
+def test_package_names_the_shortest_eta_vehicle(settings, packet_860, pipeline):
+    # the headline leads with this vehicle; the code picks it so the LLM never compares ETAs
+    first = _masked(settings, packet_860)["risk"]["en_kisa_eta"]
+    etas = [v for v in _masked(settings, packet_860)["araclar"] if v.get("yaklasiyor") and v.get("eta_dk")]
+    assert first["eta_dk"] == min(v["eta_dk"] for v in etas)
+    assert next(v for v in etas if v["ref"] == first["ref"])["track"] == "T0122"  # oracle: class unknown
+    calm = pipeline.evaluate("img_001733")  # contrast frame: nothing approaches
+    assert _masked(settings, calm)["risk"]["en_kisa_eta"] is None

@@ -215,6 +215,7 @@ export function TopBar({ health, left, blind = false }: { health: Health | null;
 
 function prettyDetector(name: string) {
   if (name.startsWith("yolo:")) return `Yedek ${name.slice(5)}`;
+  if (name.startsWith("dfine:")) return "D-FINE-M (Kaggle)";
   if (name.startsWith("kaggle:")) return "Kaggle modeli";
   if (name === "oracle") return "Oracle (test)";
   return name;

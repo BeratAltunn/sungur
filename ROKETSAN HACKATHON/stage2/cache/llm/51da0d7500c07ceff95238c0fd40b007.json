@@ -1,1 +1,0 @@
-{"content":null,"tool_calls":[{"id":"chatcmpl-tool-af0ec544bb1bbe26","name":"list_frames","arguments":"{}"}],"tokens_in":1805,"tokens_out":6,"cost_usd":0.0,"model":"glm-5.3","cached":false}

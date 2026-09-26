@@ -1,1 +1,0 @@
-{"content":null,"tool_calls":[{"id":"chatcmpl-tool-a2233552b75284e9","name":"get_track","arguments":"{\"time\": \"12:35\", \"track_id\": \"T0122\"}"}],"tokens_in":1640,"tokens_out":24,"cost_usd":0.0,"model":"glm-5.3","cached":false}

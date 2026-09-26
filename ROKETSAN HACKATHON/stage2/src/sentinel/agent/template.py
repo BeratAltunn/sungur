@@ -5,6 +5,7 @@ Every number is formatted straight from the EvidencePacket.
 
 from __future__ import annotations
 
+from sentinel.agent.masking import first_arrival
 from sentinel.domain.models import (
     LABEL_TR,
     EvidencePacket,
@@ -55,19 +56,24 @@ def template_brief(p: EvidencePacket) -> RiskBrief:
     appr = [v for v in p.vehicles if v.kinematics and v.kinematics.approaching]
     contradicted = [r for r in p.reports if r.verdict == Verdict.CELISIYOR]
 
-    # headline
-    if appr:
-        lead = min(appr, key=lambda v: v.kinematics.eta_min if v.kinematics.eta_min is not None else 1e9)
-        k = lead.kinematics
-        eta = f", ETA ~{dec(k.eta_min)} dk" if k.eta_min is not None else ""
-        headline = f"{zone} bölgesinde {len(appr)} araç üsse yaklaşıyor; en yakını {km(k.d_now_m)}'de{eta}."
+    # headline: one fact, <= ~80 chars, same pattern as the LLM prompt (analyst_v3)
+    first = first_arrival(p)
+    if first:
+        cls = LABEL_TR.get(first.label, first.label)
+        eta = dec(first.kinematics.eta_min)  # type: ignore[union-attr]
+        headline = (
+            f"{zone} bölgesinde {cls} yaklaşıyor, ETA ~{eta} dk"
+            if len(appr) == 1
+            else f"{zone} bölgesinde {len(appr)} araç yaklaşıyor, ilk varış {cls} ~{eta} dk"
+        )
+    elif appr:
+        headline = f"{zone} bölgesinde {len(appr)} araç üsse yaklaşıyor"
     elif p.vehicles:
-        nearest = min(p.vehicles, key=lambda v: v.d_base_m)
-        headline = f"{zone} bölgesinde {len(p.vehicles)} araç; üsse yaklaşan yok, en yakını {km(nearest.d_base_m)}'de."
+        headline = f"{zone} bölgesinde {len(p.vehicles)} araç, üsse yaklaşan yok"
+        if contradicted:
+            headline += f", {len(contradicted)} rapor çelişiyor"
     else:
-        headline = f"{zone} bölgesinde araç tespit edilmedi."
-    if contradicted:
-        headline = headline[:-1] + f"; {len(contradicted)} rapor kanıtla çelişiyor."
+        headline = f"{zone} bölgesinde araç tespit edilmedi"
 
     # findings: riskiest vehicles first, then reports
     findings = [

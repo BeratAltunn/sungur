@@ -10,13 +10,23 @@ import json
 import re
 from typing import Any
 
-from sentinel.domain.models import LABEL_TR, EvidencePacket, Verdict
+from sentinel.domain.models import LABEL_TR, EvidencePacket, VehicleEvidence, Verdict
 from sentinel.geo.zones import zone_display
 from sentinel.reports.parser import COORD_RE
 
 
 def _r(x: float | None, nd: int = 1) -> float | None:
     return None if x is None else round(float(x), nd)
+
+
+def first_arrival(p: EvidencePacket) -> VehicleEvidence | None:
+    """The approaching vehicle with the shortest ETA: headlines lead with it (chosen in code, not by the LLM)."""
+    etas = [
+        v
+        for v in p.vehicles
+        if v.kinematics and v.kinematics.approaching and v.kinematics.eta_min is not None
+    ]
+    return min(etas, key=lambda v: v.kinematics.eta_min) if etas else None  # type: ignore[union-attr]
 
 
 def mask_packet(p: EvidencePacket, constants: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -73,6 +83,7 @@ def mask_packet(p: EvidencePacket, constants: dict[str, Any] | None = None) -> d
         if r.verdict != Verdict.ILGISIZ
     ]
     n_by = {vd: sum(r.verdict == vd for r in p.reports) for vd in Verdict}
+    first = first_arrival(p)
     f = p.frame
     return {
         "kare": {
@@ -103,6 +114,15 @@ def mask_packet(p: EvidencePacket, constants: dict[str, Any] | None = None) -> d
             "taban_gerekceleri": p.risk.floor_reasons,
             "kare_faktorleri": [{"etiket": x.label, "puan": x.points} for x in p.risk.factors],
             "en_riskli_arac": p.risk.top_vehicle,
+            "en_kisa_eta": (
+                {
+                    "ref": first.ref,
+                    "sinif": LABEL_TR.get(first.label, first.label),
+                    "eta_dk": _r(first.kinematics.eta_min),
+                }  # type: ignore[union-attr]
+                if first
+                else None
+            ),
         },
         "araclar": vehicles,
         "raporlar": reports,

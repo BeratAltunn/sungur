@@ -1,1 +1,0 @@
-{"content":null,"tool_calls":[{"id":"chatcmpl-tool-ace636ca99c6c1a5","name":"analyze_image","arguments":"{\"image_id\": \"img_000860\"}"}],"tokens_in":1817,"tokens_out":17,"cost_usd":0.0,"model":"glm-5.3","cached":false}

@@ -8,9 +8,9 @@ Bu dosya, bu depoda çalışan LLM agent'ları (Claude Code, Codex, Cursor, Copi
 
 ## 1. Proje tek paragrafta
 
-NÖBETÇİ, bir askerî üssü çevreleyen 8 bölgeden gelen drone karelerini risk sırasına dizen bir ajandır. Her kare için 6 adım çalışır: **(1) araç tespiti (YOLO) → (2) pikselden koordinata → (3) araçları 2 saatlik hareket izleriyle eşleme + kinematik (hız, yaklaşma, duraklama, ETA) → (4) saha raporlarını raporun *kendi saatindeki* duruma göre doğrulama → (5) açıklanabilir kural tabanlı risk skoru + taban kuralları → (6) LLM'in her sayısı kanıtla kontrol edilen (grounding) Türkçe brief yazması.** 1–5 deterministik Python'dur; LLM hesap yapmaz, yalnızca yazar. Ayrıca araç çağıran bir sohbet paneli ve operatör için bir web arayüzü (triage kuyruğu + kare detayı + zaman kaydırıcısı) vardır.
+NÖBETÇİ, bir askerî üssü çevreleyen 8 bölgeden gelen drone karelerini risk sırasına dizen bir ajandır. Her kare için 6 adım çalışır: **(1) araç tespiti (Kaggle ekibinin D-FINE-M modeli) → (2) pikselden koordinata → (3) araçları 2 saatlik hareket izleriyle eşleme + kinematik (hız, yaklaşma, duraklama, ETA) → (4) saha raporlarını raporun *kendi saatindeki* duruma göre doğrulama → (5) açıklanabilir kural tabanlı risk skoru + taban kuralları → (6) LLM'in her sayısı kanıtla kontrol edilen (grounding) Türkçe brief yazması.** 1–5 deterministik Python'dur; LLM hesap yapmaz, yalnızca yazar. Ayrıca araç çağıran bir sohbet paneli ve operatör için bir web arayüzü (triage kuyruğu + kare detayı + zaman kaydırıcısı) vardır.
 
-**Değerlendirme kriterleri:** Kaggle skoru (Aşama 1 tespit modeli) %20 · teknik kalite ve mimari %15 · problemin önemi ve çözümün sağladığı iş değeri %20 · çalışan ürün ortaya koyabilme %20 · ürün düşüncesi ve kullanıcı deneyimi %20 · sunum ve demo %5. Resmî veri paketi, Kaggle ekibinin modeli ve hackathon GLM anahtarı sonra gelecek; sistem şu an dev verisi, geçici YOLO modeli ve Evren üzerindeki glm-5.3 ile çalışıyor.
+**Değerlendirme kriterleri:** Kaggle skoru (Aşama 1 tespit modeli) %20 · teknik kalite ve mimari %15 · problemin önemi ve çözümün sağladığı iş değeri %20 · çalışan ürün ortaya koyabilme %20 · ürün düşüncesi ve kullanıcı deneyimi %20 · sunum ve demo %5. Sistem resmî Aşama 2 veri paketi, Kaggle ekibinin D-FINE-M modeli ve hackathon ağ geçidindeki `glm-5.3-flash` ile çalışır. Dev verisi, yolov8n ve Evren yedek olarak durur.
 
 Ürün/tasarım gerekçeleri: `ROKETSAN HACKATHON/PROJECT_DESIGN.md` · modül ayrıntıları: `ROKETSAN HACKATHON/STAGE2_ARCHITECTURE.md` · kullanım: `ROKETSAN HACKATHON/stage2/README.md`.
 
@@ -23,8 +23,10 @@ sungur/                                   ← git kökü
   AGENTS.md  CLAUDE.md  .gitignore
   ROKETSAN HACKATHON/
     PROJECT_DESIGN.md  STAGE2_ARCHITECTURE.md
-    stage2_dev_data/                      ← dev verisi (40 kare, 226 track, 137 rapor) — depoda
+    data/                                 ← RESMÎ Aşama 2 paketi (40 kare, 226 track, 137 rapor) — GIT'E GİRMEZ, ekip ayrıca paylaşır
+    stage2_dev_data/                      ← dev verisi (aynı senaryo, küçültülmüş görüntüler) — depoda, yedek
     dataset/                              ← Kaggle verisi (1,8 GB) — GIT'E GİRMEZ, gerekmez
+    gorev_tanimi.pdf                      ← resmî görev tanımı (GLM kullanım rehberi dahil) — GIT'E GİRMEZ
     stage2/                               ← UYGULAMA (tüm komutlar buradan çalışır)
       config.yaml                         ← tüm eşikler, ağırlıklar, model seçimi
       .env.example → .env                 ← LLM anahtarı (git'e girmez)
@@ -32,7 +34,7 @@ sungur/                                   ← git kökü
       src/sentinel/
         domain/models.py                  ← tüm pydantic modeller (sözleşme)
         data/                             ← dosya okuma + Repository (zaman ızgarası, uzay-zaman sorguları)
-        perception/                       ← Detector arayüzü: ultralytics | callable (Kaggle) | oracle (test) | cache
+        perception/                       ← Detector arayüzü: dfine (Kaggle) | ultralytics (yedek) | callable | oracle (test) | cache
         geo/  tracking/  reports/  risk/  ← adım 2–5
         agent/                            ← LLM istemcisi, analyst, grounding, şablon brief, sohbet, araçlar, prompts/*.md
         pipeline.py                       ← evaluate(image_id) -> EvidencePacket (adım 1–5)
@@ -46,7 +48,7 @@ sungur/                                   ← git kökü
       DEMO.md                             ← canlı demo akışı ve B planları
       cache/{detections,llm}/             ← demo önbelleği — depoda (internetsiz/LLM'siz demo için)
       runs/                               ← trace.jsonl, decisions.jsonl — git'e girmez
-      models/                             ← YOLO ağırlıkları — git'e girmez, `make weights` indirir
+      models/                             ← dfine_m_kaggle.pth (Ekip-1 modelinin EMA ağırlıkları, 79 MB, ekipten) + yolov8n.pt (`make weights`) — git'e girmez
 ```
 
 ## 3. Ayağa kaldırma
@@ -69,7 +71,7 @@ docker compose up --build -d    # ilk derleme birkaç dakika (~2,6 GB imaj)
 Arayüz: http://127.0.0.1:8000 · loglar: `docker compose logs -f` · durdurma: `docker compose down`
 Testler imajın içinde: `docker compose run --rm --no-deps nobetci python -m pytest -q`
 
-Notlar: Docker içinde Apple GPU (MPS) yok; YOLO CPU'da çalışır (tespitler önbellekte olduğu için fark edilmez). `runs/`, `cache/` ve `calibration/` (kör etiketler) host'a bağlıdır. Konteyner `restart: unless-stopped` ile açılır; `make app` ile yerel çalıştırmadan önce `docker compose down` yap (port 8000 çakışır).
+Notlar: Resmî veri (`../data`) ve D-FINE ağırlıkları (`models/dfine_m_kaggle.pth`) imaja girmez, volume ile salt okunur bağlanır; `.env` de `.dockerignore` sayesinde imaja girmez. Veri host'ta yoksa `docker-compose.yml`'deki iki `data` satırını yorumla (dev verisiyle açılır). Docker içinde Apple GPU (MPS) yok; D-FINE CPU'da çalışır (tespitler önbellekte olduğu için fark edilmez). `runs/`, `cache/` ve `calibration/` (kör etiketler) host'a bağlıdır. Konteyner `restart: unless-stopped` ile açılır; `make app` ile yerel çalıştırmadan önce `docker compose down` yap (port 8000 çakışır).
 
 ### Yol B — Doğrudan makinede (geliştirme için daha hızlı döngü)
 
@@ -77,8 +79,10 @@ Gereken: Python 3.12, Node 20+ (22/24 test edildi), npm.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate   # isteğe bağlı ama önerilir
-make install        # pip install -e '.[dev,ui,detector]' + models/yolov8n.pt indirir
+make install        # pip install -e '.[dev,ui,detector]' (torch + transformers) + models/yolov8n.pt indirir
 cp .env.example .env
+# Ekipten al (git'e girmez): resmî paket → "ROKETSAN HACKATHON/data/", Kaggle modeli → models/dfine_m_kaggle.pth
+# Resmî paket yoksa: export SENTINEL_DATA_DIR=../stage2_dev_data
 make check          # ruff + tüm testler
 make app            # arayüzü derler, API + arayüzü http://127.0.0.1:8000'de açar
 ```
@@ -89,58 +93,42 @@ Arayüz üzerinde çalışırken: bir terminalde `make app` açık kalsın, diğ
 
 | Komut | Beklenen |
 |---|---|
-| `make check` | ruff "All checks passed!", pytest'te hata yok (yazıldığı an 95 test; 15'i tarayıcı testi — duman + her ekranda ≥ 6:1 kontrast —, Playwright/Chrome yoksa atlanır) |
+| `make check` | ruff "All checks passed!", pytest'te hata yok (yazıldığı an 99 test; 15'i tarayıcı testi — duman + her ekranda ≥ 6:1 kontrast —, Playwright/Chrome yoksa atlanır) |
 | `make ui-test` | arayüzü derler, `tests/ui` 15/15 geçer (demo yolu: kuyruk + önizleme, 12:35 ✗ kartı, canlı değerlendirme adımları, karar → kuyruk, eskalasyon kartı + vardiya devri, etki + vardiya oynatma, yalnız klavyeyle kullanım, operasyonel hata mesajı; her ekranda metin kontrastı ≥ 6:1; kör modda seviye ve tehdit durumu sızmaz) |
 | `make validate` | `SONUÇ: temiz`, 40 kare / 226 track / 137 rapor, 20 tuzak track |
-| `curl -s http://127.0.0.1:8000/api/health` | `"detector": "yolo:yolov8n"`, `"detector_fallback": null`, `"llm": {"error": null}` (anahtar varsa), `warmup.done == 40` |
-| `make demo-check` | tüm satırlar ✓, `demo-check YEŞİL (7/7)` (demo kareleri, aha anı raporları, karşıt kare, önbellekteki brief'ler; `config.yaml → demo`) |
+| `curl -s http://127.0.0.1:8000/api/health` | `"detector": "dfine:dfine_m_kaggle"`, `"detector_fallback": null`, `"llm": {"error": null}` (anahtar varsa), `warmup.done == 40` |
+| `make demo-check` | tüm satırlar ✓, `demo-check YEŞİL (7/7)` (img_000860 KRİTİK + R119/R125 ✗, karşıt kare img_001733 DÜŞÜK + R042 ✗, önbellekteki brief'ler; `config.yaml → demo`) |
 | `make demo` | img_000860 için KRİTİK brief, T0122 kamyon, 12:25/12:35 raporları ✗ ÇELİŞİYOR |
 | `cd web && npm run typecheck` | hata yok |
 
-`detector_fallback` doluysa ağırlık dosyası yok demektir: `make weights`. `llm.error` "GLM_API_KEY tanımlı değil" diyorsa `.env` eksik; sistem yine çalışır ama brief'ler şablondan gelir.
+`detector_fallback` doluysa ağırlık dosyası ya da `transformers` yok demektir: `models/dfine_m_kaggle.pth`'yi ekipten al, `make install`. Tespitler o sırada önbellekten gelir. `llm.error` "GLM_API_KEY tanımlı değil" diyorsa `.env` eksik; sistem yine çalışır ama brief'ler şablondan gelir.
 
-## 4. LLM: Evren platformunu bağlama
+## 4. LLM: hackathon GLM ağ geçidi
 
-Şu an LLM olarak Evren LLM Gateway'deki **`glm-5.3`** kullanılıyor (OpenAI uyumlu uç nokta; hesap başına ücretsiz, bitiş tarihini `/v1/models`'teki `free_until` gösterir). Hackathon GLM anahtarı gelince yalnızca `.env` değişir.
+LLM olarak organizatörün ağ geçidindeki **`glm-5.3-flash`** kullanılır (LiteLLM, OpenAI uyumlu, standart `Authorization: Bearer`). Adres, model ve limitler `ROKETSAN HACKATHON/gorev_tanimi.pdf` s. 3–10'da.
 
-> **Her ekip üyesi kendi anahtarını kullanır.** Evren kullanım şartları anahtar paylaşımını yasaklar ve ihlalde anahtar askıya alınabilir. Anahtarı sohbet/issue/commit'e yazma; yalnızca `stage2/.env` içinde tut.
+> **Anahtar takıma özeldir ve bütçe sıfırlanmaz: toplam 15 USD.** Anahtarı sohbet/issue/commit'e yazma; yalnızca `stage2/.env` içinde tut (git'e ve Docker imajına girmez). Depo özel olsa da anahtar hiçbir dosyaya yazılmaz.
 
-**Adım 1 — Anahtar (kullanıcı yapar):** Evren portalında `/api-keys` sayfasından `evren_llm_…` biçiminde anahtar üret. Kimlik her istekte `X-API-Key: <anahtar>` başlığıyla gider.
+**Adım 1 — `.env` (kullanıcı yapar):** `cp .env.example .env`, sonra yalnızca `GLM_API_KEY=` satırını takımın anahtarıyla doldur. `GLM_AUTH_HEADER` satırı **olmamalı** (Bearer kullanılır).
 
-**Adım 2 — `.env`:** `cp .env.example .env`, sonra yalnızca `GLM_API_KEY=` satırını doldur. Diğer satırlar hazır:
-
-```
-GLM_BASE_URL=https://evren-llmapi.ssyz.org.tr/v1
-GLM_API_KEY=evren_llm_...
-GLM_MODEL=glm-5.3
-GLM_AUTH_HEADER=X-API-Key
-GLM_PRICE_IN=0
-GLM_PRICE_OUT=0
-GLM_TIMEOUT_S=120
-```
-
-**Adım 3 — Kullanım şartları (hesap başına bir kez; kabul kararı kullanıcınındır):** Kabul edilmemişse her istek `403 terms_not_accepted` döner. Anahtarı ekrana basmadan `.env`'den okuyarak:
+**Adım 2 — Doğrula (anahtarı ekrana basmadan):**
 
 ```bash
 set -a; . ./.env; set +a
-curl -s "$GLM_BASE_URL/terms/status" -H "X-API-Key: $GLM_API_KEY"      # current_version'ı not et
-curl -s "$GLM_BASE_URL/terms/text"   -H "X-API-Key: $GLM_API_KEY"      # metni oku (agent: kullanıcıya özetle, onay al)
-curl -s -X POST "$GLM_BASE_URL/terms/accept" -H "X-API-Key: $GLM_API_KEY" \
-     -H "Content-Type: application/json" -d '{"version": <current_version>}'
-```
-
-**Adım 4 — Doğrula:**
-
-```bash
-curl -s "$GLM_BASE_URL/models" -H "X-API-Key: $GLM_API_KEY" | python3 -c "import sys,json; print([m['id'] for m in json.load(sys.stdin)['data']])"
+curl -s "${GLM_BASE_URL%/v1}/key/info" -H "Authorization: Bearer $GLM_API_KEY" | python3 -c "import sys,json; d=json.load(sys.stdin); d=d.get('info',d); print('harcanan', d.get('spend'), '/', d.get('max_budget'), 'USD')"
 python3 -m sentinel evaluate img_000860      # (PYTHONPATH=src ya da make install sonrası) "Kaynak: LLM" görmelisin
 ```
 
+**Limitler ve bütçe:** takım başına 60 istek/dk, 500 000 token/dk, **aynı anda en fazla 4 istek**. `scripts/precompute.py` sıralı çalışır. Toplu işlerden (ön hesaplama, `demo-check-chat`) önce ve sonra `/key/info`'daki `spend`'e bak. Bütçe bekçisi (`config.yaml → llm.budget_stop_usd`) fiyat bilinmediği için config'teki temkinli varsayılan fiyatlarla sayar; `.env`'e `GLM_PRICE_*=0` yazma.
+
 **Bilinen davranışlar:**
-- `glm-5.3` bir "düşünen" modeldir. `config.yaml → llm.reasoning_effort: low` kaldırılırsa token bütçesinin tamamını düşünmeye harcayıp **boş yanıt** döndürür. Bu ayarı silme.
-- Evren zaman zaman `503 modele bağlanılamadı` döndürür. İstemci 3 kez yeniden dener; yine başarısızsa brief şablona düşer, sohbet "Tekrar dene" gösterir. Bu bir hata değildir, kodu "düzeltmeye" çalışma.
-- Yanıt süresi 5–45 sn arasında dalgalanır. Brief'ler `cache/llm/`'de önbelleklidir; demo ekranları beklemeden açılır.
-- Model kimliği kısa (`glm-5.3`) ya da tam (`zai/glm-5.3-fp8`) olabilir; ikisi de aynı modele gider.
+- `glm-5.3-flash` her zaman düşünür (`message.reasoning_content`). `max_tokens` düşünmeyi de kapsar: cömert tut. `config.yaml → llm.reasoning_effort: low` kalmalı; `thinking` parametresi gönderilmez.
+- Boş `content` + `finish_reason: length` → `max_tokens` yetersiz. 429 → istemci geri çekilip yeniden dener. 400 "Budget has been exceeded" → organizatöre yaz. 400 "key not allowed to access model" → model adı yanlış (tam olarak `glm-5.3-flash`).
+- `analyst_v3` ile 40 karede brief'lerin ~38'i LLM'den gelir; kalan 1–2 kare, LLM bir DOĞRULANAMAZ raporu "çelişiyor" diye yazdığı için grounding'e takılıp şablona düşer. Bu beklenen davranış; grounding'i gevşetme. Şablon manşeti de aynı kalıptadır.
+- Yanıt süresi dalgalanır. Brief'ler `cache/llm/`'de önbelleklidir (anahtar: model + prompt sürümü + ayarlar + mesajlar); demo ekranları beklemeden açılır.
+- Model görüntü okuyabilir, ama tasarım gereği LLM'e görüntü gönderilmez (PROJECT_DESIGN §2.4 Won't; grounding ilkesi).
+
+**Yedek — Evren (`glm-5.3`, ücretsiz, kişisel anahtar):** `.env.example`'daki yorumlu blok. Kimlik `X-API-Key` başlığıyla (`GLM_AUTH_HEADER=X-API-Key`). Kullanım şartları hesap başına bir kez kabul edilir (`$GLM_BASE_URL/terms/status|text|accept`; kabul kararı kullanıcınındır). Evren anahtarı paylaşılamaz; zaman zaman `503 modele bağlanılamadı` döner (istemci 3 kez dener, sonra şablon brief).
 
 ## 5. Kesin kurallar (mimari sözleşme)
 
@@ -153,13 +141,13 @@ python3 -m sentinel evaluate img_000860      # (PYTHONPATH=src ya da make instal
 7. **Eşik ve ağırlıklar `config.yaml`'da.** Kodda sabit eşik yazma. `domain/models.py` ekip sözleşmesidir; alan eklemek/değiştirmek ekiple konuşulur.
 8. **Altın sayı testlerini değiştirme.** `tests/unit/test_geo.py`, `test_tracking.py`, `test_reports.py` organizatörün örneğindeki sayıları (756,301 → 39.92531, 32.87183; T0122 < 1 m, 2. aday T0032 ~41 m; 5,5 → 1,6 km; 10,5 km yol; ETA ~4,4 dk; 12:35 raporu ✗) sabitler. Bu testler kırılırsa kod yanlıştır, test değil.
 9. **Prompt'lar sürümlüdür.** Prompt değiştirirken mevcut dosyayı düzenleme; `agent/prompts/analyst_vN.md` (ya da `chat_vN.md`) yeni dosya aç ve `config.yaml → llm.prompt_version`'ı güncelle. LLM önbelleği sürüme bağlıdır; ardından `python3 scripts/precompute.py` ile 40 brief'i yeniden üret (~15 dk).
-10. **Git'e girmeyecekler:** `.env`, `ROKETSAN HACKATHON/dataset/`, `stage2/runs/`, `models/*.pt`, `web/node_modules`, `web/dist`. Commit'ten önce `git status`'a bak.
+10. **Git'e girmeyecekler:** `.env`, `ROKETSAN HACKATHON/dataset/`, organizatör PDF/PPTX'leri, `stage2/runs/`, `models/*.pt`, `ROKETSAN HACKATHON/data/` (resmî paket), `*.pth`, `web/node_modules`, `web/dist`. Commit'ten önce `git status`'a bak.
 
 ## 6. Nereyi değiştireyim? (görev → dosya)
 
 | Görev | Nereye dokunulur | Sonra çalıştır |
 |---|---|---|
-| **Kaggle ekibinin modelini bağlamak** | `config.yaml → detector` (`kind: ultralytics` + `weights: models/kaggle.pt` + `class_map`, ya da `kind: callable` + `callable.target: "modul:predict"`; sözleşme `perception/kaggle_model.py`) | `python3 scripts/compare_detectors.py --kind ultralytics --weights models/kaggle.pt` → recall, eşleme mesafeleri, track'siz tespitler, değişen seviyeler; sonra `τ_op`, `gate_m`, `floor_high_untracked_min_conf` ayarı |
+| **Kaggle ekibinin modeli (D-FINE-M)** | `config.yaml → detector.dfine` (`weights`, `input_size` [800, 1408], `class_names` indeks sırası [car, truck, van, bus]); yükleyici `perception/dfine.py` (orijinal D-FINE anahtarları → transformers, strict). Yeni bir kontrol noktası gelirse aynı yol; ultralytics `.pt` için `kind: ultralytics` | `python3 scripts/compare_detectors.py --kind dfine` → recall, eşleme mesafeleri, track'siz tespitler, değişen seviyeler; `tests/unit/test_dfine.py`; sonra `τ_op`, `gate_m`, `floor_high_untracked_min_conf` ayarı (kalibrasyonla) |
 | Risk ağırlığı / eşik | `config.yaml → risk` | `make check`, `make batch` (seviye dağılımı), `make demo-check` |
 | Yeni risk faktörü | `risk/features.py` (+ gerekirse `floors.py`), ağırlığı `config.py`+`config.yaml` | birim testi ekle |
 | Rapor ayrıştırma / doğrulama | `reports/parser.py`, `reports/verifier.py` | `tests/unit/test_reports.py` |
@@ -174,17 +162,19 @@ python3 -m sentinel evaluate img_000860      # (PYTHONPATH=src ya da make instal
 ## 7. Tuzaklar
 
 - **Klasör adında boşluk:** `"ROKETSAN HACKATHON"` tırnaksız yazılırsa komutlar sessizce yanlış yere gider.
-- **Önbellekler:** Tespit önbelleği `cache/detections/<model>__<parmakizi>/` altında, inference ayarlarına bağlıdır; ayar değişince eski kutular kullanılmaz (bu kasıtlı). LLM önbelleği model + prompt sürümü + üretim ayarları + mesajlara bağlıdır. Boş LLM yanıtı asla önbelleğe yazılmaz.
-- **Dev verisinde görüntü ölçeği köşe koordinatlarıyla uyuşmuyor** (gerçek araç kutuları yerde 10–75 m görünüyor). Bu yüzden metre cinsinden kutu boyutu filtresi kapalı (`detector.plausible_size_m: null`). "Hata" diye düzeltmeye çalışma; resmî veride yeniden ölçülecek.
+- **Önbellekler:** Tespit önbelleği `cache/detections/<model>__<parmakizi>/` altında; parmak izi inference ayarlarını ve veri paketinin kimliğini (`image_meta.json` özeti) içerir. Ayar ya da veri paketi değişince eski kutular kullanılmaz (bu kasıtlı: dev ve resmî pakette kare kimlikleri aynı, pikseller farklı). LLM önbelleği model + prompt sürümü + üretim ayarları + mesajlara bağlıdır. Boş LLM yanıtı asla önbelleğe yazılmaz.
+- **Görüntü ölçeği köşe koordinatlarıyla uyuşmuyor** (resmî veride de yeniden ölçüldü: track'le eşleşen gerçek araç kutuları yerde medyan 10 m, en fazla 60 m). Bu yüzden metre cinsinden kutu boyutu filtresi kapalı (`detector.plausible_size_m: null`). "Hata" diye düzeltmeye çalışma.
+- **Rapor kimlikleri dosya sırasıdır:** `field_reports.json`'da kimlik yok; `R{sıra:03d}` resmî dosyadaki 0 tabanlı sıradır (dev dosyası saate göre sıralıydı, resmî dosya değil). Demo raporları: 12:25 → R119, 12:35 → R125.
+- **D-FINE ve transformers:** `DFineConfig(eval_size=…)` verme; transformers 4.55'te kodlayıcının konum gömmesini atlayıp çöker. Ön işleme Ekip-1'in eğitimiyle birebir: RGB, `cv2.resize(INTER_LINEAR)` ile 1408×800'e düz gerdirme, letterbox yok, yalnızca /255 (ImageNet normalizasyonuyla recall %89'dan %57'ye düşer; PIL resize küçültürken antialias uyguladığı için kullanılmaz). Sınıf sırası [car, truck, van, bus], yarışma sayfasındaki sıradan farklı. Ekip-1'in 2×2 parçalı çıkarımı mAP'ye +0,01 katıyor ama 5 kat yavaş; recall zaten %100 olduğu için kullanılmıyor. D-FINE NMS'sizdir; iç içe gerçek araçlar olduğu için (img_002256 V8/V9) sezgisel NMS eklenmedi, birkaç yinelenen kutu kalır.
 - **Kök `.gitignore`** GitHub'ın Python şablonudur ve `lib/` kuralı içerir; `web/src/lib/` için istisna vardır. Yeni bir `lib` klasörü eklersen istisna gerekebilir.
 - **Mac'te MPS, Docker'da CPU:** tespit sonuçları küçük farklar gösterebilir; demo önbellekten gelir.
 - **Arayüz renkleri Astro UXDS tokenleridir** (`web/src/styles.css` başı). Durum rengini metin olarak kullanma; metin için `--tx-critical` gibi açık tonlar var. Yeni bir renk eklersen `make ui-test` içindeki kontrast testi (≥ 6:1) yakalar.
-- **Seviye dağılımı henüz kalibre edilmedi** (40 karenin yarıdan fazlası YÜKSEK/KRİTİK). Kalibrasyon altın setle yapılacak; ağırlıkları tek kareye göre ayarlama.
+- **Seviye dağılımı henüz kalibre edilmedi** (D-FINE ile 40 karenin 25'i YÜKSEK/KRİTİK; track'siz gerçek araçlar artık görünüyor). Kalibrasyon altın setle yapılacak; ağırlıkları tek kareye göre ayarlama.
 
 ## 8. Komut özeti (`stage2/` içinden)
 
 ```
-make install        Python paketleri + YOLO ağırlıkları        make app          arayüz + API (:8000)
+make install        Python paketleri + yolov8n (yedek)        make app          arayüz + API (:8000)
 make check          ruff + testler                            make dev-web      arayüz geliştirme (:5173)
 make ui-test        arayüzü derler + tarayıcı duman testi
 make validate       veri paketi doğrulama                     make docker-up    Docker ile başlat

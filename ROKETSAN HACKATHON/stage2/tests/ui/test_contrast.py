@@ -56,7 +56,7 @@ def test_text_contrast(page: Page, path: str, ready: str):
     page.goto(path)
     page.wait_for_selector(ready)
     if path.startswith("/#/frame"):
-        page.locator('button.tick[title^="R075"]').click()  # the report card is part of the demo screen
+        page.locator('button.tick[title^="R125"]').click()  # the report card is part of the demo screen
     bad = _failures(page)
     assert bad == [], f"{path}: {len(bad)} metin {MIN}:1 altında: {bad[:8]}"
 

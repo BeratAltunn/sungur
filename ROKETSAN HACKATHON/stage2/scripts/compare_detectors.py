@@ -1,6 +1,7 @@
 """Detector acceptance report: run a candidate detector on every frame and compare it with a baseline.
 
     python scripts/compare_detectors.py --kind ultralytics --weights models/yolov8n.pt
+    python scripts/compare_detectors.py --kind dfine --weights models/dfine_m_kaggle.pth
     python scripts/compare_detectors.py --kind callable --target kaggle_infer:predict --tau 0.3
 
 The 40 Stage 2 frames have no box labels, so the tracks are used as a proxy ground truth:
@@ -41,7 +42,7 @@ def _nearest_track_m(repo: Repository, lat: float, lon: float, t: int) -> float 
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--kind", default="ultralytics", choices=["ultralytics", "callable"])
+    ap.add_argument("--kind", default="ultralytics", choices=["ultralytics", "dfine", "callable"])
     ap.add_argument("--weights", default=None)
     ap.add_argument("--target", default=None, help="callable: modul:predict")
     ap.add_argument("--tau", type=float, default=None, help="τ_op (varsayılan config)")
@@ -54,7 +55,7 @@ def main() -> int:
     s = load_settings()
     s.detector.kind = a.kind
     if a.weights:
-        s.detector.ultralytics.weights = a.weights
+        s.detector.ultralytics.weights = s.detector.dfine.weights = a.weights
     if a.target:
         s.detector.callable.target = a.target
     if a.tau is not None:
@@ -62,7 +63,7 @@ def main() -> int:
     if a.gate is not None:
         s.tracking.gate_m = a.gate
     if a.device:
-        s.detector.ultralytics.device = a.device
+        s.detector.ultralytics.device = s.detector.dfine.device = a.device
 
     repo = Repository(s.data_path, s.images_subdir)
     cand = Pipeline(s, repo, build_detector(s, repo))

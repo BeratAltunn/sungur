@@ -6,36 +6,31 @@ Her kare için 6 adım çalışır. İlk 5 adım deterministik Python'dur; LLM h
 
 ```mermaid
 flowchart LR
-  A[1 · Tespit<br/>YOLO] --> B[2 · Pikselden<br/>koordinata]
+  A[1 · Tespit<br/>D-FINE-M] --> B[2 · Pikselden<br/>koordinata]
   B --> C[3 · Hareket izleriyle eşleme<br/>+ kinematik, ETA]
   C --> D[4 · Saha raporlarını<br/>kendi saatinde doğrulama]
   D --> E[5 · Kural tabanlı risk<br/>+ taban kuralları]
   E --> F[6 · LLM brief<br/>her sayı grounding'den geçer]
 ```
 
-> Resmî veri paketi, Kaggle ekibinin tespit modeli ve hackathon GLM anahtarı henüz gelmedi. Sistem şu an dev verisi (40 kare, 226 hareket izi, 137 rapor), geçici YOLO modeli (COCO yolov8n) ve Evren üzerindeki `glm-5.3` ile çalışıyor.
+> Sistem resmî Aşama 2 veri paketi (40 kare, 226 hareket izi, 137 rapor), Kaggle ekibinin D-FINE-M tespit modeli ve hackathon ağ geçidindeki `glm-5.3-flash` ile çalışır. Resmî paket ve model ağırlıkları **git'e girmez**; ekip içinde ayrıca paylaşılır (yerleşim aşağıda). Dev verisi, yolov8n ve Evren yedek olarak durur.
 
 ---
 
 ## Dallar (branch'ler)
 
-| Dal | İçerik | Ne zaman kullanılır |
-|---|---|---|
-| **`ui-redesign`** | `calibration-demo`'nun tamamı + profesyonel arayüz: Astro UXDS renkleri, taktik ekran düzeni (uyarılar · harita · önizleme), durum çubuğu, haritada tahmini varış, 2525'ten esinlenen semboller, ≥ 6:1 kontrast testi | **En güncel kod. Yeni başlıyorsan bunu kullan.** |
-| `calibration-demo` | Kalibrasyon ve kör etiketleme, demo senaryosu, kronometre, UX turu (aha kartı, ETA'lı kuyruk, karar akışı, amir ekranları, etki sayfası, vardiya oynatma, erişilebilirlik) | Demo ve kalibrasyon işlerinin tabanı |
-| `main` | İlk çalışan sürüm + `AGENTS.md` | Kararlı referans; yukarıdaki iki dal henüz birleştirilmedi |
+**`main` güncel ve çalışır koddur; herkes buradan başlar.** İçinde resmî Aşama 2 verisiyle çalışan sistem, Kaggle ekibinin D-FINE-M modeli, hackathon GLM ağ geçidi (`glm-5.3-flash`), profesyonel arayüz, kalibrasyon/kör etiketleme araçları ve demo senaryosu var.
 
-Dallar birbirinin devamıdır: `main` → `calibration-demo` → `ui-redesign`. Birleştirme (`main`'e merge) kararını teknik lider verir.
-
-**Yeni bir işe başlarken:**
+Her iş kısa ömürlü bir dalda yapılır ve kontroller yeşilse `main`'e birleştirilir:
 
 ```bash
-git fetch origin
-git switch ui-redesign && git pull
-git switch -c <kisa-is-adi>        # ör. kaggle-model, analyst-v3
+git switch main && git pull
+git switch -c <kisa-is-adi>        # ör. etiketler-ayse, kalibrasyon, docker
+# ... iş, commit ...
+git push -u origin <kisa-is-adi>   # sonra main'e birleştirme (teknik lider)
 ```
 
-Birleştirmeden önce `make check`, `make ui-test` ve `make demo-check` yeşil olmalı (bkz. [Kontroller](#kontroller)).
+Birleştirmeden önce `make check`, `make ui-test` ve `make demo-check` yeşil olmalı (bkz. [Kontroller](#kontroller)). `main`'e doğrudan push etmeyin.
 
 ---
 
@@ -45,7 +40,7 @@ Tüm komutlar `ROKETSAN HACKATHON/stage2` içinden çalışır. **Klasör adınd
 
 ```bash
 git clone https://github.com/BeratAltunn/sungur.git
-cd sungur && git switch ui-redesign
+cd sungur
 cd "ROKETSAN HACKATHON/stage2"
 cp .env.example .env               # LLM anahtarını ekle (aşağıda); boş kalırsa sistem şablon brief ile çalışır
 ```
@@ -66,20 +61,22 @@ Gereken: Python 3.12, Node 20+ (22/24 test edildi), npm.
 
 ```bash
 python3 -m venv .venv && source .venv/bin/activate
-make install                       # Python paketleri + YOLO ağırlıkları (models/yolov8n.pt)
+make install                       # Python paketleri (torch + transformers) + yedek yolov8n
+# ekipten al: resmî paket → "ROKETSAN HACKATHON/data/", Kaggle modeli → stage2/models/dfine_m_kaggle.pth
+# resmî paket yoksa:  export SENTINEL_DATA_DIR=../stage2_dev_data
 make check                         # ruff + testler
 make app                           # arayüzü derler, API + arayüz: http://127.0.0.1:8000
 ```
 
 Arayüz üzerinde çalışırken bir terminalde `make app` açık kalsın, diğerinde `make dev-web` (http://127.0.0.1:5173, anlık yenileme). Docker açıksa önce `docker compose down` (port 8000 çakışır).
 
-### LLM anahtarı (Evren, `glm-5.3`)
+### LLM anahtarı (hackathon ağ geçidi, `glm-5.3-flash`)
 
-**Her ekip üyesi kendi anahtarını kullanır**; Evren kullanım şartları paylaşımı yasaklıyor. Anahtar yalnızca `stage2/.env` içinde durur, commit edilmez.
+Anahtar **takıma özeldir** ve bütçe **toplam 15 USD, sıfırlanmaz**. Anahtar yalnızca `stage2/.env` içinde durur; git'e ve Docker imajına girmez. Depo özel olsa da anahtarı hiçbir yere yazma.
 
-1. Evren portalında `/api-keys` sayfasından `evren_llm_…` anahtarı üret.
-2. `.env` içinde yalnızca `GLM_API_KEY=` satırını doldur; diğer satırlar hazır.
-3. Hesap başına bir kez kullanım şartlarını kabul et (kabul edilmezse her istek `403 terms_not_accepted` döner). Komutlar: [`AGENTS.md` §4](AGENTS.md#4-llm-evren-platformunu-bağlama).
+1. `cp .env.example .env`, yalnızca `GLM_API_KEY=` satırını takımın anahtarıyla doldur; diğer satırlar hazır (`GLM_AUTH_HEADER` olmamalı).
+2. Harcamayı toplu işlerden önce ve sonra kontrol et: [`AGENTS.md` §4](AGENTS.md#4-llm-hackathon-glm-ağ-geçidi).
+3. Yedek: Evren (`glm-5.3`, kişisel anahtar) `.env.example`'da yorum satırında.
 
 Anahtar olmadan da her şey çalışır: brief'ler kural tabanlı şablondan gelir, demo kareleri LLM önbelleğinden (`cache/llm/`) açılır.
 
@@ -87,8 +84,8 @@ Anahtar olmadan da her şey çalışır: brief'ler kural tabanlı şablondan gel
 
 | Komut | Beklenen |
 |---|---|
-| `curl -s http://127.0.0.1:8000/api/health` | `"detector": "yolo:yolov8n"`, `"detector_fallback": null`, `"llm": {"error": null}` (anahtar varsa), `warmup.done == 40` |
-| `make check` | ruff "All checks passed!", testlerde hata yok (95 test) |
+| `curl -s http://127.0.0.1:8000/api/health` | `"detector": "dfine:dfine_m_kaggle"`, `"detector_fallback": null`, `"llm": {"error": null}` (anahtar varsa), `warmup.done == 40` |
+| `make check` | ruff "All checks passed!", testlerde hata yok (99 test) |
 | `make demo-check` | `demo-check YEŞİL (7/7)` |
 | Tarayıcıda http://127.0.0.1:8000 | Üst çubukta tehdit durumu ve alt sistemler, solda uyarı listesi, ortada bölge haritası |
 
@@ -110,7 +107,7 @@ flowchart TB
     AG[agent/<br/>analyst · grounding · sohbet araçları]
     IM[impact.py<br/>vardiya simülasyonu]
   end
-  D[(stage2_dev_data<br/>kareler · izler · raporlar)]
+  D[(data/ resmî paket<br/>kareler · izler · raporlar)]
   C[(cache/<br/>tespit + LLM önbelleği)]
   RUN[(runs/<br/>iz · kararlar · açılışlar)]
   UI --> R --> S
@@ -148,7 +145,8 @@ sungur/
   ROKETSAN HACKATHON/
     PROJECT_DESIGN.md                ürün ve tasarım gerekçeleri
     STAGE2_ARCHITECTURE.md           modül ayrıntıları
-    stage2_dev_data/                 dev verisi (depoda)
+    data/                            resmî Aşama 2 paketi (git'e girmez, ekipten)
+    stage2_dev_data/                 dev verisi (depoda, yedek)
     stage2/                          UYGULAMA
       config.yaml  Makefile  Dockerfile  docker-compose.yml  .env.example
       src/sentinel/                  domain · data · perception · geo · tracking · reports · risk · agent
@@ -206,7 +204,7 @@ Ayrıntılar ve gerekçeleri: [`AGENTS.md` §5](AGENTS.md#5-kesin-kurallar-mimar
 
 | Görev | Başlangıç noktası |
 |---|---|
-| Kaggle modelini bağlamak | `config.yaml → detector`, `perception/kaggle_model.py`; sonra `python3 scripts/compare_detectors.py` |
+| Kaggle modeli (D-FINE-M) | `config.yaml → detector.dfine`, `perception/dfine.py`; sonra `python3 scripts/compare_detectors.py --kind dfine` |
 | Resmî veri paketi | önce `make validate`; format farkı yalnızca `data/adapters.py`'de düzeltilir |
 | Risk ağırlığı / kalibrasyon | `#/label` ile kör etiketler → `make calibrate` → `config.yaml → risk` |
 | Brief dili | yeni `agent/prompts/analyst_vN.md` |
@@ -225,11 +223,12 @@ Tam tablo ve tuzaklar: [`AGENTS.md` §6–7](AGENTS.md#6-nereyi-değiştireyim-g
 |---|---|
 | Komut "dosya yok" diyor ya da yanlış yerde çalışıyor | Klasör adında boşluk var: `cd "ROKETSAN HACKATHON/stage2"` |
 | `address already in use` / port 8000 dolu | Docker ile yerel sunucu aynı anda açık: `docker compose down` ya da diğer süreci kapat |
-| Health'te `detector_fallback` dolu | Ağırlık dosyası yok: `make weights` |
+| Health'te `detector_fallback` dolu | Ağırlık dosyası ya da `transformers` yok: `models/dfine_m_kaggle.pth`'yi ekipten al, `make install`. O sırada tespitler önbellekten gelir. |
 | `llm.error: GLM_API_KEY tanımlı değil` | `.env` eksik. Sistem yine çalışır, brief'ler şablondan gelir. |
-| LLM `403 terms_not_accepted` | Evren kullanım şartları kabul edilmemiş: [`AGENTS.md` §4](AGENTS.md#4-llm-evren-platformunu-bağlama) adım 3 |
-| LLM ara sıra `503` ya da boş yanıt | Bilinen davranış; istemci 3 kez dener, sonra şablona düşer. `config.yaml → llm.reasoning_effort: low` ayarını silme. |
-| Sohbet yanıtı 5–45 sn sürüyor | Evren'in yanıt süresi; demo soruları `make demo-check-chat` ile önbelleğe alınır |
+| LLM `400 Budget has been exceeded` | Takımın 15 USD'si bitti; organizatöre yaz. Brief'ler önbellekten/şablondan gelmeye devam eder. |
+| LLM `400 key not allowed to access model` | Model adı yanlış: `GLM_MODEL=glm-5.3-flash` |
+| LLM ara sıra `429`/`503` ya da boş yanıt | Bilinen davranış; istemci 3 kez dener, sonra şablona düşer. `config.yaml → llm.reasoning_effort: low` ayarını silme. |
+| Sohbet yanıtı uzun sürüyor | LLM uç noktasının yanıt süresi; demo soruları `make demo-check-chat` ile önbelleğe alınır |
 | `make ui-test` testleri atlıyor | Playwright ya da Google Chrome yok: `pip install playwright` ve Chrome kur (Docker'da bu testler bilinçli olarak atlanır) |
 | Git'te `cache/detections/.../img_000860.json` değişmiş görünüyor | "Canlı yeniden değerlendir" tespiti yeniden yazar (kayan nokta farkı). Commit etmeden `git restore` ile geri al. |
 

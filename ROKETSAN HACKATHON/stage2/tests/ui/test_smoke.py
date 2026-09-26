@@ -10,7 +10,7 @@ import re
 from playwright.sync_api import Page, expect
 
 DEMO = "img_000860"
-CONTRAST = "img_006388"
+CONTRAST = "img_001733"
 
 
 def test_triage_queue_and_shift_card(page: Page):
@@ -42,14 +42,14 @@ def test_demo_frame_aha_moment(page: Page):
     page.goto(f"/#/frame/{DEMO}")
     expect(page.locator(".brief .level")).to_contain_text("KRİTİK")
     # 12:35 ✗ on the time slider → the report card with the verifier's reason (DEMO.md 2:00).
-    page.locator('button.tick[title^="R075"]').click()
+    page.locator('button.tick[title^="R125"]').click()
     card = page.locator(".callout")
     expect(card).to_contain_text("ÇELİŞİYOR")
     expect(card).to_contain_text("12:35")
     expect(card).to_contain_text("T0122")
     expect(page.locator(".slider-now")).to_contain_text("12:35")
     # 12:25 ✗: identity claim.
-    page.locator('button.tick[title^="R069"]').click()
+    page.locator('button.tick[title^="R119"]').click()
     expect(card).to_contain_text("kimlik iddiası")
     expect(card).to_contain_text("ÇELİŞİYOR")
 
@@ -63,7 +63,7 @@ def test_live_run_streams_six_steps(page: Page):
     trace = page.locator(".trace")
     for step in ("1 · Tespit", "3 · Eşleme ve kinematik", "4 · Rapor doğrulama", "5 · Risk"):
         expect(trace).to_contain_text(step)
-    expect(trace).to_contain_text("çelişen R069, R075")  # readable step summary, from the trace record
+    expect(trace).to_contain_text("çelişen R119, R125")  # readable step summary, from the trace record
     expect(page.locator(".brief .level")).to_contain_text("KRİTİK")
 
 
@@ -89,11 +89,11 @@ def test_escalation_card_and_shift_handover(page: Page):
     page.get_by_role("link", name=re.compile("Eskalasyon kartı")).click()
     expect(page).to_have_url(re.compile(f"#/brief/{DEMO}$"))
     expect(page.locator(".card-page")).to_contain_text("amire iletildi")
-    expect(page.locator(".card-page")).to_contain_text("R075")  # contradicted reports are on the card
+    expect(page.locator(".card-page")).to_contain_text("R125")  # contradicted reports are on the card
     page.goto("/#/handover")
     escalated = page.locator(".ho-section").filter(has_text="Amire iletilenler")
     expect(escalated).to_contain_text(DEMO)
-    expect(page.locator(".ho-section").filter(has_text="resmî raporlar")).to_contain_text("R069")
+    expect(page.locator(".ho-section").filter(has_text="resmî raporlar")).to_contain_text("R119")
     page.goto(f"/#/frame/{DEMO}")
     page.get_by_role("button", name="Geri al").click()
     expect(page.locator(".decision")).not_to_contain_text("amire iletildi")
@@ -152,7 +152,7 @@ def test_blind_labelling_never_shows_system_level(page: Page):
     page.add_init_script("localStorage.setItem('labeler', JSON.stringify('ui-smoke'))")
     page.goto(f"/#/label/{DEMO}")
     expect(page.locator(".image-panel")).to_be_visible()
-    page.locator('button.tick[title^="R075"]').click()
+    page.locator('button.tick[title^="R125"]').click()
     expect(page.locator(".callout")).to_be_visible()  # report verdicts are evidence; levels are not
     leaks = page.evaluate(
         """() => {

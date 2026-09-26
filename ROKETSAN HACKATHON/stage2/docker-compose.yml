@@ -10,15 +10,18 @@ services:
     ports:
       - "127.0.0.1:8000:8000"
     env_file:
-      - path: .env        # LLM anahtarı imaja girmez; yoksa sistem şablon brief ile çalışır
+      - path: .env        # LLM anahtarı imaja girmez (.dockerignore); yoksa sistem şablon brief ile çalışır
         required: false
     volumes:
       - ./runs:/app/stage2/runs     # iz (trace.jsonl) ve operatör kararları kalıcı
       - ./cache:/app/stage2/cache   # tespit ve LLM önbelleği host ile paylaşılır
       - ./calibration:/app/stage2/calibration   # kör etiketler host'a yazılır (git'e girer)
-      # Resmî veri paketi gelince:
-      # - ../data:/app/data:ro
+      # Resmî veri paketi ve Kaggle ekibinin D-FINE ağırlıkları git'e girmez, imaja da gömülmez.
+      # Host'ta yoksa: veri için aşağıdaki iki "data" satırını yorumlayın (dev verisiyle çalışır);
+      # ağırlık yoksa tespitler önbellekten gelir (durum çubuğunda "önbellek").
+      - ../data:/app/data:ro
+      - ./models/dfine_m_kaggle.pth:/app/stage2/models/dfine_m_kaggle.pth:ro
     environment:
       TZ: "<+03>-3"                 # Türkiye saati (sabit UTC+3; imajda tzdata gerekmez)
-      # SENTINEL_DATA_DIR: /app/data   # resmî veri paketi için yukarıdaki volume ile birlikte açın
+      SENTINEL_DATA_DIR: /app/data  # resmî Aşama 2 paketi (yukarıdaki volume)
     restart: unless-stopped

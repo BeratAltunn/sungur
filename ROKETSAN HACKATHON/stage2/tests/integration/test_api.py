@@ -128,8 +128,8 @@ def test_shift_handover_is_deterministic_and_tracks_decisions(client):
     assert all(r["level"] in ("YÜKSEK", "KRİTİK") and r["decision"] is None for r in h["awaiting"])
     # The aha reports: official, contradicted in img_000860's context.
     official = {r["report_id"]: r for r in h["contradicted_official"]}
-    assert {"R069", "R075"} <= official.keys() and "img_000860" in official["R075"]["frames"]
-    assert official["R069"]["identity_claim"] is True
+    assert {"R119", "R125"} <= official.keys() and "img_000860" in official["R125"]["frames"]
+    assert official["R119"]["identity_claim"] is True
     client.post("/api/frames/img_000860/decisions", json={"run_id": run_id, "action": "undo"})
     assert client.get("/api/handover").json()["escalated"] == []
 
