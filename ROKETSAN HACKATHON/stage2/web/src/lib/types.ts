@@ -360,6 +360,27 @@ export interface ChatTurn {
   followups: Suggestion[];
 }
 
+/** A KRİTİK frame waiting for the operator, as a chat card (GET /api/alerts/critical; rule-based, no LLM). */
+export interface CriticalCard {
+  image_id: string;
+  zone: string;
+  capture_time: string;
+  score: number;
+  eta_min: number | null;
+  eta_vehicle: string | null;
+  facts: string[];
+  questions: Suggestion[];
+}
+
+/** Everything the chat box can complete (GET /api/chat/vocab, loaded once). */
+export interface ChatVocab {
+  frames: { id: string; zone: string; time: string; level: Level | null; vehicles: { ref: string; track: string | null; label: Label }[] }[];
+  tracks: { id: string; frame: string | null; label: Label | null }[];
+  reports: { id: string; time: string; source: "official" | "third_party"; text: string; verdicts: Record<string, VerdictT> }[];
+  zones: string[];
+  times: string[];
+}
+
 /** A question that fits the situation (GET /api/chat/suggestions, or follow-ups of an answer). */
 export interface Suggestion {
   text: string;

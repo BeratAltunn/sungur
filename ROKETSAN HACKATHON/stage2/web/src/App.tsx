@@ -66,6 +66,9 @@ export default function App() {
     window.addEventListener("sentinel:chat-add", on);
     return () => window.removeEventListener("sentinel:chat-add", on);
   }, [addItem]);
+  // KRİTİK frames still waiting for a decision (minus cards the operator hid): the chat button's badge.
+  const hiddenCards = storage.get<string[]>("crit_hidden", []);
+  const nCritical = (queue ?? []).filter((r) => r.level === "KRİTİK" && !r.decision && !hiddenCards.includes(r.image_id)).length;
   // The page's frame: the open frame, or the queue's selected one (the chat's context when nothing is added).
   const routeFrame = route.page === "frame" || route.page === "brief" ? route.id : null;
   const pageFrame = routeFrame ?? (route.page === "triage" ? triageSel : null);
@@ -143,10 +146,13 @@ export default function App() {
             if (item) addItem(item);
           }}
         >
-          Sohbet <kbd className="kbd">/</kbd>
+          Sohbet
+          {nCritical > 0 && <span className="fab-crit">· {nCritical} kritik</span>}
+          <kbd className="kbd">/</kbd>
         </button>
       )}
       <ChatPanel open={chatOpen} onClose={() => toggleChat(false)} imageId={pageFrame}
+        queue={queue}
         items={chatItems}
         onAdd={addItem}
         onRemove={(key) => setChatItems((xs) => xs.filter((x) => itemKey(x) !== key))}

@@ -539,6 +539,59 @@ class SentinelService:
             image_id = None
         return self._suggest(image_id, self._context(image_id, focus_ref, context), limit)
 
+    def critical_cards(self):
+        """KRİTİK frames waiting for a decision, as chat cards (facts + questions, no LLM)."""
+        from sentinel.agent.alerts import critical_cards
+
+        return critical_cards(self.triage(), self.packet)
+
+    def chat_vocab(self) -> dict:
+        """Everything the chat box can complete, in one payload the UI loads once (no LLM, no per-key requests):
+        frames (with their vehicles), tracks, reports (verdicts are per frame: a report can be confirmed near one
+        frame and contradicted near another), zones and times."""
+        from sentinel.geo.zones import zone_display
+
+        levels = {r.image_id: r.level.value for r in self.triage()}
+        frames, track_frame, verdicts = [], {}, {}
+        for m in self.repo.frames():
+            p = self.packet(m.image_id)
+            frames.append(
+                {
+                    "id": m.image_id,
+                    "zone": zone_display(p.frame.zone),
+                    "time": p.frame.capture_time,
+                    "level": levels.get(m.image_id),
+                    "vehicles": [{"ref": v.ref, "track": v.track_id, "label": v.label} for v in p.vehicles],
+                }
+            )
+            for v in p.vehicles:
+                if v.track_id:
+                    track_frame[v.track_id] = (m.image_id, v.label)
+            for r in p.reports:
+                if r.verdict != Verdict.ILGISIZ:
+                    verdicts.setdefault(r.report_id, {})[m.image_id] = r.verdict.value
+        tracks = [
+            {
+                "id": t,
+                "frame": track_frame.get(t, (None, None))[0],
+                "label": track_frame.get(t, (None, None))[1],
+            }
+            for t in sorted(self.repo.tracks)
+        ]
+        reports = [
+            {
+                "id": r.report_id,
+                "time": r.time,
+                "source": r.source,
+                "text": r.text[:70],
+                "verdicts": verdicts.get(r.report_id, {}),
+            }
+            for r in sorted(self.repo.reports, key=lambda r: r.report_id)
+        ]
+        times = sorted({f["time"] for f in frames} | {r.time for r in self.repo.reports})
+        zones = sorted(zone_display(z) for z in self.repo.zone_index.names())
+        return {"frames": frames, "tracks": tracks, "reports": reports, "zones": zones, "times": times}
+
     def _suggest(self, image_id: str | None, items: list, limit: int):
         from sentinel.agent import suggest
 

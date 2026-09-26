@@ -105,6 +105,26 @@ def test_chat_suggestions_endpoint(client):
     assert bad.status_code == 422
 
 
+def test_critical_alerts_endpoint(client):
+    cards = client.get("/api/alerts/critical").json()
+    assert cards and {"image_id", "facts", "questions", "eta_min"} <= cards[0].keys()
+    pending = [
+        r["image_id"]
+        for r in client.get("/api/triage").json()
+        if r["level"] == "KRİTİK" and not r["decision"]
+    ]
+    assert [c["image_id"] for c in cards] == pending  # pending KRİTİK only, in queue order
+
+
+def test_chat_vocab_endpoint(client):
+    v = client.get("/api/chat/vocab").json()
+    assert len(v["frames"]) == 40 and len(v["reports"]) == 137 and len(v["zones"]) == 8
+    assert any(t["id"] == "T0122" and t["frame"] == "img_000860" for t in v["tracks"])
+    r119 = next(r for r in v["reports"] if r["id"] == "R119")
+    assert r119["verdicts"]["img_000860"] == "ÇELİŞİYOR"  # verdicts are per frame
+    assert "Doğu Yolu" in v["zones"] and "12:25" in v["times"]
+
+
 def test_blind_labelling_endpoints(client, settings):
     prog = client.get("/api/gold/tester").json()
     assert prog["total"] == 40 and "level" not in str(prog).lower().replace("labeler", "")

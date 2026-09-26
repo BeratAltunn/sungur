@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { api, explain } from "../lib/api";
 import { LABEL_TR, LEVEL_ICON, dec, smooth, storage, zoneName } from "../lib/format";
-import type { ChatItem, ChatTurn, Suggestion } from "../lib/types";
-import { DRAG_TYPE, endDrag, itemKey, readDrag } from "../lib/vehicles";
-import { RefText } from "./ui";
+import { applyCompletion, complete, type Completion } from "../lib/complete";
+import type { ChatItem, ChatTurn, ChatVocab, CriticalCard, Suggestion, TriageRow } from "../lib/types";
+import { DRAG_TYPE, endDrag, frameItem, itemKey, readDrag } from "../lib/vehicles";
+import { LevelBadge, RefText } from "./ui";
 
 interface Msg {
   role: "user" | "assistant";
@@ -73,6 +74,10 @@ function Inline({ text }: { text: string }) {
   );
 }
 
+/** Completion vocabulary: loaded once per page (then every key press is matched in the browser). */
+let vocabPromise: Promise<ChatVocab | null> | null = null;
+const loadVocab = () => (vocabPromise ??= api.vocab().catch(() => null));
+
 /** Short label of a context item, as it appears in the conversation. */
 const itemLabel = (c: ChatItem) => (c.kind === "vehicle" ? `${c.ref}${c.track_id ? ` · ${c.track_id}` : ""}` : c.image_id);
 
@@ -86,10 +91,13 @@ export function ChatPanel({
   onAdd,
   onRemove,
   onClear,
+  queue,
 }: {
   open: boolean;
   onClose: () => void;
   imageId: string | null;
+  /** The queue: critical cards refresh with it (a decision takes a card off). */
+  queue: TriageRow[] | null;
   items: ChatItem[];
   onAdd: (item: ChatItem) => void;
   onRemove: (key: string) => void;
@@ -97,6 +105,10 @@ export function ChatPanel({
 }) {
   const [msgs, setMsgs] = useState<Msg[]>(() => storage.get<Msg[]>("chat", []));
   const [input, setInput] = useState("");
+  const [caret, setCaret] = useState(0);
+  const [vocab, setVocab] = useState<ChatVocab | null>(null);
+  const [acIndex, setAcIndex] = useState(0);
+  const [acClosed, setAcClosed] = useState(false); // Esc hides the list until the next edit
   const [pending, setPending] = useState<number | null>(null); // start time
   const [elapsed, setElapsed] = useState(0);
   const [situation, setSituation] = useState<Suggestion[]>([]);
@@ -137,18 +149,22 @@ export function ChatPanel({
   }, [open, ctxImage, ctxKey]);
 
   const send = useCallback(
-    async (question: string) => {
+    async (question: string, withItems?: ChatItem[]) => {
       const q = question.trim();
       if (!q || pending !== null) return;
+      // `withItems`: the context as it will be after an add in the same click (state is not updated yet)
+      const ctxItems = withItems ?? items;
+      const img = imageId ?? ctxItems[0]?.image_id ?? null;
+      const label = ctxItems.length ? ctxItems.map(itemLabel).join("; ") : null;
       const history = msgs.filter((m) => !m.error).slice(-8).map(({ role, content }) => ({ role, content }));
-      setMsgs((m) => [...m, { role: "user", content: q, imageId: ctxImage, context: ctxLabel }]);
+      setMsgs((m) => [...m, { role: "user", content: q, imageId: img, context: label }]);
       setInput("");
       setElapsed(0);
       setPending(Date.now());
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       try {
-        const turn = await api.chat(q, history, ctxImage, items, ctrl.signal);
+        const turn = await api.chat(q, history, img, ctxItems, ctrl.signal);
         setMsgs((m) => [...m, { role: "assistant", content: turn.answer, turn, error: turn.note === "llm_hata" }]);
       } catch (e) {
         const content = ctrl.signal.aborted ? "Soru iptal edildi." : `Soru yanıtlanamadı. ${explain(e)}`;
@@ -158,7 +174,7 @@ export function ChatPanel({
         setPending(null);
       }
     },
-    [msgs, pending, ctxImage, items, ctxLabel],
+    [msgs, pending, imageId, items],
   );
 
   // Quick questions: the last answer's follow-ups (same context), else the situation questions; never one asked.
@@ -168,6 +184,62 @@ export function ChatPanel({
   const sameCtx = !!lastUser && (lastUser.imageId ?? null) === ctxImage && (lastUser.context ?? null) === ctxLabel;
   const followups = last?.role === "assistant" && sameCtx ? (last.turn?.followups ?? []) : [];
   const quick = (followups.length ? followups : situation).filter((s) => !asked.has(s.text)).slice(0, 4);
+
+  useEffect(() => {
+    if (open) loadVocab().then(setVocab);
+  }, [open]);
+
+  // Critical cards: KRİTİK frames waiting for a decision (rule-based on the server; refreshed with the queue).
+  const [critical, setCritical] = useState<CriticalCard[]>([]);
+  const [hidden, setHidden] = useState<string[]>(() => storage.get<string[]>("crit_hidden", []));
+  const [critOpen, setCritOpen] = useState<boolean>(() => storage.get("crit_open", true));
+  const [critAll, setCritAll] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    api
+      .critical()
+      .then((c) => alive && setCritical(c))
+      .catch(() => alive && setCritical([]));
+    return () => {
+      alive = false;
+    };
+  }, [open, queue]);
+  const cards = critical.filter((c) => !hidden.includes(c.image_id));
+  const hide = (id: string) => {
+    const next = [...hidden, id];
+    setHidden(next);
+    storage.set("crit_hidden", next);
+  };
+  const cardItem = (c: CriticalCard) => frameItem({ image_id: c.image_id, level: "KRİTİK", zone: c.zone, capture_time: c.capture_time });
+  const askAbout = (c: CriticalCard, q: string) => {
+    const item = cardItem(c);
+    const next = items.some((x) => itemKey(x) === itemKey(item)) ? items : [...items, item].slice(-4);
+    onAdd(item);
+    send(q, next);
+  };
+  const ctxFrames = [...new Set([...(ctxImage ? [ctxImage] : []), ...items.map((c) => c.image_id)])];
+  const acItems: Completion[] =
+    vocab && !acClosed && pending === null
+      ? complete(input, caret, vocab, ctxFrames, [...new Set([...quick, ...situation].map((s) => s.text))])
+      : [];
+  const acSel = Math.min(acIndex, Math.max(acItems.length - 1, 0));
+  // The caret goes after the completion in the same commit that writes the text (a later frame would move it
+  // back under a fast typist).
+  const pendingCaret = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    if (pendingCaret.current === null || !inputRef.current) return;
+    inputRef.current.focus();
+    inputRef.current.setSelectionRange(pendingCaret.current, pendingCaret.current);
+    pendingCaret.current = null;
+  }, [input]);
+  const accept = (c: Completion) => {
+    const next = applyCompletion(input, caret, c);
+    pendingCaret.current = next.caret;
+    setInput(next.text);
+    setCaret(next.caret);
+    setAcIndex(0);
+  };
 
   // 1–4 asks a quick question (Alt+1–4 while typing, so a question may still start with a digit).
   useEffect(() => {
@@ -225,6 +297,68 @@ export function ChatPanel({
           </button>
         </div>
       </div>
+
+      {cards.length > 0 && (
+        <section className="crit" aria-label="Kritik uyarılar">
+          <button
+            className="crit-head"
+            aria-expanded={critOpen}
+            onClick={() => {
+              setCritOpen(!critOpen);
+              storage.set("crit_open", !critOpen);
+            }}
+          >
+            <LevelBadge level="KRİTİK" size="sm" /> {cards.length} karar bekliyor
+            <span className="muted small">{critOpen ? "gizle" : "göster"}</span>
+          </button>
+          {critOpen && (
+            <div className="crit-list">
+              {(critAll ? cards : cards.slice(0, 2)).map((c) => (
+                <article key={c.image_id} className="crit-card" aria-label={`${c.image_id} kritik`}>
+                  <div className="crit-top">
+                    <span className="mono">{c.image_id}</span>
+                    <span className="muted">
+                      {c.zone} · {c.capture_time}
+                    </span>
+                    {c.eta_min !== null && <span className="crit-eta mono">ETA ~{dec(c.eta_min)} dk</span>}
+                  </div>
+                  {c.eta_vehicle && <div className="muted small">ilk varış: {c.eta_vehicle}</div>}
+                  <ul className="crit-facts">
+                    {c.facts.map((f) => (
+                      <li key={f}>
+                        <RefText text={f} onRef={emitRef} />
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="crit-qs">
+                    {c.questions.map((q) => (
+                      <button key={q.text} className="suggestion suggestion-sm" disabled={pending !== null} onClick={() => askAbout(c, q.text)}>
+                        {q.text}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="crit-actions">
+                    <button className="linklike" onClick={() => onAdd(cardItem(c))}>
+                      Bağlama ekle
+                    </button>
+                    <a className="linklike" href={`#/frame/${c.image_id}`}>
+                      Kareyi aç →
+                    </a>
+                    <button className="linklike" onClick={() => hide(c.image_id)} aria-label={`${c.image_id} kartını gizle`}>
+                      Gizle
+                    </button>
+                  </div>
+                </article>
+              ))}
+              {cards.length > 2 && (
+                <button className="linklike crit-more" onClick={() => setCritAll(!critAll)}>
+                  {critAll ? "İlk ikisini göster" : `Tümünü göster (${cards.length})`}
+                </button>
+              )}
+            </div>
+          )}
+        </section>
+      )}
 
       <div className="chat-list" ref={listRef} role="log" aria-live="polite" aria-label="Sohbet geçmişi">
         {msgs.length === 0 && (
@@ -359,6 +493,29 @@ export function ChatPanel({
           </>
         )}
       </div>
+      {acItems.length > 0 && (
+        <ul className="ac" role="listbox" id="chat-ac" aria-label="Tamamlama önerileri">
+          {acItems.map((c, i) => (
+            <li
+              key={`${c.kind}:${c.insert}`}
+              role="option"
+              aria-selected={i === acSel}
+              className={`ac-item ac-${c.kind} ${i === acSel ? "ac-on" : ""}`}
+              onMouseDown={(e) => {
+                e.preventDefault(); // keep the cursor in the text box
+                accept(c);
+              }}
+              onMouseEnter={() => setAcIndex(i)}
+            >
+              <span className={c.whole ? "ac-question" : "mono ac-label"}>{c.label}</span>
+              <span className="ac-hint">{c.hint}</span>
+            </li>
+          ))}
+          <li className="ac-keys" role="presentation">
+            oklarla seç · <kbd className="kbd">Tab</kbd> tamamla · <kbd className="kbd">Esc</kbd> kapat · sunucuya gitmez
+          </li>
+        </ul>
+      )}
       <form
         className="chat-input"
         onSubmit={(e) => {
@@ -379,14 +536,41 @@ export function ChatPanel({
                   ? "Bu kare hakkında sorun… (Alt+1–4: hazır soru)"
                   : "Bir soru sorun… (Alt+1–4: hazır soru)"
           }
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value);
+            setCaret(e.target.selectionStart ?? e.target.value.length);
+            setAcClosed(false);
+            setAcIndex(0);
+          }}
+          onSelect={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
           onKeyDown={(e) => {
+            if (acItems.length) {
+              if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                e.preventDefault();
+                setAcIndex((acSel + (e.key === "ArrowDown" ? 1 : acItems.length - 1)) % acItems.length);
+                return;
+              }
+              if (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey)) {
+                e.preventDefault();
+                accept(acItems[acSel]);
+                return;
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setAcClosed(true);
+                return;
+              }
+            }
             if (e.key === "Enter" && !e.shiftKey) {
               e.preventDefault();
               send(input);
             } else if (e.key === "Escape") onClose();
           }}
           aria-label="Soru"
+          role="combobox"
+          aria-expanded={acItems.length > 0}
+          aria-controls="chat-ac"
+          aria-autocomplete="list"
         />
         <button className="btn btn-primary" disabled={!input.trim() || pending !== null}>
           Sor

@@ -226,3 +226,57 @@ def test_two_alert_cards_in_the_chat_ask_to_compare(page: Page):
     expect(ctx).not_to_contain_text(b)
     page.get_by_role("button", name=f"{b} karesini sohbete ekle").click()
     expect(ctx).to_contain_text(b)
+
+
+def test_chat_box_completes_locally_without_requests(page: Page):
+    calls: list[str] = []
+    page.on("request", lambda r: calls.append(r.url) if "/api/chat" in r.url else None)
+    page.goto(f"/#/frame/{DEMO}")
+    expect(page.locator(".brief .level")).to_be_visible()
+    page.get_by_role("button", name=re.compile("^Sohbet")).click()
+    box = page.get_by_role("combobox", name="Soru")
+    expect(page.locator(".quick .suggestion").first).to_be_visible()
+    before = len(calls)
+    box.press_sequentially("T01 ")  # a space closes the word: no list
+    box.fill("")
+    box.press_sequentially("T01")
+    ac = page.locator(".ac")
+    expect(ac.locator(".ac-item").first).to_contain_text("T0122")  # the open frame's track first
+    box.press("Tab")
+    expect(box).to_have_value("T0122 ")
+    box.press_sequentially("dog")
+    expect(ac).to_contain_text("Doğu Yolu")  # zones, diacritics ignored
+    box.press("Tab")
+    expect(box).to_have_value("T0122 Doğu Yolu ")
+    box.press_sequentially("12:3")
+    expect(ac).to_contain_text("12:35")
+    box.press("Escape")  # closes the list, not the chat
+    expect(ac).to_have_count(0)
+    expect(page.locator(".chat")).to_be_visible()
+    # typing asked nothing: no chat request, and the vocabulary was loaded once
+    assert not any(u.endswith("/api/chat") for u in calls[before:]), calls
+    assert sum("/api/chat/vocab" in u for u in calls) == 1, calls
+
+
+def test_critical_cards_in_the_chat(page: Page):
+    page.goto("/#/")
+    expect(page.locator("li.row")).to_have_count(40)
+    fab = page.locator(".chat-fab")
+    expect(fab).to_contain_text("kritik")  # the chat button counts pending KRİTİK frames
+    fab.click()
+    demo = page.locator(".crit-card").filter(has_text=DEMO)
+    expect(demo).to_contain_text("R119")  # the facts come from the packet
+    q = demo.locator(".crit-qs .suggestion").first
+    text = q.inner_text()
+    q.click()  # one click: the frame goes into the context and the question is asked
+    expect(page.locator(".msg-user").last).to_contain_text(text)
+    expect(page.locator(".chat-context")).to_contain_text(DEMO)
+    expect(page.locator(".msg-bot").last).to_contain_text("Kayıtlara göre")
+    # a decision takes the card off; undo brings it back
+    page.goto(f"/#/frame/{DEMO}")
+    page.get_by_role("button", name=re.compile("^Onayla")).click()
+    expect(page.locator(".crit-card").filter(has_text=DEMO)).to_have_count(0)
+    page.get_by_role("button", name="Geri al").click()
+    expect(page.locator(".crit-card").filter(has_text=DEMO)).to_have_count(1)
+    page.get_by_role("button", name=f"{DEMO} kartını gizle").click()
+    expect(page.locator(".crit-card").filter(has_text=DEMO)).to_have_count(0)
