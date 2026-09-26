@@ -4,6 +4,7 @@ import { SummaryContext } from "./components/ui";
 import { api } from "./lib/api";
 import { storage } from "./lib/format";
 import type { ChatItem, Health, ShiftSummary, TriageRow } from "./lib/types";
+import { CHAT_ICON } from "./lib/symbols";
 import { DRAG_TYPE, MAX_CONTEXT, endDrag, itemKey, readDrag } from "./lib/vehicles";
 import { EscalationCard, HandoverPage } from "./pages/Handover";
 import { FramePage } from "./pages/Frame";
@@ -66,9 +67,6 @@ export default function App() {
     window.addEventListener("sentinel:chat-add", on);
     return () => window.removeEventListener("sentinel:chat-add", on);
   }, [addItem]);
-  // KRİTİK frames still waiting for a decision (minus cards the operator hid): the chat button's badge.
-  const hiddenCards = storage.get<string[]>("crit_hidden", []);
-  const nCritical = (queue ?? []).filter((r) => r.level === "KRİTİK" && !r.decision && !hiddenCards.includes(r.image_id)).length;
   // The page's frame: the open frame, or the queue's selected one (the chat's context when nothing is added).
   const routeFrame = route.page === "frame" || route.page === "brief" ? route.id : null;
   const pageFrame = routeFrame ?? (route.page === "triage" ? triageSel : null);
@@ -133,9 +131,11 @@ export default function App() {
         <TriagePage health={health} queue={queue} onSelect={setTriageSel} />
       )}
       {!chatOpen && (
+        // The chat lives at the side: an icon on the right edge (a drop target too), the panel opens there.
         <button
-          className="chat-fab btn btn-primary"
+          className="chat-fab"
           onClick={() => toggleChat(true)}
+          aria-label="Sohbet (/)"
           title="Sohbeti aç (/) · bir aracı ya da kareyi buraya sürükleyerek de açabilirsiniz"
           onDragOver={(e) => {
             if (e.dataTransfer.types.includes(DRAG_TYPE)) e.preventDefault();
@@ -146,13 +146,12 @@ export default function App() {
             if (item) addItem(item);
           }}
         >
-          Sohbet
-          {nCritical > 0 && <span className="fab-crit">· {nCritical} kritik</span>}
-          <kbd className="kbd">/</kbd>
+          <svg className="chat-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d={CHAT_ICON} />
+          </svg>
         </button>
       )}
       <ChatPanel open={chatOpen} onClose={() => toggleChat(false)} imageId={pageFrame}
-        queue={queue}
         items={chatItems}
         onAdd={addItem}
         onRemove={(key) => setChatItems((xs) => xs.filter((x) => itemKey(x) !== key))}

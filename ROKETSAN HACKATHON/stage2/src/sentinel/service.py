@@ -539,12 +539,6 @@ class SentinelService:
             image_id = None
         return self._suggest(image_id, self._context(image_id, focus_ref, context), limit)
 
-    def critical_cards(self):
-        """KRİTİK frames waiting for a decision, as chat cards (facts + questions, no LLM)."""
-        from sentinel.agent.alerts import critical_cards
-
-        return critical_cards(self.triage(), self.packet)
-
     def chat_vocab(self) -> dict:
         """Everything the chat box can complete, in one payload the UI loads once (no LLM, no per-key requests):
         frames (with their vehicles), tracks, reports (verdicts are per frame: a report can be confirmed near one

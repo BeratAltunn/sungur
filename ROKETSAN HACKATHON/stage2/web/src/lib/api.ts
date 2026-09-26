@@ -1,7 +1,6 @@
 import type {
   ChatItem,
   ChatVocab,
-  CriticalCard,
   ChatTurn,
   Decision,
   EvidencePacket,
@@ -133,8 +132,6 @@ export const api = {
       body: JSON.stringify({ question, history, image_id: imageId, context: context.map(wire) }),
       signal,
     }),
-  /** KRİTİK frames waiting for a decision, with facts and questions (no LLM). */
-  critical: () => http<CriticalCard[]>("/api/alerts/critical"),
   /** Completion vocabulary for the chat box (one request per page load; matching happens in the browser). */
   vocab: () => http<ChatVocab>("/api/chat/vocab"),
   /** Questions for the situation: what is in the chat's context, else the frame, else the queue. */

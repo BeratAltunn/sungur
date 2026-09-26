@@ -219,12 +219,6 @@ def chat_suggestions(image_id: str | None = None, vehicle_ref: str | None = None
     return {"suggestions": [s.model_dump() for s in svc().chat_suggestions(image_id, vehicle_ref)]}
 
 
-@app.get("/api/alerts/critical")
-def alerts_critical() -> list[dict]:
-    """KRİTİK frames still waiting for the operator, with facts and questions (rule-based, no LLM)."""
-    return [c.model_dump() for c in svc().critical_cards()]
-
-
 @app.get("/api/chat/vocab")
 def chat_vocab() -> dict:
     """What the chat box can complete (ids, zones, times); loaded once by the UI, never per key press."""

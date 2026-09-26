@@ -256,27 +256,3 @@ def test_chat_box_completes_locally_without_requests(page: Page):
     # typing asked nothing: no chat request, and the vocabulary was loaded once
     assert not any(u.endswith("/api/chat") for u in calls[before:]), calls
     assert sum("/api/chat/vocab" in u for u in calls) == 1, calls
-
-
-def test_critical_cards_in_the_chat(page: Page):
-    page.goto("/#/")
-    expect(page.locator("li.row")).to_have_count(40)
-    fab = page.locator(".chat-fab")
-    expect(fab).to_contain_text("kritik")  # the chat button counts pending KRİTİK frames
-    fab.click()
-    demo = page.locator(".crit-card").filter(has_text=DEMO)
-    expect(demo).to_contain_text("R119")  # the facts come from the packet
-    q = demo.locator(".crit-qs .suggestion").first
-    text = q.inner_text()
-    q.click()  # one click: the frame goes into the context and the question is asked
-    expect(page.locator(".msg-user").last).to_contain_text(text)
-    expect(page.locator(".chat-context")).to_contain_text(DEMO)
-    expect(page.locator(".msg-bot").last).to_contain_text("Kayıtlara göre")
-    # a decision takes the card off; undo brings it back
-    page.goto(f"/#/frame/{DEMO}")
-    page.get_by_role("button", name=re.compile("^Onayla")).click()
-    expect(page.locator(".crit-card").filter(has_text=DEMO)).to_have_count(0)
-    page.get_by_role("button", name="Geri al").click()
-    expect(page.locator(".crit-card").filter(has_text=DEMO)).to_have_count(1)
-    page.get_by_role("button", name=f"{DEMO} kartını gizle").click()
-    expect(page.locator(".crit-card").filter(has_text=DEMO)).to_have_count(0)

@@ -68,9 +68,11 @@ export function TriagePage({
   useEffect(() => setCursor(0), [zone, level, status, search]);
 
   // J/K move, Enter opens: the queue is operated from the keyboard.
+  const keyOnRow = useRef(false); // was a row focused when J/K was pressed (read at key time, not after render)
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
+      keyOnRow.current = (e.target as HTMLElement).classList?.contains("row") ?? false;
       if (tag === "SELECT" || (tag === "INPUT" && e.key !== "Enter" && e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
       if (e.key === "j" || e.key === "ArrowDown") setCursor((c) => Math.min(c + 1, rows.length - 1));
       else if (e.key === "k" || e.key === "ArrowUp") setCursor((c) => Math.max(c - 1, 0));
@@ -88,7 +90,8 @@ export function TriagePage({
   useEffect(() => {
     const el = document.querySelector<HTMLElement>(`[data-row="${cursor}"]`);
     el?.scrollIntoView({ block: "nearest" });
-    if (document.activeElement?.classList.contains("row")) el?.focus();
+    if (keyOnRow.current || document.activeElement?.classList.contains("row")) el?.focus();
+    keyOnRow.current = false;
   }, [cursor]);
 
   const zones = useMemo(() => [...new Set((queue ?? []).map((r) => r.zone))].sort(), [queue]);

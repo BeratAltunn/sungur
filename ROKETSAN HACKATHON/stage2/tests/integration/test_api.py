@@ -105,17 +105,6 @@ def test_chat_suggestions_endpoint(client):
     assert bad.status_code == 422
 
 
-def test_critical_alerts_endpoint(client):
-    cards = client.get("/api/alerts/critical").json()
-    assert cards and {"image_id", "facts", "questions", "eta_min"} <= cards[0].keys()
-    pending = [
-        r["image_id"]
-        for r in client.get("/api/triage").json()
-        if r["level"] == "KRİTİK" and not r["decision"]
-    ]
-    assert [c["image_id"] for c in cards] == pending  # pending KRİTİK only, in queue order
-
-
 def test_chat_vocab_endpoint(client):
     v = client.get("/api/chat/vocab").json()
     assert len(v["frames"]) == 40 and len(v["reports"]) == 137 and len(v["zones"]) == 8

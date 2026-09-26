@@ -2,9 +2,9 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNo
 import { api, explain } from "../lib/api";
 import { LABEL_TR, LEVEL_ICON, dec, smooth, storage, zoneName } from "../lib/format";
 import { applyCompletion, complete, type Completion } from "../lib/complete";
-import type { ChatItem, ChatTurn, ChatVocab, CriticalCard, Suggestion, TriageRow } from "../lib/types";
-import { DRAG_TYPE, endDrag, frameItem, itemKey, readDrag } from "../lib/vehicles";
-import { LevelBadge, RefText } from "./ui";
+import type { ChatItem, ChatTurn, ChatVocab, Suggestion } from "../lib/types";
+import { DRAG_TYPE, endDrag, itemKey, readDrag } from "../lib/vehicles";
+import { RefText } from "./ui";
 
 interface Msg {
   role: "user" | "assistant";
@@ -91,13 +91,10 @@ export function ChatPanel({
   onAdd,
   onRemove,
   onClear,
-  queue,
 }: {
   open: boolean;
   onClose: () => void;
   imageId: string | null;
-  /** The queue: critical cards refresh with it (a decision takes a card off). */
-  queue: TriageRow[] | null;
   items: ChatItem[];
   onAdd: (item: ChatItem) => void;
   onRemove: (key: string) => void;
@@ -149,22 +146,18 @@ export function ChatPanel({
   }, [open, ctxImage, ctxKey]);
 
   const send = useCallback(
-    async (question: string, withItems?: ChatItem[]) => {
+    async (question: string) => {
       const q = question.trim();
       if (!q || pending !== null) return;
-      // `withItems`: the context as it will be after an add in the same click (state is not updated yet)
-      const ctxItems = withItems ?? items;
-      const img = imageId ?? ctxItems[0]?.image_id ?? null;
-      const label = ctxItems.length ? ctxItems.map(itemLabel).join("; ") : null;
       const history = msgs.filter((m) => !m.error).slice(-8).map(({ role, content }) => ({ role, content }));
-      setMsgs((m) => [...m, { role: "user", content: q, imageId: img, context: label }]);
+      setMsgs((m) => [...m, { role: "user", content: q, imageId: ctxImage, context: ctxLabel }]);
       setInput("");
       setElapsed(0);
       setPending(Date.now());
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       try {
-        const turn = await api.chat(q, history, img, ctxItems, ctrl.signal);
+        const turn = await api.chat(q, history, ctxImage, items, ctrl.signal);
         setMsgs((m) => [...m, { role: "assistant", content: turn.answer, turn, error: turn.note === "llm_hata" }]);
       } catch (e) {
         const content = ctrl.signal.aborted ? "Soru iptal edildi." : `Soru yanıtlanamadı. ${explain(e)}`;
@@ -174,7 +167,7 @@ export function ChatPanel({
         setPending(null);
       }
     },
-    [msgs, pending, imageId, items],
+    [msgs, pending, ctxImage, items, ctxLabel],
   );
 
   // Quick questions: the last answer's follow-ups (same context), else the situation questions; never one asked.
@@ -189,35 +182,6 @@ export function ChatPanel({
     if (open) loadVocab().then(setVocab);
   }, [open]);
 
-  // Critical cards: KRİTİK frames waiting for a decision (rule-based on the server; refreshed with the queue).
-  const [critical, setCritical] = useState<CriticalCard[]>([]);
-  const [hidden, setHidden] = useState<string[]>(() => storage.get<string[]>("crit_hidden", []));
-  const [critOpen, setCritOpen] = useState<boolean>(() => storage.get("crit_open", true));
-  const [critAll, setCritAll] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    let alive = true;
-    api
-      .critical()
-      .then((c) => alive && setCritical(c))
-      .catch(() => alive && setCritical([]));
-    return () => {
-      alive = false;
-    };
-  }, [open, queue]);
-  const cards = critical.filter((c) => !hidden.includes(c.image_id));
-  const hide = (id: string) => {
-    const next = [...hidden, id];
-    setHidden(next);
-    storage.set("crit_hidden", next);
-  };
-  const cardItem = (c: CriticalCard) => frameItem({ image_id: c.image_id, level: "KRİTİK", zone: c.zone, capture_time: c.capture_time });
-  const askAbout = (c: CriticalCard, q: string) => {
-    const item = cardItem(c);
-    const next = items.some((x) => itemKey(x) === itemKey(item)) ? items : [...items, item].slice(-4);
-    onAdd(item);
-    send(q, next);
-  };
   const ctxFrames = [...new Set([...(ctxImage ? [ctxImage] : []), ...items.map((c) => c.image_id)])];
   const acItems: Completion[] =
     vocab && !acClosed && pending === null
@@ -297,68 +261,6 @@ export function ChatPanel({
           </button>
         </div>
       </div>
-
-      {cards.length > 0 && (
-        <section className="crit" aria-label="Kritik uyarılar">
-          <button
-            className="crit-head"
-            aria-expanded={critOpen}
-            onClick={() => {
-              setCritOpen(!critOpen);
-              storage.set("crit_open", !critOpen);
-            }}
-          >
-            <LevelBadge level="KRİTİK" size="sm" /> {cards.length} karar bekliyor
-            <span className="muted small">{critOpen ? "gizle" : "göster"}</span>
-          </button>
-          {critOpen && (
-            <div className="crit-list">
-              {(critAll ? cards : cards.slice(0, 2)).map((c) => (
-                <article key={c.image_id} className="crit-card" aria-label={`${c.image_id} kritik`}>
-                  <div className="crit-top">
-                    <span className="mono">{c.image_id}</span>
-                    <span className="muted">
-                      {c.zone} · {c.capture_time}
-                    </span>
-                    {c.eta_min !== null && <span className="crit-eta mono">ETA ~{dec(c.eta_min)} dk</span>}
-                  </div>
-                  {c.eta_vehicle && <div className="muted small">ilk varış: {c.eta_vehicle}</div>}
-                  <ul className="crit-facts">
-                    {c.facts.map((f) => (
-                      <li key={f}>
-                        <RefText text={f} onRef={emitRef} />
-                      </li>
-                    ))}
-                  </ul>
-                  <div className="crit-qs">
-                    {c.questions.map((q) => (
-                      <button key={q.text} className="suggestion suggestion-sm" disabled={pending !== null} onClick={() => askAbout(c, q.text)}>
-                        {q.text}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="crit-actions">
-                    <button className="linklike" onClick={() => onAdd(cardItem(c))}>
-                      Bağlama ekle
-                    </button>
-                    <a className="linklike" href={`#/frame/${c.image_id}`}>
-                      Kareyi aç →
-                    </a>
-                    <button className="linklike" onClick={() => hide(c.image_id)} aria-label={`${c.image_id} kartını gizle`}>
-                      Gizle
-                    </button>
-                  </div>
-                </article>
-              ))}
-              {cards.length > 2 && (
-                <button className="linklike crit-more" onClick={() => setCritAll(!critAll)}>
-                  {critAll ? "İlk ikisini göster" : `Tümünü göster (${cards.length})`}
-                </button>
-              )}
-            </div>
-          )}
-        </section>
-      )}
 
       <div className="chat-list" ref={listRef} role="log" aria-live="polite" aria-label="Sohbet geçmişi">
         {msgs.length === 0 && (
