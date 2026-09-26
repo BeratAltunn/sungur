@@ -9,8 +9,11 @@ from sentinel.service import SentinelService
 
 
 @pytest.fixture(scope="module")
-def client(settings):
-    api.service_factory = lambda: SentinelService(settings, llm=MockLLM())
+def client(settings, tmp_path_factory):
+    # Own runs dir: the app's background warm-up keeps writing traces after this module, and other tests read theirs.
+    s = settings.model_copy(deep=True)
+    s.observability.runs_dir = tmp_path_factory.mktemp("api-runs")
+    api.service_factory = lambda: SentinelService(s, llm=MockLLM())
     with TestClient(api.app) as c:
         yield c
     api.service_factory = SentinelService

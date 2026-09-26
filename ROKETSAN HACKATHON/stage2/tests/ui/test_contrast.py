@@ -61,6 +61,15 @@ def test_text_contrast(page: Page, path: str, ready: str):
     assert bad == [], f"{path}: {len(bad)} metin {MIN}:1 altında: {bad[:8]}"
 
 
+def test_text_contrast_vehicle_view(page: Page):
+    page.add_init_script("localStorage.setItem('map_mode', JSON.stringify('vehicles'))")
+    page.goto("/#/")
+    page.wait_for_selector(".timebar")
+    page.wait_for_selector(".frame-card")  # measured once the card has faded in, as on the frame view
+    bad = _failures(page)
+    assert bad == [], f"araç görünümü: {len(bad)} metin {MIN}:1 altında: {bad[:8]}"
+
+
 def test_text_contrast_blind_labelling(page: Page):
     page.add_init_script("localStorage.setItem('labeler', JSON.stringify('contrast'))")
     page.goto("/#/label/img_000860")

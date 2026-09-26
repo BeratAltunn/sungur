@@ -111,6 +111,12 @@ def map_context() -> dict:
     return svc().map_context()
 
 
+@app.get("/api/vehicles")
+def vehicles() -> dict:
+    """Every vehicle's path over the day, with its detected class and level where a frame matched it."""
+    return svc().vehicles()
+
+
 @app.get("/api/frames/{image_id}")
 def frame(image_id: str):
     _check_frame(image_id)
@@ -201,6 +207,16 @@ def chat(body: ChatIn) -> dict:
         raise HTTPException(422, "soru boş")
     turn, run_id = svc().chat(q[:2000], body.history[-8:], body.image_id)
     return {**turn.model_dump(), "run_id": run_id}
+
+
+class LlmSwitchIn(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/llm")
+def llm_switch(body: LlmSwitchIn) -> dict:
+    """Operator switch: off → no LLM request is sent (briefs from the LLM cache or the template, chat says off)."""
+    return {"enabled": svc().set_llm_enabled(body.enabled)}
 
 
 class GoldIn(BaseModel):

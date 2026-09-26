@@ -5,10 +5,17 @@ import { MapView, fc, htmlMarker, line, polygon, setGeo } from "../components/Ma
 import { grid } from "../lib/geo";
 import { baseSymbol, classSymbol } from "../lib/symbols";
 import { ReplayBar, useReplay } from "../components/Replay";
+import { TimeBar } from "../components/TimeBar";
+import { useVehicleLayer } from "../components/VehicleLayer";
 import { DecisionPill, ErrorState, Kbd, LevelBadge, Loading, SummaryContext, TopBar } from "../components/ui";
 import { api } from "../lib/api";
+import { createClock, type Clock } from "../lib/clock";
+import { toMin } from "../lib/dayVehicles";
 import { LABEL_TR, LEVELS, reducedMotion, LEVEL_ACTION, LEVEL_CLASS, LEVEL_COLOR, LEVEL_ICON, dec, km, secs, storage, zoneName } from "../lib/format";
-import type { FrameMotion, Health, Label, Level, LngLat, MapContext, ShiftSummary, TriageRow } from "../lib/types";
+import type { DayVehicle, FrameMotion, Health, Label, Level, LngLat, MapContext, ShiftSummary, TriageRow, VehicleDay } from "../lib/types";
+
+/** Main map view: moving vehicles over the day (with the time bar) or one marker per frame. */
+type MapMode = "vehicles" | "frames";
 
 type MapFrame = MapContext["frames"][number];
 const LABEL_ORDER: Label[] = ["truck", "bus", "van", "car", "unknown"]; // heavy first, as the risk model weighs them
@@ -33,6 +40,22 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
   const [showTip, setShowTip] = useState(() => !storage.get("tip_seen", false));
   const viewed = useMemo(() => new Set(storage.get<string[]>("viewed", [])), []);
   const replay = useReplay();
+  const [mode, setMode] = useState<MapMode>(() => storage.get<MapMode>("map_mode", "vehicles"));
+  const [vehDay, setVehDay] = useState<VehicleDay | null>(null);
+  const [threshold, setThreshold] = useState<number>(() => storage.get("veh_threshold", 0));
+  const clock = useMemo(() => createClock({ t: -1, playing: false, speed: 2 }), []);
+  const switchMode = (m: MapMode) => {
+    storage.set("map_mode", m);
+    setMode(m);
+    clock.set({ playing: false });
+  };
+  const changeThreshold = (v: number) => {
+    storage.set("veh_threshold", v);
+    setThreshold(v);
+  };
+  useEffect(() => {
+    if (mode === "vehicles" && !vehDay) api.vehicles().then(setVehDay).catch((e) => setError(e));
+  }, [mode, vehDay]);
 
   const load = () => {
     setError(null);
@@ -74,17 +97,29 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
       else if (e.key === "Enter" && selected) go(`/frame/${selected.image_id}`);
       else if (e.key === "Escape" && tag !== "INPUT" && selected) select(null);
       else if (e.key === " " && replay.state && tag !== "INPUT") replay.set({ playing: !replay.state.playing });
+      else if (e.key === " " && mode === "vehicles" && vehDay && tag !== "INPUT" && tag !== "BUTTON")
+        clock.set({ playing: !clock.get().playing });
       else return;
       e.preventDefault();
     };
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
-  }, [rows, cursor, selected, replay]);
+  }, [rows, cursor, selected, replay, mode, vehDay, clock]);
 
   const zones = useMemo(() => [...new Set((queue ?? []).map((r) => r.zone))].sort(), [queue]);
   const decided = useMemo(() => new Set((queue ?? []).filter((r) => r.decision).map((r) => r.image_id)), [queue]);
   const byId = useMemo(() => new Map((queue ?? []).map((r) => [r.image_id, r])), [queue]);
   const frameInfo = useMemo(() => new Map((mapCtx?.frames ?? []).map((f) => [f.image_id, f])), [mapCtx]);
+  // Time bar ticks: every frame at its capture time. The clock opens on the most urgent frame's moment.
+  const ticks = useMemo(
+    () => (mapCtx?.frames ?? []).map((f) => ({ image_id: f.image_id, t: toMin(f.capture_time), level: f.level, time: f.capture_time })),
+    [mapCtx],
+  );
+  useEffect(() => {
+    if (clock.get().t >= 0 || !vehDay || !ticks.length || !queue?.length) return;
+    const first = ticks.find((k) => k.image_id === queue[0].image_id);
+    clock.set({ t: first?.t ?? vehDay.window.end });
+  }, [clock, vehDay, ticks, queue]);
 
   // Hovering previews a frame; the card stays while the pointer is on it, then falls back to the pick.
   const hoverTimer = useRef<number | undefined>(undefined);
@@ -189,13 +224,28 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
             <option value="unseen">Bakılmamışlar</option>
             <option value="escalated">Amire iletilenler</option>
           </select>
+          <div className="seg" role="group" aria-label="Harita görünümü">
+            <button className={`btn btn-sm ${mode === "vehicles" ? "seg-on" : "btn-ghost"}`} aria-pressed={mode === "vehicles"} onClick={() => switchMode("vehicles")}>
+              Araçlar
+            </button>
+            <button className={`btn btn-sm ${mode === "frames" ? "seg-on" : "btn-ghost"}`} aria-pressed={mode === "frames"} onClick={() => switchMode("frames")}>
+              Kareler
+            </button>
+          </div>
         </div>
         {showTip && (
           <div className="tip hud-panel" role="note">
-            <span>
-              Her işaret bir kare: üzerine gel ya da tıkla, kartı açılır. <Kbd>J</Kbd>/<Kbd>K</Kbd> risk sırasıyla gezer,{" "}
-              <Kbd>Enter</Kbd> açar. Ok öncü aracın yönü, uzunluğu hızı.
-            </span>
+            {mode === "vehicles" ? (
+              <span>
+                Her işaret bir araç: seçili saatteki konumu, rengi tehdit seviyesi. Alttaki çubukla zamanı oynat (<Kbd>Space</Kbd>),
+                eşikle kalabalığı azalt. Araca tıkla: karesinin kartı açılır. <Kbd>J</Kbd>/<Kbd>K</Kbd> kareleri risk sırasıyla gezer.
+              </span>
+            ) : (
+              <span>
+                Her işaret bir kare: üzerine gel ya da tıkla, kartı açılır. <Kbd>J</Kbd>/<Kbd>K</Kbd> risk sırasıyla gezer,{" "}
+                <Kbd>Enter</Kbd> açar. Ok öncü aracın yönü, uzunluğu hızı.
+              </span>
+            )}
             <button
               className="btn btn-ghost btn-sm"
               onClick={() => {
@@ -245,6 +295,9 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
             cardKey={cardId}
             cardLeaving={leaving}
             cardAt={cardInfo?.center ?? null}
+            vehicles={mode === "vehicles" ? (vehDay?.vehicles ?? null) : null}
+            threshold={threshold}
+            clock={clock}
           />
         ) : (
           <Loading label="Kareler değerlendiriliyor" />
@@ -253,6 +306,17 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
       </main>
 
       <div className="hud hud-bottom" ref={hudBottom}>
+        {mode === "vehicles" && vehDay && (
+          <TimeBar
+            clock={clock}
+            window={vehDay.window}
+            ticks={ticks}
+            vehicles={vehDay.vehicles}
+            threshold={threshold}
+            onThreshold={changeThreshold}
+            onTick={select}
+          />
+        )}
         <Legend rings={mapCtx?.rings.map((r) => r.km) ?? []} />
       </div>
     </div>
@@ -463,6 +527,9 @@ function OverviewMap({
   cardKey,
   cardLeaving,
   cardAt,
+  vehicles,
+  threshold,
+  clock,
 }: {
   ctx: MapContext;
   rows: TriageRow[];
@@ -480,6 +547,10 @@ function OverviewMap({
   cardKey: string | null;
   cardLeaving: boolean;
   cardAt: LngLat | null;
+  /** Vehicle view: every vehicle of the day moved by the clock (null: frame view). */
+  vehicles: DayVehicle[] | null;
+  threshold: number;
+  clock: Clock;
 }) {
   const cb = useRef({ onSelect, onHover, onHoverOut });
   cb.current = { onSelect, onHover, onHoverOut };
@@ -490,6 +561,15 @@ function OverviewMap({
   const cardRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(0); // markers exist only after the map loads
   const [pos, setPos] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  useVehicleLayer({
+    map: ready ? mapRef.current : null,
+    ready,
+    vehicles,
+    enabled: vehicles !== null,
+    threshold,
+    clock,
+    onSelect: (id) => cb.current.onSelect(id),
+  });
 
   const onReady = (map: MLMap) => {
     mapRef.current = map;
@@ -723,7 +803,7 @@ function OverviewMap({
   }
 
   return (
-    <div className="overview-stage">
+    <div className={`overview-stage${vehicles ? " veh-mode" : ""}`}>
       <MapView className="overview-map" onReady={onReady} initial={{ center: ctx.base.center, zoom: 11.6 }} threeD={MAP_3D} terrain />
       {card && style && (
         <div key={cardKey} ref={cardRef} className={`frame-card-wrap ${cardLeaving ? "card-out" : "card-in"}`} style={style}>

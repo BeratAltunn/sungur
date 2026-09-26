@@ -13,6 +13,7 @@ import type {
   ShiftSummary,
   TraceStep,
   TriageRow,
+  VehicleDay,
 } from "./types";
 
 /** Errors in operational terms: what happened, what still works, what to do. The HTTP code stays at the end
@@ -104,6 +105,9 @@ export const api = {
   impact: () => http<ImpactReport>("/api/impact"),
   triage: () => http<TriageRow[]>("/api/triage"),
   map: () => http<MapContext>("/api/map"),
+  vehicles: () => http<VehicleDay>("/api/vehicles"),
+  /** Operator switch for LLM queries (brief + chat); off → nothing is sent to the model. */
+  setLlm: (enabled: boolean) => http<{ enabled: boolean }>("/api/llm", { method: "POST", body: JSON.stringify({ enabled }) }),
   frame: (id: string) => http<FrameResponse>(`/api/frames/${id}`),
   packet: (id: string) => http<EvidencePacket>(`/api/frames/${id}/packet`),
   tracks: (id: string) => http<FrameTracks>(`/api/frames/${id}/tracks`),

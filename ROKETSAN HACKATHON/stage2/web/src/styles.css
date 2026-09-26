@@ -707,3 +707,30 @@ a.btn-primary, a.btn-ok { color: #080c11; }
 .frame-card .preview-id .mono { font-size: 16px; }
 .frame-card .preview-img { max-height: 120px; }
 .frame-card-open { position: sticky; bottom: 0; margin: 0 -12px; border-radius: 0 0 var(--radius) var(--radius); box-shadow: 0 -6px 12px var(--panel); }
+
+/* ---------------------------------------------------------------- vehicle view + time bar (main map) */
+.veh-mode .mk-frame, .veh-mode .mk-arrow-mk { display: none !important; } /* vehicles replace the frame markers */
+.mk-v { --mk-bg: rgb(16,25,35); display: grid; place-items: center; width: 24px; height: 17px; border: 1.5px solid var(--lvc); border-radius: 3px; background: rgba(16,25,35,.88); cursor: pointer; }
+.mk-v .veh-sil { width: 18px; height: 11px; fill: currentColor; }
+.mk-v.lv-crit { background: var(--lv-crit); color: #080c11; --mk-bg: var(--lv-crit); }
+.mk-v-still { border-style: dashed; } /* detected without a track: position known at capture time only */
+.mk-v:hover { width: 30px; height: 21px; z-index: 6; box-shadow: 0 0 0 3px rgba(255,255,255,.25); }
+.mk-v:hover .veh-sil { width: 23px; height: 14px; }
+.mk-vdot { width: 7px; height: 7px; border-radius: 50%; background: #8b95a3; border: 1px solid #0a0f15; opacity: .8; }
+.mk-v.mk-hidden, .mk-vdot.mk-hidden { display: none !important; }
+.seg { display: inline-flex; gap: 2px; margin-left: 4px; padding: 2px; border: 1px solid var(--line-2); border-radius: 6px; }
+.seg .btn { padding: 2px 10px; }
+.seg-on { background: var(--accent); color: #080c11; border-color: var(--accent); }
+.timebar { width: min(780px, calc(100vw - 200px)); padding: 6px 12px 8px; display: grid; gap: 2px; }
+.timebar-row { display: flex; align-items: center; gap: 10px; }
+.timebar-play { min-width: 40px; justify-content: center; }
+.timebar-now { font-size: 18px; font-weight: 700; min-width: 54px; color: var(--text); }
+.timebar-track { position: relative; flex: 1; display: flex; align-items: center; height: 34px; padding-top: 12px; }
+.timebar-track input[type="range"] { width: 100%; margin: 0; }
+.timebar-tick { position: absolute; top: -1px; transform: translateX(-50%); background: none; border: 0; padding: 0 1px; font-size: 11px; line-height: 12px; cursor: pointer; }
+.timebar-tick:hover, .timebar-tick:focus-visible { transform: translateX(-50%) scale(1.5); }
+.timebar-sub { font-size: 13px; color: var(--text-2); }
+.timebar-thr { display: inline-flex; align-items: center; gap: 6px; }
+.timebar-thr input { width: 170px; }
+.llm-switch { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+.llm-switch input { margin: 0; accent-color: var(--accent); }

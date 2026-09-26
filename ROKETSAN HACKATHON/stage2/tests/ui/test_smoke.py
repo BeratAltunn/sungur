@@ -120,6 +120,63 @@ def test_markers_stay_anchored_when_zooming(page: Page):
         assert abs(x1 - 2 * x0) < 3 and abs(y1 - 2 * y0) < 3, (x0, y0, x1, y1)
 
 
+VEHICLES = ".mk-v:not(.mk-hidden), .mk-vdot:not(.mk-hidden)"
+
+
+def test_vehicle_view_plays_the_day_and_the_threshold_thins_it(page: Page):
+    """Vehicle view: one marker per vehicle at the clock's time (opening on the most urgent frame's capture time),
+    the time bar moves them, the score threshold hides the lower ones, and the frame view is one click away."""
+    page.add_init_script("localStorage.setItem('map_mode', JSON.stringify('vehicles'))")
+    page.goto("/#/")
+    bar = page.locator(".timebar")
+    expect(bar).to_be_visible()
+    expect(page.locator(".timebar-now")).to_have_text("14:10")  # img_000860, the most urgent frame
+    expect(page.locator(".timebar-tick")).to_have_count(40)
+    # markers are added once the map has loaded
+    page.wait_for_function(f"document.querySelectorAll({VEHICLES!r}).length > 20")
+    all_n = page.locator(VEHICLES).count()
+    expect(bar).to_contain_text(f"{all_n} araç")  # the bar counts exactly what the map draws
+    assert page.evaluate(
+        "[...document.querySelectorAll('.mk-frame')].every(e => getComputedStyle(e).display === 'none')"
+    )
+    # play: the clock runs and the vehicles move
+    first = page.locator(".mk-v:not(.mk-hidden)").first
+    b0 = first.bounding_box()
+    page.get_by_role("button", name="Zamanı oynat").click()
+    page.wait_for_timeout(1500)
+    page.get_by_role("button", name="Zamanı durdur").click()
+    assert page.locator(".timebar-now").inner_text() != "14:10"
+    b1 = first.bounding_box()
+    assert b0 and b1 and abs(b1["x"] - b0["x"]) + abs(b1["y"] - b0["y"]) > 1
+    # a tick jumps to that frame's capture time and opens its card
+    page.locator('.timebar-tick[title^="img_000860"]').click()
+    expect(page.locator(".timebar-now")).to_have_text("14:10")
+    expect(page.locator(".frame-card")).to_contain_text(DEMO)
+    # threshold: fewer vehicles, all at or above it
+    page.get_by_label("Tehdit skoru eşiği").fill("50")
+    thinned = page.locator(VEHICLES).count()
+    assert 0 < thinned < all_n
+    expect(page.locator(".mk-vdot:not(.mk-hidden)")).to_have_count(0)  # unscored tracks hide above 0
+    # frame view: the 40 frame markers are back, no time bar
+    page.get_by_role("button", name="Kareler").click()
+    expect(page.locator(FRAMES)).to_have_count(40)
+    expect(page.locator(".timebar")).to_have_count(0)
+
+
+def test_llm_switch_in_the_status_bar(page: Page):
+    """The operator can stop every LLM request from the status bar; the LLM indicator says so."""
+    page.goto("/#/")
+    box = page.get_by_label("LLM sorgularını kapat")
+    expect(box).not_to_be_checked()
+    box.check()
+    expect(page.locator(".subsys", has_text="LLM")).to_contain_text(
+        "kapalı", timeout=8000
+    )  # next health poll
+    assert page.evaluate("fetch('/api/health').then(r => r.json()).then(h => h.llm.enabled)") is False
+    box.uncheck()
+    expect(page.locator(".subsys", has_text="LLM")).not_to_contain_text("kapalı", timeout=8000)
+
+
 def test_terrain_draped_on_main_map_and_can_be_turned_off(page: Page):
     """With tiles installed (scripts/build_terrain.py), the main map loads the local DEM + texture; the operator can
     turn it off (remembered), and the evidence markers are untouched either way."""

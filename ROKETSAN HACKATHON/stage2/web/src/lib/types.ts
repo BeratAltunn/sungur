@@ -261,6 +261,23 @@ export interface ImpactReport {
 
 export type LngLat = [number, number];
 
+/** GET /api/vehicles: every vehicle of the day. Identity fields are null for tracks no frame detected. */
+export interface DayVehicle {
+  id: string;
+  track_id: string | null; // null: detected without a track (e.g. parked), a single point at capture time
+  image_id: string | null;
+  vehicle_ref: string | null;
+  label: Label | null;
+  conf: number | null;
+  score: number | null;
+  level: Level | null;
+  points: [number, number, number][]; // [t_min, lat, lon]
+}
+export interface VehicleDay {
+  window: { start: number; end: number };
+  vehicles: DayVehicle[];
+}
+
 export interface MapContext {
   base: { name: string; center: LngLat };
   zones: {
@@ -333,7 +350,7 @@ export interface FrameTracks {
 export interface Health {
   detector: string;
   detector_fallback: string | null;
-  llm: { provider: string; model: string; error: string | null };
+  llm: { provider: string; model: string; error: string | null; enabled?: boolean };
   budget: { spent_usd: number; stop_usd: number; ratio: number };
   warmup: { done: number; total: number };
   data: { frames: number; tracks: number; reports: number };

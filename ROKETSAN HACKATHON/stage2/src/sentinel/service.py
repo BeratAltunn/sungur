@@ -122,6 +122,9 @@ class SentinelService:
                 self.llm_error = str(e)
                 log.warning("LLM devre dışı: %s", e)
         self.llm = llm
+        # Operator switch (status bar): off → no LLM request leaves the service; briefs come from the LLM cache or
+        # the template, chat says it is off. Runtime only; a restart turns it back on.
+        self.llm_enabled = True
         self.analyst = Analyst(llm, self.s)
         from sentinel.agent.analyst import load_prompt
         from sentinel.agent.chat import PROMPT_FILE, ChatAgent
@@ -149,6 +152,8 @@ class SentinelService:
         `llm_cache_only` never calls the LLM (uses its cache or the template) for fast previews.
         `on_event(kind, payload)` receives step start/end and the packet as soon as steps 1–5 are done,
         so a UI can show progress and the evidence before the brief."""
+        if not self.llm_enabled:
+            llm_cache_only = True
         run_id = new_run_id()
         tracer = Tracer(self.runs_dir, run_id, image_id, listener=on_event)
         t0 = time.perf_counter()
@@ -177,7 +182,7 @@ class SentinelService:
         from sentinel.agent.analyst import CACHE_MISS_NOTE
 
         res = self._results.get(image_id)
-        if res is None or (res.llm_note == CACHE_MISS_NOTE and self.llm is not None):
+        if res is None or (res.llm_note == CACHE_MISS_NOTE and self.llm is not None and self.llm_enabled):
             return self.evaluate(image_id)
         return res
 
@@ -553,12 +558,64 @@ class SentinelService:
             ),
         }
 
+    def vehicles(self) -> dict:
+        """Every vehicle of the day for the main map's time bar: each track's full path, with the detected vehicle's
+        class, confidence, score and level (config thresholds) where a frame matched it; detections without a track
+        (e.g. parked) as a single point at capture time; tracks no frame detected with no identity. Raw points only:
+        the UI interpolates positions for display."""
+        from sentinel.risk.scoring import level_for
+
+        def path(track_id: str) -> list[list[float]]:
+            return [[pt.t_min, pt.lat, pt.lon] for pt in self.repo.track(track_id).points]
+
+        detected: dict[str, dict] = {}  # by track id; a track seen in two frames keeps its highest score
+        untracked: list[dict] = []
+        for meta in self.repo.frames():
+            for v in self.packet(meta.image_id).vehicles:
+                item = {
+                    "id": v.track_id or f"{meta.image_id}/{v.ref}",
+                    "track_id": v.track_id,
+                    "image_id": meta.image_id,
+                    "vehicle_ref": v.ref,
+                    "label": v.label,
+                    "conf": round(v.conf, 2),
+                    "score": v.score,
+                    "level": level_for(v.score, self.s.risk).value,
+                }
+                if v.track_id is None:
+                    untracked.append({**item, "points": [[meta.capture_min, v.lat, v.lon]]})
+                elif v.track_id not in detected or v.score > detected[v.track_id]["score"]:
+                    detected[v.track_id] = item
+        out = [{**item, "points": path(tid)} for tid, item in detected.items()] + untracked
+        out += [
+            {
+                "id": tid,
+                "track_id": tid,
+                "image_id": None,
+                "vehicle_ref": None,
+                "label": None,
+                "conf": None,
+                "score": None,
+                "level": None,
+                "points": path(tid),
+            }
+            for tid in self.repo.tracks
+            if tid not in detected
+        ]
+        t0, t1 = self.repo.time_range
+        return {"window": {"start": t0, "end": t1}, "vehicles": out}
+
     # ================================================================ chat
     def chat(self, question: str, history: list | None = None, image_id: str | None = None):
         """One chat turn (tool-calling loop). history: [{role, content}] of the visible conversation."""
-        from sentinel.agent.chat import ChatMessage
+        from sentinel.agent.chat import ChatMessage, ChatTurn
 
         run_id = new_run_id()
+        if not self.llm_enabled:
+            return ChatTurn(
+                answer="LLM sorguları kapalı (durum çubuğundan açılabilir). Kare ekranlarındaki kanıtlar ve brief'ler kullanılabilir.",
+                note="llm_kapali",
+            ), run_id
         msgs = [m if isinstance(m, ChatMessage) else ChatMessage.model_validate(m) for m in history or []]
         if image_id is not None and image_id not in self.repo.meta:
             image_id = None
@@ -591,6 +648,12 @@ class SentinelService:
     ) -> OperatorDecision:
         return self.decisions.record(run_id, image_id, action, level, reason)
 
+    def set_llm_enabled(self, enabled: bool) -> bool:
+        """Operator switch for LLM queries (brief + chat)."""
+        self.llm_enabled = enabled
+        log.info("LLM sorguları %s", "açık" if enabled else "kapalı")
+        return self.llm_enabled
+
     @cached_property
     def _llm_name(self) -> str:
         return getattr(self.llm, "model", "yok") if self.llm else "yok"
@@ -599,7 +662,12 @@ class SentinelService:
         return {
             "detector": self.detector.name,
             "detector_fallback": getattr(self.detector, "load_error", None),
-            "llm": {"provider": self.s.llm.provider, "model": self._llm_name, "error": self.llm_error},
+            "llm": {
+                "provider": self.s.llm.provider,
+                "model": self._llm_name,
+                "error": self.llm_error,
+                "enabled": self.llm_enabled,
+            },
             "budget": self.budget.status(),
             "data": {
                 "frames": len(self.repo.meta),

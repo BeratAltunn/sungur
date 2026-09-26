@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { ApiError } from "../lib/api";
+import { ApiError, api } from "../lib/api";
 import { DECISION_ICON, DECISION_TR, LEVEL_CLASS, LEVEL_ICON, VERDICT_CLASS, VERDICT_ICON, dec, splitRefs } from "../lib/format";
 import type { Decision, Health, Level, ShiftSummary, VerdictT } from "../lib/types";
 
@@ -139,6 +139,27 @@ function Posture({ s }: { s: ShiftSummary | null }) {
   );
 }
 
+/** "LLM sorgularını kapat": the operator stops every LLM request (budget, offline demo). Shown immediately, then
+ *  follows the server (health poll). */
+function LlmSwitch({ enabled }: { enabled: boolean }) {
+  const [off, setOff] = useState(!enabled);
+  useEffect(() => setOff(!enabled), [enabled]);
+  return (
+    <label className="llm-switch" title="İşaretliyken dil modeline hiç istek gitmez: brief'ler önbellekten ya da şablondan gelir, sohbet kapalı.">
+      <input
+        type="checkbox"
+        checked={off}
+        onChange={(e) => {
+          const v = e.target.checked;
+          setOff(v);
+          api.setLlm(!v).catch(() => setOff(!v));
+        }}
+      />
+      LLM sorgularını kapat
+    </label>
+  );
+}
+
 /** Global status bar: classification banner, brand, clock + posture, subsystem health.
  *  `blind` (gold-set labelling) hides the posture: it would reveal the system's levels. */
 export function TopBar({ health, left, blind = false }: { health: Health | null; left?: ReactNode; blind?: boolean }) {
@@ -155,6 +176,7 @@ export function TopBar({ health, left, blind = false }: { health: Health | null;
     return () => ro.disconnect();
   }, []);
   const llmOk = !!health && !health.llm.error;
+  const llmOff = llmOk && health!.llm.enabled === false;
   const detFallback = health?.detector_fallback;
   const warming = !!health && health.warmup.done < health.warmup.total;
   const b = health?.budget;
@@ -190,10 +212,11 @@ export function TopBar({ health, left, blind = false }: { health: Health | null;
           />
           <Subsystem
             label="LLM"
-            value={!health ? "…" : llmOk ? health.llm.model : "çevrimdışı · şablon brief"}
-            st={!health ? "off" : llmOk ? "normal" : "serious"}
-            title={health?.llm.error ?? "Brief ve sohbet için dil modeli"}
+            value={!health ? "…" : llmOff ? "kapalı · önbellek/şablon" : llmOk ? health.llm.model : "çevrimdışı · şablon brief"}
+            st={!health ? "off" : llmOff ? "standby" : llmOk ? "normal" : "serious"}
+            title={health?.llm.error ?? (llmOff ? "LLM sorguları operatör tarafından kapatıldı" : "Brief ve sohbet için dil modeli")}
           />
+          {llmOk && <LlmSwitch enabled={health!.llm.enabled !== false} />}
           <Subsystem
             label="Veri"
             value={!health ? "…" : warming ? `hazırlanıyor ${health.warmup.done}/${health.warmup.total}` : `${health.data.frames} kare · ${health.data.reports} rapor`}
