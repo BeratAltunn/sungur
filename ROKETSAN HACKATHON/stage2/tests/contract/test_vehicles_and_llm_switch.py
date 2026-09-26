@@ -6,8 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sentinel.agent.llm import MockLLM
+from sentinel.domain.models import RiskLevel
 from sentinel.interfaces import api
-from sentinel.risk.scoring import level_for
 from sentinel.service import SentinelService
 
 
@@ -18,12 +18,12 @@ def test_every_track_and_detection_appears_once_with_backend_identity(service):
     assert sorted(v["track_id"] for v in tracked) == sorted(service.repo.tracks)  # each track exactly once
     for v in tracked:
         assert v["points"] == [[p.t_min, p.lat, p.lon] for p in service.repo.track(v["track_id"]).points]
-    # identity and level are the packet's own, with the config thresholds
+    # identity and level are the packet's own (a track seen in two frames keeps its highest level)
     for meta in service.repo.frames():
         for pv in service.packet(meta.image_id).vehicles:
             key = pv.track_id or f"{meta.image_id}/{pv.ref}"
             v = next(x for x in vs if x["id"] == key)
-            assert v["label"] == pv.label and v["level"] == level_for(v["score"], service.s.risk).value
+            assert v["label"] == pv.label and RiskLevel(v["level"]).rank >= pv.level.rank
             if pv.track_id is None:  # no track: one point at capture time, where the detector put it
                 assert v["points"] == [[meta.capture_min, pv.lat, pv.lon]]
     # tracks no frame detected carry no identity (the map draws them as grey dots)

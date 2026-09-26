@@ -12,7 +12,7 @@ from collections import Counter
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from sentinel.agent.masking import mask_packet
+from sentinel.agent.masking import class_name, mask_packet
 from sentinel.domain.models import LABEL_TR, RiskLevel, Verdict, hhmm, to_min
 from sentinel.geo.geodesy import compass8
 from sentinel.geo.zones import zone_display
@@ -188,7 +188,7 @@ class ChatTools:
             "goruldugu_kare": frames[0] if frames else None,
             "sinif": next(
                 (
-                    LABEL_TR[v.label]
+                    class_name(v)
                     for f in frames
                     for v in self.svc.packet(f).vehicles
                     if v.track_id == track_id
@@ -264,11 +264,16 @@ class ChatTools:
                     "arac": len(p.vehicles),
                 }
             )
-            for v in p.vehicles:
-                classes[LABEL_TR[v.label]] += 1
-                if v.label in ("truck", "bus"):
+            for v in p.vehicles:  # confirmed classes only (conf ≥ τ_op); the rest counted as "araç"
+                classes[LABEL_TR[v.class_label]] += 1
+                if v.class_label in ("truck", "bus"):
                     heavy.append(
-                        {"kare": p.image_id, "arac": v.ref, "track": v.track_id, "sinif": LABEL_TR[v.label]}
+                        {
+                            "kare": p.image_id,
+                            "arac": v.ref,
+                            "track": v.track_id,
+                            "sinif": LABEL_TR[v.class_label],
+                        }
                     )
         reps = self.svc.find_reports(zone=z)
         return {

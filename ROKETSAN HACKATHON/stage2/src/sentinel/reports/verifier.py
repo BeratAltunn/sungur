@@ -108,6 +108,10 @@ class ReportVerifier:
         type_check = self._type_check(claim, present, ctx)
         if type_check:
             checks.append(type_check)
+        elif claim.vehicle_labels:  # absence of evidence is not confirmation either
+            checks.append(
+                _Check(Verdict.DOGRULANAMAZ, f"'{claim.vehicle_word}' tipi tespitle teyit edilemedi")
+            )
         for ctype in claim.types:
             if ctype not in _POINT_TYPES:
                 continue
@@ -120,28 +124,40 @@ class ReportVerifier:
         return _combine(checks, present, t, R), related
 
     def _absent(self, claim: Claim, t: int, ctx: FrameContext | None):
-        """Nobody registered at the point at report time. Contradiction only if a track that does pass
-        this point was covered at t and provably elsewhere."""
+        """Nobody registered at the point at report time. Contradiction only if a track that could be the
+        report's subject was covered at t and provably elsewhere. In a frame's context the subject must be one
+        of the frame's own vehicles that reaches the point after the report and whose known class and
+        behaviour do not rule it out; tracks exist only for vehicles some frame saw, so without such a subject
+        the empty point is absence of evidence, not counter-evidence."""
         R = self.cfg.radius_m
         passes = self.repo.passes_near(claim.lat, claim.lon, R)
         elsewhere: list[tuple[str, float, int]] = []
         arrivals: set[str] = set()  # reach the point *after* the report: the vehicle the report pre-announces
+        excluded = 0
         for tid, times in passes.items():
             pos = self.repo.position(tid, t)
             if pos is None:
                 continue
             d = float(self.repo.geo.distance_m(claim.lat, claim.lon, *pos))
             if d > R:
+                if not self._may_be_subject(tid, times, t, claim, ctx):
+                    excluded += 1
+                    continue
                 t_pass = min(times, key=lambda tt: abs(tt - t))
                 elsewhere.append((tid, d, t_pass))
                 if any(tt > t for tt in times):
                     arrivals.add(tid)
         if not elsewhere:
+            why = (
+                "raporun tarif ettiği araç olabilecek (sonradan gelen, tipi ve davranışı uyan) bir araç "
+                "bu karede yok"
+                if excluded
+                else "buradan geçen hiçbir track o saati kapsamıyor"
+            )
             return (
                 _Check(
                     Verdict.DOGRULANAMAZ,
-                    f"{hhmm(t)}'te noktanın {R:.0f} m içinde kayıtlı araç yok ve buradan geçen hiçbir "
-                    "track o saati kapsamıyor (karşı-kanıt yok)",
+                    f"{hhmm(t)}'te noktanın {R:.0f} m içinde kayıtlı araç yok; {why} (karşı-kanıt yok)",
                 ),
                 [],
             )
@@ -171,9 +187,27 @@ class ReportVerifier:
             Verdict.CELISIYOR, f"{head}; {tid} o saatte {km(d)} uzakta, {when}{extra}", others
         ), related
 
+    @staticmethod
+    def _may_be_subject(tid: str, times: list[int], t: int, claim: Claim, ctx: FrameContext | None) -> bool:
+        """Could this track be the vehicle the report describes? In a frame's context: one of the frame's
+        vehicles, reaching the point after the report, not ruled out by a confident class that is not the
+        claimed one or by a movement opposite to the claim. Without a frame any passing track qualifies."""
+        if ctx is None:
+            return True
+        if tid not in ctx.matched_tracks or not any(tt > t for tt in times):
+            return False
+        lab = ctx.labels_by_track.get(tid)
+        if claim.vehicle_labels and lab is not None and lab not in claim.vehicle_labels:
+            return False
+        if ClaimType.MOVING_TO_BASE in claim.types and tid not in ctx.approaching_tracks:
+            return False
+        return not (ClaimType.LEAVING in claim.types and tid not in ctx.leaving_tracks)
+
     def _type_check(
         self, claim: Claim, present: list[TrackSnapshot], ctx: FrameContext | None
     ) -> _Check | None:
+        """Class match against confident classes (this frame and earlier ones). A mismatch is a contradiction
+        only if *every* vehicle at the point has a known class: an unclassified one may be the claimed type."""
         if not claim.vehicle_labels or ctx is None:
             return None
         known = {
@@ -183,11 +217,10 @@ class ReportVerifier:
             return None
         if any(lab in claim.vehicle_labels for lab in known.values()):
             return _Check(Verdict.DOGRULANDI, "araç tipi tespitle uyumlu")
-        tid, lab = next(iter(known.items()))
-        return _Check(
-            Verdict.CELISIYOR,
-            f"rapor '{claim.vehicle_word}' diyor, {tid} bizim tespitimizde {LABEL_TR.get(lab, lab)}",
-        )
+        if len(known) < len(present):
+            return None
+        seen = ", ".join(f"{tid} {LABEL_TR.get(lab, lab)}" for tid, lab in known.items())
+        return _Check(Verdict.CELISIYOR, f"rapor '{claim.vehicle_word}' diyor, bizim tespitimizde {seen}")
 
     # --- per-type checks (present is non-empty) -------------------------------------------
     def _chk_count(self, claim: Claim, present: list[TrackSnapshot], t: int) -> _Check:

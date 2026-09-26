@@ -268,12 +268,33 @@ class ReportVerification(BaseModel):
 
 
 # --------------------------------------------------------------------------- risk + evidence
+Dimension = Literal["yetenek", "firsat", "niyet"]
+
+
 class RiskFactor(BaseModel):
     code: str
     label: str
-    points: int
+    points: int = Field(description="katkısı olduğu kenarın 0–100 alt puanına")
     vehicle_ref: str | None = None
     evidence_refs: list[str] = Field(default_factory=list)
+    dimension: Dimension | None = None
+
+
+class ThreatDimension(BaseModel):
+    score: int = Field(description="0–100, yalnızca aynı seviyedekileri sıralamak için")
+    band: RiskLevel = Field(description="DÜŞÜK / ORTA / YÜKSEK; seviye matrisi bunu kullanır")
+
+
+class ThreatProfile(BaseModel):
+    """Yetenek–Fırsat–Niyet (C-O-I): ne (sınıf, grup) · nerede (üsse mesafe) · ne yapıyor (niyet göstergeleri).
+    ETA bir kenar değil, aciliyet ekseni: yalnızca KRİTİK tabanında ve kuyruk sırasında kullanılır."""
+
+    capability: ThreatDimension
+    opportunity: ThreatDimension
+    intent: ThreatDimension
+    matrix_level: RiskLevel
+    floor_level: RiskLevel | None = None
+    floor_reasons: list[str] = Field(default_factory=list)
 
 
 class VehicleEvidence(BaseModel):
@@ -292,13 +313,20 @@ class VehicleEvidence(BaseModel):
     margin_m: float | None = None
     second_track_id: str | None = None
     kinematics: Kinematics | None = None
-    score: int = 0
+    class_label: Label = Field(
+        "unknown",
+        description="yetenekte ve rapor tipi kontrolünde kullanılan sınıf: güveni ≥ τ_op olan bir tespitten "
+        "(bu ya da daha önce çekilmiş bir karede); unknown = bilinmiyor",
+    )
+    score: int = Field(0, description="sıralama skoru: üç kenarın geometrik ortalaması")
+    level: RiskLevel = RiskLevel.DUSUK
+    threat: ThreatProfile | None = None
     factors: list[RiskFactor] = Field(default_factory=list)
 
 
 class RiskAssessment(BaseModel):
-    score: int
-    score_level: RiskLevel
+    score: int = Field(description="en riskli aracın sıralama skoru")
+    score_level: RiskLevel = Field(description="tabanlardan önce, araçların en yüksek matris seviyesi")
     floor_level: RiskLevel | None = None
     floor_reasons: list[str] = Field(default_factory=list)
     level: RiskLevel

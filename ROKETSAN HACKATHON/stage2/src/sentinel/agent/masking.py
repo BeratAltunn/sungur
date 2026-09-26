@@ -19,6 +19,13 @@ def _r(x: float | None, nd: int = 1) -> float | None:
     return None if x is None else round(float(x), nd)
 
 
+def class_name(v: VehicleEvidence) -> str:
+    """Class as the brief may state it: confirmed (conf ≥ τ_op) or explicitly marked as possible."""
+    if v.class_label != "unknown":
+        return LABEL_TR[v.class_label]
+    return f"olası {LABEL_TR[v.label]}" if v.label != "unknown" else "araç"
+
+
 def first_arrival(p: EvidencePacket) -> VehicleEvidence | None:
     """The approaching vehicle with the shortest ETA: headlines lead with it (chosen in code, not by the LLM)."""
     etas = [
@@ -35,13 +42,24 @@ def mask_packet(p: EvidencePacket, constants: dict[str, Any] | None = None) -> d
         k = v.kinematics
         item: dict[str, Any] = {
             "ref": v.ref,
-            "sinif": LABEL_TR.get(v.label, v.label),
+            "sinif": class_name(v),
+            "sinif_teyitli": v.class_label != "unknown",
             "guven": _r(v.conf, 2),
             "track": v.track_id,
             "uste_km": _r(v.d_base_m / 1000),
             "yon": v.direction,
+            "seviye": v.level.value,
             "skor": v.score,
         }
+        if v.threat:
+            t = v.threat
+            item["tehdit_profili"] = {
+                "yetenek": t.capability.band.value,
+                "firsat": t.opportunity.band.value,
+                "niyet_gostergeleri": t.intent.band.value,
+                "matris_seviyesi": t.matrix_level.value,
+                "taban_seviyesi": t.floor_level.value if t.floor_level else None,
+            }
         if v.track_id:
             item["eslesme_m"] = _r(v.match_m)
             item["eslesme_marji_m"] = _r(v.margin_m, 0)
@@ -62,12 +80,15 @@ def mask_packet(p: EvidencePacket, constants: dict[str, Any] | None = None) -> d
                     "mesafe_degisimi_km": _r(k.d_change_m / 1000),
                     "rota_yonu": k.heading_dir,
                     "duraklamalar": [{"bas": s.start, "bit": s.end, "dk": s.minutes} for s in k.stops],
+                    "duraklama_sayisi": len(k.stops),
                     "duraklama_toplam_dk": k.stop_total_min,
                     "dur_kalk": k.stop_and_go,
                     "gecilen_bolgeler": [zone_display(z) for z in k.zones_passed],
                 }
             )
-        item["faktorler"] = [{"etiket": f.label, "puan": f.points} for f in v.factors]
+        item["faktorler"] = [
+            {"kenar": f.dimension, "etiket": f.label} for f in v.factors if f.code != "intent_base"
+        ]
         vehicles.append(item)
 
     reports = [
@@ -107,17 +128,17 @@ def mask_packet(p: EvidencePacket, constants: dict[str, Any] | None = None) -> d
             "ilgisiz_rapor": n_by[Verdict.ILGISIZ],
         },
         "risk": {
+            "model": "Yetenek–Fırsat–Niyet: seviye kenar bantlarından matrisle, ETA ayrı aciliyet ekseni",
             "skor": p.risk.score,
             "kural_seviyesi": p.risk.level.value,
-            "skor_seviyesi": p.risk.score_level.value,
+            "matris_seviyesi": p.risk.score_level.value,
             "taban_seviyesi": p.risk.floor_level.value if p.risk.floor_level else None,
             "taban_gerekceleri": p.risk.floor_reasons,
-            "kare_faktorleri": [{"etiket": x.label, "puan": x.points} for x in p.risk.factors],
             "en_riskli_arac": p.risk.top_vehicle,
             "en_kisa_eta": (
                 {
                     "ref": first.ref,
-                    "sinif": LABEL_TR.get(first.label, first.label),
+                    "sinif": class_name(first),
                     "eta_dk": _r(first.kinematics.eta_min),
                 }  # type: ignore[union-attr]
                 if first

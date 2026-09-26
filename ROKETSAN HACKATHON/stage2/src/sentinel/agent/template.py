@@ -5,9 +5,8 @@ Every number is formatted straight from the EvidencePacket.
 
 from __future__ import annotations
 
-from sentinel.agent.masking import first_arrival
+from sentinel.agent.masking import class_name, first_arrival
 from sentinel.domain.models import (
-    LABEL_TR,
     EvidencePacket,
     KeyFinding,
     ReportAssessment,
@@ -28,7 +27,7 @@ ACTIONS = {
 
 
 def _vehicle_line(v: VehicleEvidence) -> str:
-    name = LABEL_TR.get(v.label, "araç")
+    name = class_name(v)
     head = f"{v.ref} ({name}{', ' + v.track_id if v.track_id else ''})"
     k = v.kinematics
     if k is None:
@@ -50,6 +49,33 @@ def _vehicle_line(v: VehicleEvidence) -> str:
     return f"{head}: " + "; ".join(parts) + "."
 
 
+_INTENT_WORDS = {
+    "approaching": "üsse yaklaşıyor",
+    "identity_contradicted": "kimlik iddiası kanıtla çelişiyor",
+    "identity_contradicted_frame": "kare çevresinde çelişen kimlik iddiası",
+    "untracked": "hareket kaydı yok",
+    "leaving": "üsten uzaklaşıyor",
+    "identity_confirmed": "dost kimliği kanıtla tutarlı",
+}
+
+
+def _threat_line(v: VehicleEvidence) -> str | None:
+    """One sentence per vehicle: what it is, where it is, what it does (Capability–Opportunity–Intent)."""
+    t = v.threat
+    if t is None:
+        return None
+    codes = [f.code for f in v.factors]
+    what = class_name(v) if class_name(v) != "araç" else "sınıf bilinmiyor"
+    if "convoy" in codes:
+        what += ", konvoy"
+    does = ", ".join(w for c, w in _INTENT_WORDS.items() if c in codes) or "gösterge yok"
+    return (
+        f"{v.ref} tehdit profili: yetenek {t.capability.band.value} ({what}), "
+        f"fırsat {t.opportunity.band.value} (üsse {km(v.d_base_m)}), "
+        f"niyet göstergeleri {t.intent.band.value} ({does})."
+    )
+
+
 def template_brief(p: EvidencePacket) -> RiskBrief:
     level = p.risk.level
     zone = zone_display(p.frame.zone)
@@ -59,7 +85,7 @@ def template_brief(p: EvidencePacket) -> RiskBrief:
     # headline: one fact, <= ~80 chars, same pattern as the LLM prompt (analyst_v3)
     first = first_arrival(p)
     if first:
-        cls = LABEL_TR.get(first.label, first.label)
+        cls = class_name(first)
         eta = dec(first.kinematics.eta_min)  # type: ignore[union-attr]
         headline = (
             f"{zone} bölgesinde {cls} yaklaşıyor, ETA ~{eta} dk"
@@ -80,8 +106,12 @@ def template_brief(p: EvidencePacket) -> RiskBrief:
         KeyFinding(
             vehicle_ref=v.ref, statement=_vehicle_line(v), evidence_refs=[x for x in (v.ref, v.track_id) if x]
         )
-        for v in sorted(p.vehicles, key=lambda v: -v.score)[:3]
+        for v in sorted(p.vehicles, key=lambda v: (-v.level.rank, -v.score))[:3]
     ]
+    top = next((v for v in p.vehicles if v.ref == p.risk.top_vehicle), None)
+    line = _threat_line(top) if top else None
+    if line:
+        findings.insert(0, KeyFinding(vehicle_ref=top.ref, statement=line, evidence_refs=[top.ref]))
     for r in contradicted[:3]:
         kind = "kimlik iddiası" if r.identity_claim else "raporu"
         findings.append(

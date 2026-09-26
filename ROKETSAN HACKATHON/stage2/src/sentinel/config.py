@@ -75,30 +75,40 @@ class ReportsCfg(BaseModel):
     stationary_max_disp_m: float = 50.0
 
 
+class CapabilityCfg(BaseModel):
+    """YETENEK (ne): sınıfa göre 0–100; konvoy üyesi grup olarak en az `convoy`."""
+
+    car: int = 20
+    van: int = 50
+    unknown: int = 50  # güven < τ_op ya da sınıfsız detektör: ağır araç dışlanamaz
+    truck: int = 80
+    bus: int = 80
+    convoy: int = 80
+    convoy_heavy_bonus: int = 5  # konvoydaki ağır araç başına
+
+
 class RiskWeights(BaseModel):
-    proximity_near: int = 30
-    proximity_mid: int = 15
+    """NİYET GÖSTERGELERİ (ne yapıyor): niyet alt puanına eklenen puanlar."""
+
     approaching: int = 25
-    stop_and_go: int = 10
-    heavy: int = 10
-    convoy: int = 15
-    eta_short: int = 10
-    eta_mid: int = 5
-    identity_contradicted: int = 20
-    identity_confirmed: int = -20
-    leaving: int = -15
-    untracked: int = 5
+    identity_contradicted: int = 50
+    identity_contradicted_frame: int = 25
+    untracked: int = 25
+    leaving: int = -25
+    identity_confirmed: int = -50
 
 
 class RiskCfg(BaseModel):
+    capability: CapabilityCfg = Field(default_factory=CapabilityCfg)
     weights: RiskWeights = Field(default_factory=RiskWeights)
+    intent_base: int = 20  # gösterge yoksa niyet bilinmiyor → DÜŞÜK
+    # alt puan → bant: {ORTA: x, YUKSEK: y}
+    capability_bands: dict[str, int] = Field(default_factory=lambda: {"ORTA": 40, "YUKSEK": 70})
+    intent_bands: dict[str, int] = Field(default_factory=lambda: {"ORTA": 45, "YUKSEK": 70})
+    # FIRSAT (nerede): bant mesafeden; sıralama puanı 0 km → 100, opportunity_zero_km → 0
     near_km: float = 2.0
     mid_km: float = 3.5
-    eta_short_min: float = 5.0
-    eta_mid_min: float = 10.0
-    load_bonus_per_vehicle: int = 3
-    load_bonus_cap: int = 10
-    levels: dict[str, int] = Field(default_factory=lambda: {"ORTA": 25, "YUKSEK": 50, "KRITIK": 75})
+    opportunity_zero_km: float = 7.0
     convoy_min_size: int = 3
     convoy_heading_tol_deg: float = 30.0
     floor_critical_eta_min: float = 10.0

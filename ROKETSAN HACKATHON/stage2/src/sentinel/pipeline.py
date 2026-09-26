@@ -39,6 +39,7 @@ class Pipeline:
         self.parser = ReportParser(repo.zone_index.names())
         self.claims = self.parser.parse_all(repo.reports)
         self.verifier = ReportVerifier(repo, settings.reports, settings.tracking)
+        self._frame_labels_memo: dict[str, dict[str, tuple[str, float]]] = {}
 
     # ================================================================ entry point
     def evaluate(
@@ -52,16 +53,10 @@ class Pipeline:
 
         # [1] Perception
         with tracer.step("1_tespit", {"image": image_id, "detector": self.detector.name}) as st:
-            path = self.repo.image_path(image_id)
-            if isinstance(self.detector, CachedDetector):
-                dets = self.detector.detect(path, refresh=refresh_detections)
-            else:
-                dets = self.detector.detect(path)
+            dets, scale = self._detect(image_id, refresh_detections)
             st["cache_hit"] = getattr(self.detector, "last_hit", None)
-            if self.detector.name != "oracle":
-                dets, scale = _to_meta_space(dets, path, meta.width_px, meta.height_px)
-                if scale:
-                    st["ölçek"] = scale
+            if scale:
+                st["ölçek"] = scale
             tau = self.s.detector.tau_op
             strong = [d for d in dets if d.conf >= tau]
             weak = [d for d in dets if d.conf < tau]
@@ -118,6 +113,9 @@ class Pipeline:
             vehicles, undetected, low_conf, match_notes = self._match(
                 meta.capture_min, geo_strong, geo_weak, georef
             )
+            known = self._known_classes(image_id, vehicles)
+            for v in vehicles:
+                v.class_label = self._class_of(v, known)  # type: ignore[assignment]
             st["output_summary"] = {
                 "eşleşen": {
                     v.ref: {"track": v.track_id, "m": _r(v.match_m, 2), "marj_m": _r(v.margin_m, 1)}
@@ -151,8 +149,12 @@ class Pipeline:
                 center=(c_lat, c_lon),
                 half_diag_m=georef.half_diagonal_m(),
                 matched_tracks=[v.track_id for v in vehicles if v.track_id],
-                labels_by_track={
-                    v.track_id: v.label for v in vehicles if v.track_id and v.label != "unknown"
+                labels_by_track={tid: lab for tid, (lab, _c) in known.items()},
+                approaching_tracks={
+                    v.track_id for v in vehicles if v.track_id and v.kinematics and v.kinematics.approaching
+                },
+                leaving_tracks={
+                    v.track_id for v in vehicles if v.track_id and v.kinematics and v.kinematics.leaving
                 },
             )
             reports = self._reports(ctx)
@@ -189,6 +191,63 @@ class Pipeline:
         )
 
     # ================================================================ steps
+    def _detect(self, image_id: str, refresh: bool = False):
+        """Detections in image_meta pixel space (+ the rescale note, if any)."""
+        meta = self.repo.meta[image_id]
+        path = self.repo.image_path(image_id)
+        if isinstance(self.detector, CachedDetector):
+            dets = self.detector.detect(path, refresh=refresh)
+        else:
+            dets = self.detector.detect(path)
+        if self.detector.name == "oracle":
+            return dets, None
+        return _to_meta_space(dets, path, meta.width_px, meta.height_px)
+
+    def _confident_classes(self, vehicles: list[VehicleEvidence]) -> dict[str, tuple[str, float]]:
+        """{track: (label, conf)} from matched detections whose class can be trusted (conf ≥ τ_op)."""
+        tau = self.s.detector.tau_op
+        out: dict[str, tuple[str, float]] = {}
+        for v in vehicles:
+            confident = v.track_id and v.label != "unknown" and v.conf >= tau
+            if confident and (v.track_id not in out or v.conf > out[v.track_id][1]):
+                out[v.track_id] = (v.label, v.conf)
+        return out
+
+    def _frame_classes(self, image_id: str) -> dict[str, tuple[str, float]]:
+        """Confident classes of another frame's matched vehicles (steps 1–3 only, memoised)."""
+        if image_id not in self._frame_labels_memo:
+            meta = self.repo.meta[image_id]
+            georef = GeoReferencer(meta)
+            dets, _ = self._detect(image_id)
+            tau = self.s.detector.tau_op
+            geo_s = [self._georef(d, georef) for d in dets if d.conf >= tau]
+            geo_w = [self._georef(d, georef) for d in dets if d.conf < tau]
+            vehicles = self._match(meta.capture_min, geo_s, geo_w, georef)[0]
+            self._frame_labels_memo[image_id] = self._confident_classes(vehicles)
+        return self._frame_labels_memo[image_id]
+
+    def _known_classes(self, image_id: str, vehicles: list[VehicleEvidence]) -> dict[str, tuple[str, float]]:
+        """Track classes known at this frame's capture time: this frame and every frame captured before it
+        (never a later one: an operator at 13:00 cannot know the 15:00 frame). Highest confidence wins."""
+        t = self.repo.meta[image_id].capture_min
+        self._frame_labels_memo[image_id] = own = self._confident_classes(vehicles)  # fresh after a live run
+        known: dict[str, tuple[str, float]] = {}
+        sources = [
+            self._frame_classes(m.image_id)
+            for m in self.repo.frames()
+            if m.image_id != image_id and m.capture_min <= t
+        ]
+        for src in [*sources, own]:
+            for tid, (lab, conf) in src.items():
+                if tid not in known or conf > known[tid][1]:
+                    known[tid] = (lab, conf)
+        return known
+
+    def _class_of(self, v: VehicleEvidence, known: dict[str, tuple[str, float]]) -> str:
+        if v.track_id and v.track_id in known:
+            return known[v.track_id][0]
+        return v.label if v.conf >= self.s.detector.tau_op else "unknown"
+
     def _georef(self, d: Detection, georef: GeoReferencer) -> GeoDetection:
         lat, lon = georef.pixel_to_latlon(d.cx, d.cy)
         rel = self.repo.zone_index.relation(lat, lon)
@@ -323,6 +382,11 @@ class Pipeline:
         if undetected:
             out.append(
                 f"{len(undetected)} track karede olduğu hâlde tespit edilemedi ({', '.join(undetected)})"
+            )
+        unsure = [v.ref for v in vehicles if v.class_label == "unknown" and v.label != "unknown"]
+        if unsure:
+            out.append(
+                f"{', '.join(unsure)} sınıfı teyit edilemedi (düşük güvenli tespit); yetenek 'bilinmiyor' sayıldı"
             )
         untracked = [v.ref for v in vehicles if not v.track_id]
         if untracked:
