@@ -69,6 +69,34 @@ def ordering_score(c: int, o: int, i: int) -> int:
     return round((max(0, c) * max(0, o) * max(0, i)) ** (1 / 3))
 
 
+def assess_vehicle(
+    v: VehicleEvidence,
+    vehicles: list[VehicleEvidence],
+    reports: list[ReportVerification],
+    convoy: dict[str, list[str]],
+    loose: list[str],
+    cfg: RiskCfg,
+) -> None:
+    """One vehicle's factors, threat profile, level (matrix + floors) and ordering score, in place."""
+    v.factors = vehicle_factors(v, vehicles, reports, convoy, loose, cfg)
+    c, o, i = (dimension_score(v.factors, d) for d in ("yetenek", "firsat", "niyet"))
+    cb = band(c, cfg.capability_bands)
+    ob = opportunity_band(v.d_base_m, cfg)
+    ib = band(i, cfg.intent_bands)
+    t = ThreatProfile(
+        capability=ThreatDimension(score=c, band=cb),
+        opportunity=ThreatDimension(score=o, band=ob),
+        intent=ThreatDimension(score=i, band=ib),
+        matrix_level=matrix_level(cb, ob, ib),
+    )
+    codes = {f.code for f in v.factors}
+    reasons_i = [name for code, name in _INTENT_NAMES.items() if code in codes]
+    t.floor_level, t.floor_reasons = floor_level(v, t, reasons_i, cfg)
+    v.threat = t
+    v.level = max(t.matrix_level, t.floor_level or RiskLevel.DUSUK, key=lambda lv: lv.rank)
+    v.score = ordering_score(c, o, i)
+
+
 def assess(
     vehicles: list[VehicleEvidence], reports: list[ReportVerification], cfg: RiskCfg
 ) -> RiskAssessment:
@@ -76,23 +104,7 @@ def assess(
     convoy = convoy_members(vehicles, cfg)
     loose = loose_identity_reports(reports, vehicles)
     for v in vehicles:
-        v.factors = vehicle_factors(v, vehicles, reports, convoy, loose, cfg)
-        c, o, i = (dimension_score(v.factors, d) for d in ("yetenek", "firsat", "niyet"))
-        cb = band(c, cfg.capability_bands)
-        ob = opportunity_band(v.d_base_m, cfg)
-        ib = band(i, cfg.intent_bands)
-        t = ThreatProfile(
-            capability=ThreatDimension(score=c, band=cb),
-            opportunity=ThreatDimension(score=o, band=ob),
-            intent=ThreatDimension(score=i, band=ib),
-            matrix_level=matrix_level(cb, ob, ib),
-        )
-        codes = {f.code for f in v.factors}
-        reasons_i = [name for code, name in _INTENT_NAMES.items() if code in codes]
-        t.floor_level, t.floor_reasons = floor_level(v, t, reasons_i, cfg)
-        v.threat = t
-        v.level = max(t.matrix_level, t.floor_level or RiskLevel.DUSUK, key=lambda lv: lv.rank)
-        v.score = ordering_score(c, o, i)
+        assess_vehicle(v, vehicles, reports, convoy, loose, cfg)
 
     top = max(vehicles, key=lambda v: (v.level.rank, v.score), default=None)
     floors = [v.threat.floor_level for v in vehicles if v.threat and v.threat.floor_level]

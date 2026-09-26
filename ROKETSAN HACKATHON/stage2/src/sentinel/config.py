@@ -118,7 +118,7 @@ class RiskCfg(BaseModel):
 
 class LLMCfg(BaseModel):
     provider: Literal["mock", "openai_compat"] = "mock"
-    prompt_version: str = "analyst_v3"
+    prompt_version: str = "analyst_v4"
     temperature: float = 0.2
     max_tokens: int = 3000
     # reasoning models (glm-5.3) otherwise spend the whole token budget thinking; null = don't send

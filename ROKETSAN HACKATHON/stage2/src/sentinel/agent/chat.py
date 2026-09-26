@@ -19,7 +19,7 @@ from sentinel.agent.llm import LLMClient, LLMError
 from sentinel.agent.tools import TOOL_SPECS, ChatTools, ToolError
 from sentinel.observability.trace import Tracer
 
-PROMPT_FILE = "chat_v1"
+PROMPT_FILE = "chat_v2"
 
 
 class ChatMessage(BaseModel):

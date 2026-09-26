@@ -82,7 +82,7 @@ def template_brief(p: EvidencePacket) -> RiskBrief:
     appr = [v for v in p.vehicles if v.kinematics and v.kinematics.approaching]
     contradicted = [r for r in p.reports if r.verdict == Verdict.CELISIYOR]
 
-    # headline: one fact, <= ~80 chars, same pattern as the LLM prompt (analyst_v3)
+    # headline: one fact, <= ~80 chars, same pattern as the LLM prompt (analyst_v4)
     first = first_arrival(p)
     if first:
         cls = class_name(first)

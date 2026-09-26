@@ -86,7 +86,7 @@ risk:                               # Yetenek–Fırsat–Niyet (C-O-I) tehdit m
 
 llm:
   provider: openai_compat           # openai_compat (GLM, anahtar yoksa şablon brief) | mock (test)
-  prompt_version: analyst_v3
+  prompt_version: analyst_v4
   temperature: 0.2
   max_tokens: 3000
   reasoning_effort: low             # düşünen modeller (glm-5.3) bütçeyi düşünmeye harcamasın; null = gönderme
