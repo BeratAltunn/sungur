@@ -1,0 +1,1 @@
+{"content":"","tool_calls":[{"id":"call_-7231544978688698154","name":"find_reports","arguments":"{\"source\":\"official\",\"t_from\":\"12:00\",\"t_to\":\"13:00\",\"verdict\":\"ÇELİŞİYOR\"}"}],"tokens_in":2115,"tokens_out":64,"cost_usd":0.0014098,"model":"glm-5.3-flash","cached":false}
