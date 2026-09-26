@@ -1,7 +1,7 @@
 PY ?= python3
 export PYTHONPATH := src
 
-.PHONY: install weights calibrate stopwatch demo-check-chat check lint test ui-test validate precompute batch demo demo-check web app dev-web docker-up docker-test docker-down
+.PHONY: install weights terrain calibrate stopwatch demo-check-chat check lint test ui-test validate precompute batch demo demo-check web app dev-web docker-up docker-test docker-down
 
 install:
 	$(PY) -m pip install -e '.[dev,ui,detector]'
@@ -10,6 +10,10 @@ install:
 # Geçici tespit modeli: Ultralytics'in resmî COCO ağırlıkları (git'e girmez, ~6 MB)
 weights:
 	mkdir -p models && $(PY) -c "from ultralytics import YOLO; YOLO('models/yolov8n.pt')"
+
+# Ana haritanın 3B arazisi: DEM + uydu dokusu karoları → web/public/terrain (~4 MB, internetsiz demo için)
+terrain:
+	$(PY) scripts/build_terrain.py
 
 lint:
 	$(PY) -m ruff check src tests scripts

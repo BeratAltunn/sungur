@@ -6,3 +6,6 @@ __pycache__/
 .venv/
 runs/
 *.pt
+# 3D terrain tiles (DEM *.png + texture *.jpg) and their manifest: `make terrain` downloads them.
+# The manifest goes too: without the tiles it would make the map request tiles that don't exist.
+web/public/terrain/

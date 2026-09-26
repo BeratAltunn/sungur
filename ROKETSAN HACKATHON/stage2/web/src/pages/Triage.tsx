@@ -1,21 +1,33 @@
-import type { Map as MLMap, Marker } from "maplibre-gl";
-import { Fragment, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { MapLayerMouseEvent, Map as MLMap, Marker } from "maplibre-gl";
+import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { go } from "../App";
-import { LayerMenu, useLayers } from "../components/LayerMenu";
-import { MapView, fc, htmlMarker, line, setGeo } from "../components/MapView";
-import { LEVEL_LEGEND, VERDICT_LEGEND, baseSymbol } from "../lib/symbols";
+import { MapView, fc, htmlMarker, line, polygon, setGeo } from "../components/MapView";
+import { grid } from "../lib/geo";
+import { LEVEL_LEGEND, VERDICT_LEGEND, baseSymbol, classSymbol } from "../lib/symbols";
 import { ReplayBar, useReplay } from "../components/Replay";
+import { TimeBar } from "../components/TimeBar";
 import { AnomalyChips } from "../components/VehicleChip";
+import { useVehicleLayer } from "../components/VehicleLayer";
 import { DecisionPill, ErrorState, Kbd, LevelBadge, Loading, SummaryContext, TopBar } from "../components/ui";
 import { api } from "../lib/api";
-import { LEVELS, LEVEL_ACTION, LEVEL_CLASS, LEVEL_ICON, dec, km, secs, storage, zoneName } from "../lib/format";
-import { LEVEL_VAR, token } from "../lib/theme";
+import { createClock, type Clock } from "../lib/clock";
+import { toMin } from "../lib/dayVehicles";
+import { LABEL_TR, LEVELS, reducedMotion, LEVEL_ACTION, LEVEL_CLASS, LEVEL_ICON, dec, km, secs, storage, zoneName } from "../lib/format";
+import { LEVEL_VAR, levelColor, token } from "../lib/theme";
+import type { DayVehicle, EvidencePacket, FrameMotion, Health, Label, Level, LngLat, MapContext, ShiftSummary, TriageRow, VehicleDay } from "../lib/types";
 import { addToChat, endDrag, frameItem, startDrag } from "../lib/vehicles";
-import type { EvidencePacket, Health, Level, MapContext, ShiftSummary, TriageRow } from "../lib/types";
 
-/** An active alert: YÜKSEK/KRİTİK with no operator decision yet. These are the cards on top of the rail. */
-const isAlert = (r: TriageRow) => !r.decision && (r.level === "KRİTİK" || r.level === "YÜKSEK");
-const eta = (r: TriageRow) => (r.min_eta_min === null ? "yaklaşan yok" : `ETA ~${dec(r.min_eta_min)} dk`);
+/** Main map view: moving vehicles over the day (with the time bar) or one marker per frame. */
+type MapMode = "vehicles" | "frames";
+
+type MapFrame = MapContext["frames"][number];
+const LABEL_ORDER: Label[] = ["truck", "bus", "van", "car", "unknown"]; // heavy first, as the risk model weighs them
+
+/** Arrow length on the overview map: 34 px at rest up to 70 px at ≥ 80 km/h (visual encoding only). */
+const ARROW_MIN_PX = 34;
+const ARROW_MAX_PX = 70;
+const ARROW_FULL_KMH = 80;
+const CARD_FADE_OUT_MS = 250; // matches the .card-out animation in styles.css
 
 export function TriagePage({
   health,
@@ -34,12 +46,28 @@ export function TriagePage({
   const [level, setLevel] = useState<Level | "">("");
   const [status, setStatus] = useState<Status>("");
   const [search, setSearch] = useState("");
-  const [showFilters, setShowFilters] = useState(false);
-  const [cursor, setCursor] = useState(0);
+  // undefined: follow the most urgent frame · null: card closed · string: the operator's pick.
+  const [pick, setPick] = useState<string | null | undefined>(undefined);
   const [hover, setHover] = useState<string | null>(null);
   const [showTip, setShowTip] = useState(() => !storage.get("tip_seen", false));
   const viewed = useMemo(() => new Set(storage.get<string[]>("viewed", [])), []);
   const replay = useReplay();
+  const [mode, setMode] = useState<MapMode>(() => storage.get<MapMode>("map_mode", "vehicles"));
+  const [vehDay, setVehDay] = useState<VehicleDay | null>(null);
+  const [threshold, setThreshold] = useState<number>(() => storage.get("veh_threshold", 0));
+  const clock = useMemo(() => createClock({ t: -1, playing: false, speed: 2 }), []);
+  const switchMode = (m: MapMode) => {
+    storage.set("map_mode", m);
+    setMode(m);
+    clock.set({ playing: false });
+  };
+  const changeThreshold = (v: number) => {
+    storage.set("veh_threshold", v);
+    setThreshold(v);
+  };
+  useEffect(() => {
+    if (mode === "vehicles" && !vehDay) api.vehicles().then(setVehDay).catch((e) => setError(e));
+  }, [mode, vehDay]);
 
   const load = () => {
     setError(null);
@@ -50,293 +78,286 @@ export function TriagePage({
   };
   useEffect(load, [queue]);
 
-  // Two layers in one list: active alerts first (backend risk order), then every other frame (same order).
-  const rows = useMemo(() => {
-    const shown = (queue ?? []).filter(
-      (r) =>
-        (!replay.arrived || replay.arrived.has(r.image_id)) &&
-        (!search.trim() || r.image_id.includes(search.trim().toLowerCase())) &&
-        (!zone || r.zone === zone) &&
-        (!level || r.level === level) &&
-        (status !== "unseen" || !viewed.has(r.image_id)) &&
-        (status !== "pending" || !r.decision) &&
-        (status !== "escalated" || r.decision?.action === "escalate"),
-    );
-    return [...shown.filter(isAlert), ...shown.filter((r) => !isAlert(r))];
-  }, [queue, zone, level, status, viewed, search, replay.arrived]);
-  const nAlerts = useMemo(() => rows.filter(isAlert).length, [rows]);
-  useEffect(() => setCursor(0), [zone, level, status, search]);
+  // Risk-ordered (backend order), filtered: what the map shows and J/K walks through.
+  const rows = useMemo(
+    () =>
+      (queue ?? []).filter(
+        (r) =>
+          (!replay.arrived || replay.arrived.has(r.image_id)) &&
+          (!search.trim() || r.image_id.includes(search.trim().toLowerCase())) &&
+          (!zone || r.zone === zone) &&
+          (!level || r.level === level) &&
+          (status !== "unseen" || !viewed.has(r.image_id)) &&
+          (status !== "pending" || !r.decision) &&
+          (status !== "escalated" || r.decision?.action === "escalate"),
+      ),
+    [queue, zone, level, status, viewed, search, replay.arrived],
+  );
+  useEffect(() => setPick(undefined), [zone, level, status, search]);
 
-  // J/K move, Enter opens: the queue is operated from the keyboard.
-  const keyOnRow = useRef(false); // was a row focused when J/K was pressed (read at key time, not after render)
+  const selected = pick === null ? null : (rows.find((r) => r.image_id === pick) ?? rows[0] ?? null);
+  const cursor = selected ? rows.indexOf(selected) : -1;
+  const select = (id: string | null) => setPick(id);
+  useEffect(() => onSelect?.(selected?.image_id ?? null), [selected?.image_id, onSelect]);
+  useEffect(() => () => onSelect?.(null), [onSelect]);
+  // Active alerts (YÜKSEK/KRİTİK without a decision, risk order): the rail on the left.
+  const alerts = useMemo(() => rows.filter(isAlert), [rows]);
+  const [railOpen, setRailOpen] = useState<boolean>(() => storage.get("rail_open", true));
+  const toggleRail = () => {
+    storage.set("rail_open", !railOpen);
+    setRailOpen(!railOpen);
+  };
+
+  // J/K move, Enter opens, Esc closes the card: the map is operated from the keyboard.
   useEffect(() => {
     const on = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName;
-      keyOnRow.current = (e.target as HTMLElement).classList?.contains("row") ?? false;
       if (tag === "SELECT" || (tag === "INPUT" && e.key !== "Enter" && e.key !== "ArrowDown" && e.key !== "ArrowUp")) return;
-      if (e.key === "j" || e.key === "ArrowDown") setCursor((c) => Math.min(c + 1, rows.length - 1));
-      else if (e.key === "k" || e.key === "ArrowUp") setCursor((c) => Math.max(c - 1, 0));
-      // The cursor is reset to 0 one render after a filter change; clamp so a fast Enter still opens the row shown.
-      else if (e.key === "Enter" && rows.length) go(`/frame/${rows[Math.min(cursor, rows.length - 1)].image_id}`);
+      if (e.key === "j" || e.key === "ArrowDown") select(rows[Math.min(cursor + 1, rows.length - 1)]?.image_id ?? null);
+      else if (e.key === "k" || e.key === "ArrowUp") select(rows[Math.max(cursor - 1, 0)]?.image_id ?? null);
+      else if (e.key === "Enter" && selected) go(`/frame/${selected.image_id}`);
+      else if (e.key === "Escape" && tag !== "INPUT" && selected) select(null);
       else if (e.key === " " && replay.state && tag !== "INPUT") replay.set({ playing: !replay.state.playing });
+      else if (e.key === " " && mode === "vehicles" && vehDay && tag !== "INPUT" && tag !== "BUTTON")
+        clock.set({ playing: !clock.get().playing });
       else return;
       e.preventDefault();
     };
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
-  }, [rows, cursor, replay]);
-
-  // Roving focus: the queue is one Tab stop; J/K (or ↑/↓) move the cursor and, if a row has focus, the focus too.
-  useEffect(() => {
-    const el = document.querySelector<HTMLElement>(`[data-row="${cursor}"]`);
-    el?.scrollIntoView({ block: "nearest" });
-    if (keyOnRow.current || document.activeElement?.classList.contains("row")) el?.focus();
-    keyOnRow.current = false;
-  }, [cursor]);
+  }, [rows, cursor, selected, replay, mode, vehDay, clock]);
 
   const zones = useMemo(() => [...new Set((queue ?? []).map((r) => r.zone))].sort(), [queue]);
   const decided = useMemo(() => new Set((queue ?? []).filter((r) => r.decision).map((r) => r.image_id)), [queue]);
-  const alerts = useMemo(() => new Set((queue ?? []).filter(isAlert).map((r) => r.image_id)), [queue]);
-  const nFilters = [zone, level, status].filter(Boolean).length;
+  const byId = useMemo(() => new Map((queue ?? []).map((r) => [r.image_id, r])), [queue]);
+  const frameInfo = useMemo(() => new Map((mapCtx?.frames ?? []).map((f) => [f.image_id, f])), [mapCtx]);
+  // Time bar ticks: every frame at its capture time. The clock opens on the most urgent frame's moment.
+  const ticks = useMemo(
+    () => (mapCtx?.frames ?? []).map((f) => ({ image_id: f.image_id, t: toMin(f.capture_time), time: f.capture_time })),
+    [mapCtx],
+  );
+  useEffect(() => {
+    if (clock.get().t >= 0 || !vehDay || !ticks.length || !queue?.length) return;
+    const first = ticks.find((k) => k.image_id === queue[0].image_id);
+    clock.set({ t: first?.t ?? vehDay.window.end });
+  }, [clock, vehDay, ticks, queue]);
 
-  const selected = rows[cursor] ?? null;
-  useEffect(() => onSelect?.(selected?.image_id ?? null), [selected?.image_id, onSelect]);
-  useEffect(() => () => onSelect?.(null), [onSelect]);
+  // Hovering previews a frame; the card stays while the pointer is on it, then falls back to the pick.
+  const hoverTimer = useRef<number | undefined>(undefined);
+  const hoverIn = (id: string) => {
+    window.clearTimeout(hoverTimer.current);
+    setHover(id);
+  };
+  const hoverOut = () => {
+    window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => setHover(null), 180);
+  };
+  const shown = (hover && rows.some((r) => r.image_id === hover) ? byId.get(hover) : null) ?? selected;
+
+  // The card on screen trails `shown` by one fade: a changed target first fades the old card out, then the new
+  // one fades in (CSS animations; instant under prefers-reduced-motion).
+  const target = shown?.image_id ?? null;
+  const [cardId, setCardId] = useState<string | null>(null);
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => {
+    if (target === cardId) return setLeaving(false);
+    if (cardId === null) return setCardId(target);
+    setLeaving(true);
+    const t = window.setTimeout(
+      () => {
+        setCardId(target);
+        setLeaving(false);
+      },
+      reducedMotion() ? 0 : CARD_FADE_OUT_MS,
+    );
+    return () => window.clearTimeout(t);
+  }, [target, cardId]);
+  const cardRow = cardId ? byId.get(cardId) : undefined;
+  const cardInfo = cardId ? frameInfo.get(cardId) : undefined;
+
+  // The map is the page background; everything else floats over it. The card and the map controls keep clear of
+  // the floating layers, so their real extent is measured.
+  const hudTop = useRef<HTMLDivElement>(null);
+  const hudBottom = useRef<HTMLDivElement>(null);
+  const [insets, setInsets] = useState({ top: 0, bottom: 0 });
+  useLayoutEffect(() => {
+    const measure = () => {
+      const top = Math.ceil(hudTop.current?.getBoundingClientRect().bottom ?? 0);
+      const b = hudBottom.current?.getBoundingClientRect();
+      const bottom = b ? Math.ceil(window.innerHeight - b.top) : 0;
+      document.documentElement.style.setProperty("--hud-top", `${top}px`);
+      setInsets((p) => (p.top === top && p.bottom === bottom ? p : { top, bottom }));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    if (hudTop.current) ro.observe(hudTop.current);
+    if (hudBottom.current) ro.observe(hudBottom.current);
+    window.addEventListener("resize", measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, []);
 
   return (
-    <div className="app">
-      <TopBar health={health} />
-      {error != null && <ErrorState error={error} onRetry={load} />}
-      {replay.state ? (
-        <ReplayBar r={replay} />
-      ) : (
-        summary && <ShiftStrip summary={summary} onReplay={replay.start} />
-      )}
-      {showTip && (
-        <div className="tip" role="note">
-          <span>
-            <strong>Nasıl kullanılır:</strong> Solda karar bekleyen uyarılar kart olarak en üstte, diğer kareler altında.
-            Seçince sağda özeti açılır, <Kbd>Enter</Kbd> kareyi açar. Karar verince <Kbd>N</Kbd> sonraki bekleyene geçer.
+    <div className="app app-map">
+      {/* Floating layers first in the DOM: Tab reaches the skip link and the tools before the map. */}
+      <div className="hud hud-top" ref={hudTop}>
+        <TopBar health={health} />
+        {error != null && <ErrorState error={error} onRetry={load} />}
+        {replay.state ? (
+          <ReplayBar r={replay} />
+        ) : (
+          summary && <ShiftStrip summary={summary} onReplay={replay.start} />
+        )}
+        <div className="hud-tools hud-panel" role="search">
+          <span className="hud-count mono" title="Haritada gösterilen kare sayısı">
+            {rows.length}
+            {replay.arrived ? " geldi" : " kare"}
           </span>
-          <button
-            className="btn btn-ghost"
-            onClick={() => {
-              storage.set("tip_seen", true);
-              setShowTip(false);
-            }}
-          >
-            Anladım
-          </button>
+          <input
+            className="search"
+            type="search"
+            placeholder="Kare no: 6388"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            aria-label="Kare ara"
+          />
+          <select value={zone} onChange={(e) => setZone(e.target.value)} aria-label="Bölge">
+            <option value="">Tüm bölgeler</option>
+            {zones.map((z) => (
+              <option key={z} value={z}>
+                {zoneName(z)}
+              </option>
+            ))}
+          </select>
+          <select value={level} onChange={(e) => setLevel(e.target.value as Level | "")} aria-label="Seviye">
+            <option value="">Tüm seviyeler</option>
+            {LEVELS.map((l) => (
+              <option key={l} value={l}>
+                {LEVEL_ICON[l]} {l}
+              </option>
+            ))}
+          </select>
+          <select value={status} onChange={(e) => setStatus(e.target.value as Status)} aria-label="Durum">
+            <option value="">Tüm durumlar</option>
+            <option value="pending">Karar bekleyenler</option>
+            <option value="unseen">Bakılmamışlar</option>
+            <option value="escalated">Amire iletilenler</option>
+          </select>
+          <div className="seg" role="group" aria-label="Harita görünümü">
+            <button className={`btn btn-sm ${mode === "vehicles" ? "seg-on" : "btn-ghost"}`} aria-pressed={mode === "vehicles"} onClick={() => switchMode("vehicles")}>
+              Araçlar
+            </button>
+            <button className={`btn btn-sm ${mode === "frames" ? "seg-on" : "btn-ghost"}`} aria-pressed={mode === "frames"} onClick={() => switchMode("frames")}>
+              Kareler
+            </button>
+          </div>
         </div>
-      )}
-
-      {/* Layers: alerts rail (what to act on) · map (where) · focus card (the selected frame, in brief). */}
-      <main tabIndex={-1} className="triage cop">
-        <section className="queue panel" aria-label="Uyarılar">
-          <div className="panel-head">
-            <h2>
-              Aktif uyarılar{" "}
-              <span className="muted small">
-                · {nAlerts} karar bekliyor
-                {replay.arrived ? ` · ${rows.length} kare geldi` : ""}
+        {showTip && (
+          <div className="tip hud-panel" role="note">
+            {mode === "vehicles" ? (
+              <span>
+                Her işaret bir araç: seçili saatteki konumu, rengi tehdit seviyesi. Alttaki çubukla zamanı oynat (<Kbd>Space</Kbd>),
+                eşikle kalabalığı azalt. Araca tıkla: karesinin kartı açılır. <Kbd>J</Kbd>/<Kbd>K</Kbd> kareleri risk sırasıyla gezer.
               </span>
-            </h2>
-            <div className="filters">
-              <input
-                className="search"
-                type="search"
-                placeholder="Kare no: 6388"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                aria-label="Kare ara"
-              />
-              <button className="btn btn-ghost btn-sm" aria-expanded={showFilters} onClick={() => setShowFilters((s) => !s)}>
-                Filtre{nFilters ? ` · ${nFilters}` : ""}
-              </button>
-            </div>
-            {showFilters && (
-              <div className="filters filters-more">
-                <select value={zone} onChange={(e) => setZone(e.target.value)} aria-label="Bölge">
-                  <option value="">Tüm bölgeler</option>
-                  {zones.map((z) => (
-                    <option key={z} value={z}>
-                      {zoneName(z)}
-                    </option>
-                  ))}
-                </select>
-                <select value={level} onChange={(e) => setLevel(e.target.value as Level | "")} aria-label="Seviye">
-                  <option value="">Tüm seviyeler</option>
-                  {LEVELS.map((l) => (
-                    <option key={l} value={l}>
-                      {LEVEL_ICON[l]} {l}
-                    </option>
-                  ))}
-                </select>
-                <select value={status} onChange={(e) => setStatus(e.target.value as Status)} aria-label="Durum">
-                  <option value="">Tüm durumlar</option>
-                  <option value="pending">Karar bekleyenler</option>
-                  <option value="unseen">Bakılmamışlar</option>
-                  <option value="escalated">Amire iletilenler</option>
-                </select>
-              </div>
+            ) : (
+              <span>
+                Her işaret bir kare: üzerine gel ya da tıkla, kartı açılır. <Kbd>J</Kbd>/<Kbd>K</Kbd> risk sırasıyla gezer,{" "}
+                <Kbd>Enter</Kbd> açar. Ok öncü aracın yönü, uzunluğu hızı.
+              </span>
             )}
-          </div>
-          {!queue ? (
-            <Loading label="Kareler değerlendiriliyor" />
-          ) : rows.length === 0 ? (
-            <div className="state">Bu filtreyle eşleşen kare yok.</div>
-          ) : (
-            <ol className="rows">
-              {nAlerts === 0 && (
-                <li className="rows-divider" role="presentation">
-                  Karar bekleyen YÜKSEK/KRİTİK uyarı yok
-                </li>
-              )}
-              {rows.map((r, i) => (
-                <Fragment key={r.image_id}>
-                  {i === nAlerts && nAlerts > 0 && (
-                    <li className="rows-divider" role="presentation">
-                      Diğer kareler · {rows.length - nAlerts}
-                    </li>
-                  )}
-                  <li
-                    data-row={i}
-                    className={`row ${i < nAlerts ? `row-card ${r.level === "KRİTİK" ? "row-card-crit" : ""}` : "row-compact"} ${i === cursor ? "row-cursor" : ""} ${viewed.has(r.image_id) ? "row-seen" : ""}`}
-                    onClick={() => setCursor(i)}
-                    onDoubleClick={() => go(`/frame/${r.image_id}`)}
-                    tabIndex={i === cursor ? 0 : -1}
-                    onFocus={() => setCursor(i)}
-                    aria-selected={i === cursor}
-                    aria-label={`${r.level}, ${r.image_id}, ${zoneName(r.zone)}, ${r.capture_time}, üsse ${km(r.d_base_m)}, ${r.min_eta_min === null ? "yaklaşan yok" : `ETA yaklaşık ${dec(r.min_eta_min)} dakika`}${r.reports_contradicted ? `, ${r.reports_contradicted} rapor çelişiyor` : ""}${r.decision ? ", karar verildi" : ""}. ${r.headline}`}
-                    onMouseEnter={() => setHover(r.image_id)}
-                    onMouseLeave={() => setHover(null)}
-                    draggable
-                    onDragStart={(e) => startDrag(e, frameItem(r))}
-                    onDragEnd={endDrag}
-                    title="Sohbete sürükleyerek karşılaştırın"
-                  >
-                    {i < nAlerts ? (
-                      <AlertCard r={r} isNew={!!replay.arrived && replay.isNew(r.image_id)} seen={viewed.has(r.image_id)} active={i === cursor} />
-                    ) : (
-                      <CompactRow r={r} isNew={!!replay.arrived && replay.isNew(r.image_id)} />
-                    )}
-                  </li>
-                </Fragment>
-              ))}
-            </ol>
-          )}
-          <div className="hint">
-            <Kbd>J</Kbd>/<Kbd>K</Kbd> seç · <Kbd>Enter</Kbd> aç · çift tıklama aç
-          </div>
-        </section>
-
-        <section className="panel overview" aria-label="Bölge haritası">
-          <div className="panel-head">
-            <h2>Bölge haritası</h2>
-            <span className="muted small">Üs merkezde · halkalar {mapCtx?.rings.map((r) => `${r.km} km`).join(" / ")}</span>
-          </div>
-          {mapCtx ? (
-            <OverviewMap
-              ctx={mapCtx}
-              hover={hover}
-              selected={selected?.image_id ?? null}
-              visible={replay.arrived}
-              decided={decided}
-              alerts={alerts}
-              onSelect={(id) => {
-                const i = rows.findIndex((r) => r.image_id === id);
-                if (i >= 0) setCursor(i);
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                storage.set("tip_seen", true);
+                setShowTip(false);
               }}
-            />
-          ) : (
-            <Loading />
-          )}
-          <Legend />
-        </section>
+            >
+              Anladım
+            </button>
+          </div>
+        )}
+      </div>
 
-        <Preview row={selected} />
+      {/* Common operational picture: the map is the background; each frame opens a card next to its marker. */}
+      <main tabIndex={-1} className="map-bg" aria-label="Bölge haritası">
+        {mapCtx && queue ? (
+          <OverviewMap
+            ctx={mapCtx}
+            rows={rows}
+            selected={selected?.image_id ?? null}
+            shown={shown?.image_id ?? null}
+            decided={decided}
+            viewed={viewed}
+            isNew={replay.arrived ? replay.isNew : null}
+            onSelect={select}
+            onHover={hoverIn}
+            onHoverOut={hoverOut}
+            insets={insets}
+            leftInset={railOpen && alerts.length ? RAIL_W + 16 : 0}
+            card={
+              cardRow &&
+              cardInfo && (
+                <FrameCard
+                  row={cardRow}
+                  info={cardInfo}
+                  isNew={!!replay.arrived && replay.isNew(cardRow.image_id)}
+                  pinned={cardRow.image_id === selected?.image_id}
+                  onClose={() => {
+                    setHover(null);
+                    select(null);
+                  }}
+                  onPin={() => select(cardRow.image_id)}
+                  onHover={() => hoverIn(cardRow.image_id)}
+                  onHoverOut={hoverOut}
+                />
+              )
+            }
+            cardKey={cardId}
+            cardLeaving={leaving}
+            cardAt={cardInfo?.center ?? null}
+            vehicles={mode === "vehicles" ? (vehDay?.vehicles ?? null) : null}
+            threshold={threshold}
+            clock={clock}
+          />
+        ) : (
+          <Loading label="Kareler değerlendiriliyor" />
+        )}
+        {queue && rows.length === 0 && <div className="map-empty hud-panel">Bu filtreyle eşleşen kare yok.</div>}
       </main>
+
+      <AlertRail
+        alerts={alerts}
+        open={railOpen}
+        onToggle={toggleRail}
+        selected={selected?.image_id ?? null}
+        viewed={viewed}
+        isNew={replay.arrived ? replay.isNew : null}
+        onSelect={select}
+        insets={insets}
+      />
+
+      <div className="hud hud-bottom" ref={hudBottom}>
+        {mode === "vehicles" && vehDay && (
+          <TimeBar
+            clock={clock}
+            window={vehDay.window}
+            ticks={ticks}
+            vehicles={vehDay.vehicles}
+            threshold={threshold}
+            onThreshold={changeThreshold}
+            onTick={select}
+          />
+        )}
+        <Legend rings={mapCtx?.rings.map((r) => r.km) ?? []} />
+      </div>
     </div>
   );
 }
+
 
 type Status = "" | "pending" | "unseen" | "escalated";
-
-/** Active alert: level and ETA first (the two facts that decide "now or later"), then where and what. */
-function AlertCard({ r, isNew, seen, active }: { r: TriageRow; isNew: boolean; seen: boolean; active: boolean }) {
-  return (
-    <div className="card-body">
-      <div className="card-top">
-        <LevelBadge level={r.level} size={r.level === "KRİTİK" ? "md" : "sm"} />
-        <span className={`mono card-eta ${r.min_eta_min === null ? "muted" : ""}`} title="Üsse yaklaşan araçlar arasında en kısa varış süresi">
-          {eta(r)}
-        </span>
-        {!seen && <span className="unseen" title="Bakılmadı" />}
-      </div>
-      <div className="row-sub">
-        <span className="mono">{r.image_id}</span>
-        <span className="muted">
-          {zoneName(r.zone)} · {r.capture_time} · {km(r.d_base_m)}
-        </span>
-      </div>
-      <p className="card-headline">{r.headline}</p>
-      <div className="card-foot">
-        <span className="row-tags">
-          {r.n_approaching > 0 && <span className="tag">{r.n_approaching} yaklaşan</span>}
-          {r.n_heavy > 0 && <span className="tag">{r.n_heavy} ağır</span>}
-          {r.reports_contradicted > 0 && (
-            <span className="verdict vd-bad" title="Kanıtla çelişen rapor">
-              ✗{r.reports_contradicted}
-            </span>
-          )}
-          {isNew && <span className="tag tag-new">YENİ</span>}
-        </span>
-        {/* "Sor" stays at the right edge: "Aç" appears to its left when the card is selected (on mousedown),
-            so a first click on "Sor" never lands on a moved button. */}
-        <span className="card-actions">
-          {active && (
-            <button className="btn btn-primary btn-sm" onClick={() => go(`/frame/${r.image_id}`)}>
-              Aç → <Kbd>Enter</Kbd>
-            </button>
-          )}
-          <button
-            className="btn btn-ghost btn-sm"
-            onClick={(e) => {
-              e.stopPropagation();
-              addToChat(frameItem(r));
-            }}
-            aria-label={`${r.image_id} karesini sohbete ekle`}
-          >
-            Sor
-          </button>
-        </span>
-      </div>
-    </div>
-  );
-}
-
-/** Everything else: one line, the decision (if any) instead of details. */
-function CompactRow({ r, isNew }: { r: TriageRow; isNew: boolean }) {
-  return (
-    <>
-      <div className="row-level">
-        <LevelBadge level={r.level} size="sm" tone={r.decision ? "quiet" : "outline"} />
-      </div>
-      <div className="row-main">
-        <div className="row-top">
-          <span className="mono">{r.capture_time}</span>
-          <span className="row-zone">{zoneName(r.zone)}</span>
-          <span className={`mono row-eta ${r.min_eta_min === null ? "muted" : ""}`}>{eta(r)}</span>
-        </div>
-        <div className="row-sub">
-          <span className="mono muted">{r.image_id}</span>
-          {r.decision && <DecisionPill decision={r.decision} />}
-          {isNew && <span className="tag tag-new">YENİ</span>}
-        </div>
-      </div>
-    </>
-  );
-}
 
 /** Measured in the product (decision log + frame openings), not assumed: see PROJECT_DESIGN §1.4, §1.6. */
 export function DecisionMetrics({ summary: s }: { summary: ShiftSummary }) {
@@ -361,101 +382,611 @@ export function DecisionMetrics({ summary: s }: { summary: ShiftSummary }) {
   );
 }
 
-/** Shift line: the one number that matters (pending YÜKSEK/KRİTİK) up front; the rest behind "Ayrıntı". */
+/** Shift strip: counts, measured decision metrics and the duty-officer links (the most urgent frame is the
+ *  default selection of the alert list, shown in the preview panel). */
 function ShiftStrip({ summary, onReplay }: { summary: ShiftSummary; onReplay: () => void }) {
+  const [open, setOpen] = useState(false);
   return (
-    <section className="shift" aria-label="Nöbet devri">
+    <section className="shift hud-panel" aria-label="Nöbet devri">
       <div className="shift-stats">
-        <span className="shift-title">Nöbet</span>
-        <strong className={summary.awaiting_high ? "attn-text" : ""}>{summary.awaiting_high} YÜKSEK/KRİTİK karar bekliyor</strong>
         <span className="shift-levels">
           {LEVELS.map((l) => (
-            <span key={l} className={`level ${LEVEL_CLASS[l]} level-sm`}>
+            <span key={l} className={`level ${LEVEL_CLASS[l]} level-sm`} title={`${l}: ${summary.by_level[l] ?? 0} kare`}>
               {LEVEL_ICON[l]} {l} {summary.by_level[l] ?? 0}
             </span>
           ))}
         </span>
-        <details className="shift-more">
-          <summary>Ayrıntı</summary>
-          <div className="shift-more-body">
-            <span>
-              <strong>{summary.frames}</strong> kare · <strong>{summary.reports}</strong> rapor · {summary.contradicted_reports} rapor
-              çelişiyor · {summary.decided} karar
-            </span>
-            <DecisionMetrics summary={summary} />
-          </div>
-        </details>
+        <strong className={summary.awaiting_high ? "attn-text" : ""}>{summary.awaiting_high} YÜKSEK/KRİTİK karar bekliyor</strong>
         <span className="shift-links">
           <button className="btn btn-ghost btn-sm" onClick={onReplay} title="Günü simüle saatle oynat: kareler çekim saatinde kuyruğa düşer">
-            Vardiyayı oynat
+            Oynat
           </button>
           <a className="btn btn-ghost btn-sm" href="#/handover" title="Amir için kurala dayalı vardiya özeti (yazdırılabilir)">
-            Vardiya devri özeti →
+            Devir →
           </a>
           <a className="btn btn-ghost btn-sm" href="#/impact" title="Vardiya simülasyonu: karar, araçlar üsse varmadan önce mi?">
             Etki →
           </a>
+          <button className="btn btn-ghost btn-sm" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+            Ayrıntı
+          </button>
         </span>
       </div>
+      {open && (
+        <div className="shift-more">
+          <span>
+            <strong>{summary.frames}</strong> kare · <strong>{summary.reports}</strong> rapor · {summary.contradicted_reports} rapor
+            çelişiyor · {summary.decided} karar
+          </span>
+          <DecisionMetrics summary={summary} />
+        </div>
+      )}
     </section>
   );
 }
 
-/** Focus card: the selected frame in brief (headline, action, three facts); the frame page has the evidence. */
-function Preview({ row: r }: { row: TriageRow | null }) {
-  const packet = usePacket(r?.image_id ?? null);
-  if (!r)
-    return (
-      <aside className="panel preview" aria-label="Seçili kare">
-        <div className="state">Soldan bir uyarı seçin.</div>
-      </aside>
-    );
+/** Everything the alert row and the old preview panel showed, as a card next to the frame's marker (all from the
+ *  backend: the queue row and the map context's lead-vehicle motion). */
+function FrameCard({
+  row: r,
+  info,
+  isNew,
+  pinned,
+  onClose,
+  onPin,
+  onHover,
+  onHoverOut,
+}: {
+  row: TriageRow;
+  info: MapFrame;
+  isNew: boolean;
+  pinned: boolean;
+  onClose: () => void;
+  onPin: () => void;
+  onHover: () => void;
+  onHoverOut: () => void;
+}) {
+  const m = info.motion;
+  const classes = LABEL_ORDER.filter((lb) => info.label_counts[lb]);
+  const packet = usePacket(r.image_id);
   return (
-    <aside className="panel preview" aria-label="Seçili kare">
-      <div className="preview-body">
-        <div className="preview-head">
-          <LevelBadge level={r.level} tone={r.decision ? "quiet" : "auto"} />
-          {r.decision && <DecisionPill decision={r.decision} />}
-        </div>
-        <div className="preview-id">
-          <span className="mono">{r.image_id}</span>
-          <span className="muted">
-            {zoneName(r.zone)} · {r.capture_time} · üsten {km(r.d_base_m)}
-          </span>
-        </div>
-        <p className="preview-headline">{r.headline}</p>
-        <div className="action" role="note" style={{ ["--act" as string]: `var(${LEVEL_VAR[r.level]})` }}>
-          <span className="action-label">Seviye eylemi</span>
-          {LEVEL_ACTION[r.level]}
-        </div>
-        <dl className="facts">
-          <dt>En kısa ETA</dt>
-          <dd className="mono">{r.min_eta_min === null ? "yaklaşan yok" : `~${dec(r.min_eta_min)} dk`}</dd>
-          <dt>Araç</dt>
-          <dd>
-            {r.n_vehicles} · {r.n_approaching} yaklaşan · {r.n_heavy} ağır
-          </dd>
-          <dt>Raporlar</dt>
-          <dd>
-            <span className="verdict vd-ok">✓{r.reports_confirmed}</span>{" "}
-            <span className="verdict vd-bad">✗{r.reports_contradicted}</span>
-          </dd>
-        </dl>
-        <button className="btn btn-primary preview-open" onClick={() => go(`/frame/${r.image_id}`)}>
+    <aside
+      className={`frame-card ${pinned ? "frame-card-pinned" : ""}`}
+      aria-label="Seçili kare"
+      onMouseEnter={onHover}
+      onMouseLeave={onHoverOut}
+      onClick={pinned ? undefined : onPin}
+    >
+      <div className="frame-card-head">
+        <LevelBadge level={r.level} tone={r.decision ? "quiet" : "auto"} />
+        {r.decision && <DecisionPill decision={r.decision} />}
+        {isNew && <span className="tag tag-new">YENİ</span>}
+        <span className="mono muted small frame-card-score" title="Risk skoru">
+          skor {r.score}
+        </span>
+        <button className="btn btn-ghost btn-sm frame-card-close" onClick={onClose} aria-label="Kartı kapat" title="Kartı kapat (Esc)">
+          ✕
+        </button>
+      </div>
+      <div className="preview-id">
+        <span className="mono">{r.image_id}</span>
+        <span className="muted">
+          {zoneName(r.zone)} · {r.capture_time} · üsten {km(r.d_base_m)}
+        </span>
+      </div>
+      <p className="preview-headline">{r.headline}</p>
+      <div className="action" role="note" style={{ ["--act" as string]: `var(${LEVEL_VAR[r.level]})` }}>
+        <span className="action-label">Seviye eylemi</span>
+        {LEVEL_ACTION[r.level]}
+      </div>
+      <dl className="facts">
+        <dt>En kısa ETA</dt>
+        <dd className="mono">{r.min_eta_min === null ? "yaklaşan yok" : `~${dec(r.min_eta_min)} dk`}</dd>
+        <dt>Hareket</dt>
+        <dd>
+          {m ? (
+            <>
+              <span className="mono">
+                {m.heading_dir ?? "—"} {Math.round(m.heading_deg)}° · {dec(m.speed_kmh, 0)} km/sa
+              </span>{" "}
+              <span className="muted">
+                ({m.track_id} {LABEL_TR[m.label]}, {m.approaching ? "üsse yaklaşıyor" : "üsse yaklaşmıyor"}
+                {m.n_moving > 1 ? `; ${m.n_moving} hareketli araç` : ""})
+              </span>
+            </>
+          ) : (
+            <span className="muted">hareketli araç yok</span>
+          )}
+        </dd>
+        <dt>Araç</dt>
+        <dd>
+          {r.n_vehicles} · {r.n_approaching} yaklaşan · {r.n_heavy} ağır
+        </dd>
+        <dt>Sınıflar</dt>
+        <dd className="card-classes">
+          {classes.length === 0 ? (
+            <span className="muted">araç yok</span>
+          ) : (
+            classes.map((lb) => (
+              <span key={lb} className="card-class">
+                <span className="card-sil" dangerouslySetInnerHTML={{ __html: classSymbol(lb) }} />
+                {info.label_counts[lb]} {LABEL_TR[lb]}
+              </span>
+            ))
+          )}
+        </dd>
+        <dt>Raporlar</dt>
+        <dd>
+          <span className="verdict vd-ok">✓{r.reports_confirmed}</span>{" "}
+          <span className="verdict vd-bad">✗{r.reports_contradicted}</span>
+        </dd>
+      </dl>
+      {packet?.image_id === r.image_id && <AnomalyChips imageId={r.image_id} vehicles={packet.vehicles} max={4} />}
+      <img className="preview-img" src={api.imageUrl(r.image_id)} alt={`${r.image_id} drone karesi (önizleme)`} loading="lazy" />
+      <div className="frame-card-actions">
+        <button className="btn btn-primary preview-open frame-card-open" onClick={() => go(`/frame/${r.image_id}`)}>
           Kareyi aç → <Kbd>Enter</Kbd>
         </button>
-        {packet?.image_id === r.image_id && <AnomalyChips imageId={r.image_id} vehicles={packet.vehicles} max={4} />}
-        <details className="preview-more">
-          <summary>Görüntü ve skor</summary>
-          <p className="muted small">Risk skoru {r.score} / 100</p>
-          <img className="preview-img" src={api.imageUrl(r.image_id)} alt={`${r.image_id} drone karesi (önizleme)`} loading="lazy" />
-        </details>
+        <button className="btn" onClick={() => addToChat(frameItem(r))} aria-label={`${r.image_id} karesini sohbete ekle`}>
+          Sor
+        </button>
       </div>
     </aside>
   );
 }
 
-/** The selected frame's evidence packet (vehicles for the chat chips), fetched once per frame. */
+function arrowHtml(m: FrameMotion) {
+  const len = Math.round(ARROW_MIN_PX + (Math.min(m.speed_kmh, ARROW_FULL_KMH) / ARROW_FULL_KMH) * (ARROW_MAX_PX - ARROW_MIN_PX));
+  return (
+    `<span class="mk-arrow ${m.approaching ? "mk-arrow-in" : ""}" style="--hd:${m.heading_deg}deg;height:${len}px" aria-hidden="true">` +
+    `<svg width="12" height="${len}" viewBox="0 0 12 ${len}"><line x1="6" y1="24" x2="6" y2="${len - 6}"/>` +
+    `<path d="M1 ${len - 8} L6 ${len} L11 ${len - 8} Z"/></svg></span>`
+  );
+}
+
+/** Main map opens tilted; right-drag / Ctrl+drag re-orients the plane, the compass resets it. */
+const MAP_3D = { pitch: 45, maxPitch: 70 };
+/** Faint 1 km reference grid around the base (vehicles reach ~8 km): shows the plane's tilt and heading. */
+const GRID = { halfM: 10_000, stepM: 1_000 };
+const CARD_W = 340;
+const CARD_GAP = 28;
+
+function OverviewMap({
+  ctx,
+  rows,
+  selected,
+  shown,
+  decided,
+  viewed,
+  isNew,
+  onSelect,
+  onHover,
+  onHoverOut,
+  insets,
+  leftInset,
+  card,
+  cardKey,
+  cardLeaving,
+  cardAt,
+  vehicles,
+  threshold,
+  clock,
+}: {
+  ctx: MapContext;
+  rows: TriageRow[];
+  selected: string | null;
+  shown: string | null;
+  decided: Set<string>;
+  viewed: Set<string>;
+  isNew: ((id: string) => boolean) | null;
+  onSelect: (imageId: string) => void;
+  onHover: (imageId: string) => void;
+  onHoverOut: () => void;
+  /** Screen area covered by the floating layers (px from the top / bottom of the map). */
+  insets: { top: number; bottom: number };
+  /** Screen width covered by the alert rail on the left (the card keeps clear of it). */
+  leftInset: number;
+  card: ReactNode;
+  cardKey: string | null;
+  cardLeaving: boolean;
+  cardAt: LngLat | null;
+  /** Vehicle view: every vehicle of the day moved by the clock (null: frame view). */
+  vehicles: DayVehicle[] | null;
+  threshold: number;
+  clock: Clock;
+}) {
+  const cb = useRef({ onSelect, onHover, onHoverOut });
+  cb.current = { onSelect, onHover, onHoverOut };
+  const markers = useRef<Record<string, Marker>>({});
+  const arrows = useRef<Record<string, Marker>>({}); // heading arrows, laid on the map plane
+  const mapRef = useRef<MLMap | null>(null);
+  const footprintHandlers = useRef<MLMap | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [ready, setReady] = useState(0); // markers exist only after the map loads
+  const [pos, setPos] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // Vehicle view: hovering a vehicle previews its frame's card next to the vehicle (not at the frame).
+  const [vehAnchor, setVehAnchor] = useState<{ id: string; at: LngLat } | null>(null);
+  useVehicleLayer({
+    map: ready ? mapRef.current : null,
+    ready,
+    vehicles,
+    enabled: vehicles !== null,
+    threshold,
+    clock,
+    onSelect: (id) => cb.current.onSelect(id),
+    onHover: (id, at) => {
+      setVehAnchor({ id, at });
+      cb.current.onHover(id);
+    },
+    onHoverOut: () => cb.current.onHoverOut(),
+  });
+  const anchorAt = vehicles && vehAnchor && vehAnchor.id === cardKey ? vehAnchor.at : cardAt;
+
+  const onReady = (map: MLMap) => {
+    mapRef.current = map;
+    Object.values(markers.current).forEach((m) => m.remove());
+    Object.values(arrows.current).forEach((m) => m.remove());
+    markers.current = {};
+    arrows.current = {};
+    setGeo(map, "grid", fc(grid(ctx.base.center, GRID.halfM, GRID.stepM).map((l) => line(l))));
+    if (!map.getLayer("grid"))
+      map.addLayer({
+        id: "grid",
+        type: "line",
+        source: "grid",
+        // faint on the plain background; a little stronger over the satellite texture, where 0.14 vanishes
+        paint: { "line-color": token("--muted"), "line-opacity": map.getTerrain() ? 0.3 : 0.14, "line-width": 1 },
+      });
+    setGeo(map, "rings", fc(ctx.rings.map((r) => line(r.ring, { km: r.km }))));
+    if (!map.getLayer("rings"))
+      map.addLayer({
+        id: "rings",
+        type: "line",
+        source: "rings",
+        paint: { "line-color": token("--muted"), "line-width": 1.25, "line-dasharray": [3, 3], "line-opacity": 0.7 }, // readable on the terrain texture too
+      });
+    // Frame footprints: each frame's real ground coverage, coloured by level (filled in by the effect below)
+    setGeo(map, "frame-footprints", fc([]));
+    if (!map.getLayer("frame-footprints-fill")) {
+      map.addLayer({
+        id: "frame-footprints-fill",
+        type: "fill",
+        source: "frame-footprints",
+        paint: { "fill-color": ["get", "color"], "fill-opacity": ["get", "opacity"] },
+      });
+      map.addLayer({
+        id: "frame-footprints-line",
+        type: "line",
+        source: "frame-footprints",
+        paint: { "line-color": ["get", "outlineColor"], "line-width": ["get", "lineWidth"], "line-opacity": ["get", "lineOpacity"] },
+      });
+    }
+    // Layer handlers live on the map, not the layer: bind them once per map, not on every style reload.
+    if (footprintHandlers.current !== map) {
+      footprintHandlers.current = map;
+      const imageId = (e: MapLayerMouseEvent) => e.features?.[0]?.properties?.image_id as string | undefined;
+      map.on("click", "frame-footprints-fill", (e) => {
+        const id = imageId(e);
+        if (id) cb.current.onSelect(id);
+      });
+      map.on("dblclick", "frame-footprints-fill", (e) => {
+        const id = imageId(e);
+        if (id) go(`/frame/${id}`);
+      });
+      map.on("mouseenter", "frame-footprints-fill", () => (map.getCanvas().style.cursor = "pointer"));
+      map.on("mouseleave", "frame-footprints-fill", () => (map.getCanvas().style.cursor = ""));
+    }
+    htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base");
+    for (const z of ctx.zones) htmlMarker(map, z.center, z.label, "mk mk-zone");
+    // Arrows first (painted on the ground, under the upright icons); same point as the frame, so they tilt and
+    // rotate with the plane and always point along the true heading.
+    for (const f of ctx.frames) {
+      if (!f.motion) continue;
+      const a = htmlMarker(map, f.center, arrowHtml(f.motion), `mk-arrow-mk ${LEVEL_CLASS[f.level]}`, undefined, true);
+      a.getElement().dataset.arrow = f.image_id;
+      arrows.current[f.image_id] = a;
+    }
+    for (const f of ctx.frames) {
+      const mk = htmlMarker(
+        map,
+        f.center,
+        (f.lead_label
+          ? `${classSymbol(f.lead_label)}<span class="mk-lv">${LEVEL_ICON[f.level]}</span>`
+          : `<span class="mk-frame-icon">${LEVEL_ICON[f.level]}</span>`),
+        `mk mk-frame ${LEVEL_CLASS[f.level]}`,
+        () => cb.current.onSelect(f.image_id), // pin the card; double-click opens
+      );
+      const el = mk.getElement();
+      el.dataset.frame = f.image_id;
+      el.setAttribute("role", "button");
+      el.tabIndex = -1;
+      el.addEventListener("dblclick", () => go(`/frame/${f.image_id}`));
+      el.addEventListener("mouseenter", () => cb.current.onHover(f.image_id));
+      el.addEventListener("mouseleave", () => cb.current.onHoverOut());
+      el.addEventListener("focus", () => cb.current.onSelect(f.image_id));
+      // frame markers can be dragged into the chat, like the alert cards
+      el.draggable = true;
+      el.addEventListener("dragstart", (e) => startDrag(e, frameItem(f)));
+      el.addEventListener("dragend", endDrag);
+      markers.current[f.image_id] = mk;
+    }
+    setReady((r) => r + 1);
+  };
+
+  // Visibility (filters, replay) and the accessible name follow the filtered, risk-ordered rows.
+  useEffect(() => {
+    const byId = new Map(rows.map((r) => [r.image_id, r]));
+    for (const f of ctx.frames) {
+      const el = markers.current[f.image_id]?.getElement();
+      if (!el) continue;
+      const r = byId.get(f.image_id);
+      el.classList.toggle("mk-hidden", !r);
+      el.classList.toggle("mk-new", !!r && !!isNew?.(f.image_id));
+      el.classList.toggle("mk-seen", viewed.has(f.image_id));
+      const done = decided.has(f.image_id);
+      el.classList.toggle("mk-quiet", done); // visual quiet: undecided KRİTİK frames are filled; decided ones recede
+      el.classList.toggle("mk-attn", !done && f.level === "KRİTİK");
+      const arrow = arrows.current[f.image_id]?.getElement();
+      arrow?.classList.toggle("mk-hidden", !r);
+      arrow?.classList.toggle("mk-quiet", done);
+      if (r) {
+        const mo = f.motion;
+        el.setAttribute(
+          "aria-label",
+          `${r.level}, ${r.image_id}, ${zoneName(r.zone)}, ${r.capture_time}, üsse ${km(r.d_base_m)}, ${r.min_eta_min === null ? "yaklaşan yok" : `ETA yaklaşık ${dec(r.min_eta_min)} dakika`}${f.lead_label ? `, ${LABEL_TR[f.lead_label]}` : ""}${mo ? `, öncü araç ${mo.heading_dir ?? ""} yönünde ${dec(mo.speed_kmh, 0)} km/sa` : ""}${r.reports_contradicted ? `, ${r.reports_contradicted} rapor çelişiyor` : ""}${r.decision ? ", karar verildi" : ""}. ${r.headline}`,
+        );
+        el.title = `${r.image_id} · ${zoneName(r.zone)} · ${r.capture_time} · ${r.level}${f.lead_label ? ` · ${LABEL_TR[f.lead_label]}` : ""}${mo ? ` · ${mo.heading_dir ?? ""} ${dec(mo.speed_kmh, 0)} km/sa` : ""}`;
+      }
+    }
+  }, [rows, ctx, decided, viewed, isNew, ready]);
+
+  // Footprints follow the filtered rows, selection, hover and decisions.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getSource("frame-footprints")) return;
+    const visible = new Set(rows.map((r) => r.image_id));
+    const hover = shown !== selected ? shown : null;
+    const features = ctx.frames
+      .filter((f) => visible.has(f.image_id))
+      .map((f) => {
+        const isSel = f.image_id === selected;
+        const isHov = f.image_id === hover;
+        const isDec = decided.has(f.image_id);
+        // Vehicle view: footprints are neutral (the vehicles carry the threat colour, not the frames).
+        const color = isDec ? token("--line-strong") : vehicles ? token("--muted") : levelColor(f.level);
+        return polygon([...f.corners, f.corners[0]], {
+          image_id: f.image_id,
+          color,
+          opacity: isSel ? 0.35 : isHov ? 0.25 : isDec ? 0.04 : !vehicles && f.level === "KRİTİK" ? 0.2 : 0.08,
+          outlineColor: isSel ? token("--text") : isHov ? token("--text-2") : color,
+          lineWidth: isSel ? 2.5 : isHov ? 2 : isDec ? 1 : 1.5,
+          lineOpacity: isDec ? 0.4 : 0.9,
+        });
+      });
+    setGeo(map, "frame-footprints", fc(features));
+  }, [rows, selected, shown, decided, ready, ctx, vehicles]);
+
+  // Roving focus: the map is one Tab stop; J/K move the selection and, if a marker has focus, the focus too.
+  useEffect(() => {
+    const first = selected ?? rows[0]?.image_id ?? null;
+    for (const [id, m] of Object.entries(markers.current)) {
+      const el = m.getElement();
+      el.tabIndex = id === first ? 0 : -1;
+      el.classList.toggle("mk-selected", id === selected);
+      el.classList.toggle("mk-hover", id === shown && id !== selected);
+    }
+    const map = mapRef.current;
+    const el = selected ? markers.current[selected]?.getElement() : null;
+    if (!map || !el) return;
+    if (document.activeElement?.classList.contains("mk-frame") && document.activeElement !== el) el.focus({ preventScroll: true });
+    // Keep the selection on screen when the keyboard walks to a marker outside the view.
+    const p = map.project(markers.current[selected!].getLngLat());
+    const c = map.getContainer();
+    if (p.x < 40 || p.y < insets.top + 40 || p.x > c.clientWidth - 40 || p.y > c.clientHeight - insets.bottom - 40)
+      map.easeTo({ center: markers.current[selected!].getLngLat(), duration: 300 });
+  }, [selected, shown, rows, ready]);
+
+  // The card follows its marker (or the hovered vehicle) as the map pans and zooms.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !anchorAt) return setPos(null);
+    const update = () => {
+      const p = map.project(anchorAt);
+      const c = map.getContainer();
+      setPos({ x: p.x, y: p.y, w: c.clientWidth, h: c.clientHeight });
+    };
+    update();
+    map.on("move", update);
+    map.on("resize", update);
+    return () => {
+      map.off("move", update);
+      map.off("resize", update);
+    };
+  }, [anchorAt?.[0], anchorAt?.[1], ready]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The card's real height, measured after layout (before paint) and again whenever its content resizes
+  // (e.g. the thumbnail loads), so it is placed from its actual size, never last render's.
+  const [cardH, setCardH] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const h = cardRef.current?.offsetHeight ?? null;
+    if (h !== cardH) setCardH(h);
+  });
+  const hasCard = !!card && !!pos;
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setCardH(el.offsetHeight));
+    ro.observe(el.firstElementChild ?? el);
+    return () => ro.disconnect();
+  }, [hasCard, cardKey]);
+
+  let style: CSSProperties | undefined;
+  if (pos) {
+    const w = Math.min(CARD_W, pos.w - 16);
+    const right = pos.x + CARD_GAP;
+    const left = right + w > pos.w - 8 ? pos.x - CARD_GAP - w : right;
+    const minLeft = 8 + leftInset;
+    const top = insets.top + 8;
+    const room = Math.max(160, pos.h - insets.bottom - 8 - top); // between the floating layers
+    const h = Math.min(cardH ?? 0, room);
+    style = {
+      width: w,
+      maxHeight: room,
+      left: Math.max(minLeft, Math.min(left, pos.w - w - 8)),
+      top: Math.max(top, Math.min(pos.y - 80, top + room - h)),
+      visibility: cardH === null ? "hidden" : undefined, // first layout only: measured before it is painted
+    };
+  }
+
+  return (
+    <div className={`overview-stage${vehicles ? " veh-mode" : ""}`}>
+      <MapView className="overview-map" onReady={onReady} initial={{ center: ctx.base.center, zoom: 11.6 }} threeD={MAP_3D} terrain />
+      {card && style && (
+        <div key={cardKey} ref={cardRef} className={`frame-card-wrap ${cardLeaving ? "card-out" : "card-in"}`} style={style}>
+          {card}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Legend({ rings }: { rings: number[] }) {
+  const [open, setOpen] = useState<boolean>(() => storage.get("legend_open", false));
+  const toggle = () => {
+    storage.set("legend_open", !open);
+    setOpen(!open);
+  };
+  return (
+    <div className="legend-box hud-panel">
+      <button className="btn btn-ghost btn-sm legend-toggle" aria-expanded={open} onClick={toggle}>
+        Lejant
+      </button>
+      {open && (
+        <div className="legend">
+          {LEVEL_LEGEND.map((l) => (
+            <span key={l.level} className={`level ${LEVEL_CLASS[l.level]} level-sm`}>
+              {l.icon} {l.level}: {l.action}
+            </span>
+          ))}
+          {VERDICT_LEGEND.map((v) => (
+            <span key={v.icon} className="legend-verdict">
+              <b aria-hidden>{v.icon}</b> {v.text}
+            </span>
+          ))}
+          <span className="legend-arrow">
+            <svg width="26" height="10" viewBox="0 0 26 10" aria-hidden="true">
+              <line x1="1" y1="5" x2="19" y2="5" />
+              <path d="M17 1 L25 5 L17 9 Z" />
+            </svg>
+            öncü aracın yönü · uzunluk = hız (≥ {ARROW_FULL_KMH} km/sa en uzun) · renkli ok: üsse yaklaşıyor
+          </span>
+          <span className="muted">Halkalar: üsten {rings.map((k) => `${k} km`).join(" / ")}</span>
+          <span className="muted">
+            Sol tık + sürükle: kaydır · sağ tık (ya da <Kbd>Ctrl</Kbd>) + sürükle: döndür ve eğ · pusula: kuzey ve düz görünüm
+          </span>
+          <span className="muted">
+            <Kbd>J</Kbd>/<Kbd>K</Kbd> gez · <Kbd>Enter</Kbd> aç · <Kbd>Esc</Kbd> kartı kapat · çift tıklama aç
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** An active alert: YÜKSEK/KRİTİK with no operator decision yet (the rail's cards). */
+const isAlert = (r: TriageRow) => !r.decision && (r.level === "KRİTİK" || r.level === "YÜKSEK");
+const RAIL_W = 320;
+
+/** Alert rail: the frames waiting for the operator, riskiest first, floating on the left of the map. Level and ETA
+ *  first (the two facts that decide "now or later"); a click shows the frame's card on the map. */
+function AlertRail({
+  alerts,
+  open,
+  onToggle,
+  selected,
+  viewed,
+  isNew,
+  onSelect,
+  insets,
+}: {
+  alerts: TriageRow[];
+  open: boolean;
+  onToggle: () => void;
+  selected: string | null;
+  viewed: Set<string>;
+  isNew: ((id: string) => boolean) | null;
+  onSelect: (id: string) => void;
+  insets: { top: number; bottom: number };
+}) {
+  if (!alerts.length) return null;
+  return (
+    <section
+      className={`rail hud-panel ${open ? "" : "rail-closed"}`}
+      aria-label="Aktif uyarılar"
+      style={{ top: insets.top + 8, bottom: insets.bottom + 8, width: open ? RAIL_W : undefined }}
+    >
+      <button className="rail-head" aria-expanded={open} onClick={onToggle}>
+        <b>Aktif uyarılar</b> <span className="muted small">{alerts.length} karar bekliyor</span>
+        <span className="muted small rail-toggle">{open ? "gizle" : "göster"}</span>
+      </button>
+      {open && (
+        <ol className="rail-list">
+          {alerts.map((r) => (
+            <li
+              key={r.image_id}
+              className={`rail-card ${r.level === "KRİTİK" ? "rail-card-crit" : ""} ${r.image_id === selected ? "rail-on" : ""}`}
+              onClick={() => onSelect(r.image_id)}
+              onDoubleClick={() => go(`/frame/${r.image_id}`)}
+              draggable
+              onDragStart={(e) => startDrag(e, frameItem(r))}
+              onDragEnd={endDrag}
+              title="Tıkla: haritada kartı · çift tıkla: kareyi aç · sohbete sürükleyerek karşılaştır"
+            >
+              <div className="card-top">
+                <LevelBadge level={r.level} size="sm" />
+                <span className={`mono card-eta ${r.min_eta_min === null ? "muted" : ""}`}>
+                  {r.min_eta_min === null ? "yaklaşan yok" : `ETA ~${dec(r.min_eta_min)} dk`}
+                </span>
+                {!viewed.has(r.image_id) && <span className="unseen" title="Bakılmadı" />}
+              </div>
+              <div className="row-sub">
+                <span className="mono">{r.image_id}</span>
+                <span className="muted">
+                  {zoneName(r.zone)} · {r.capture_time} · {km(r.d_base_m)}
+                </span>
+              </div>
+              <p className="card-headline">{r.headline}</p>
+              <div className="card-foot">
+                <span className="row-tags">
+                  {r.n_approaching > 0 && <span className="tag">{r.n_approaching} yaklaşan</span>}
+                  {r.n_heavy > 0 && <span className="tag">{r.n_heavy} ağır</span>}
+                  {r.reports_contradicted > 0 && (
+                    <span className="verdict vd-bad" title="Kanıtla çelişen rapor">
+                      ✗{r.reports_contradicted}
+                    </span>
+                  )}
+                  {isNew?.(r.image_id) && <span className="tag tag-new">YENİ</span>}
+                </span>
+                <button
+                  className="btn btn-ghost btn-sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    addToChat(frameItem(r));
+                  }}
+                  aria-label={`${r.image_id} karesini sohbete ekle`}
+                >
+                  Sor
+                </button>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
+  );
+}
+
+/** A frame's evidence packet (vehicles for the chat chips on the card), fetched once per frame. */
 const packetCache = new Map<string, EvidencePacket>();
 function usePacket(imageId: string | null) {
   const [packet, setPacket] = useState<EvidencePacket | null>(null);
@@ -476,128 +1007,4 @@ function usePacket(imageId: string | null) {
     };
   }, [imageId]);
   return packet;
-}
-
-type OverviewLayer = "rings" | "zones" | "minor" | "decided";
-const OVERVIEW_LAYERS: { key: OverviewLayer; label: string }[] = [
-  { key: "rings", label: "Mesafe halkaları" },
-  { key: "zones", label: "Bölge adları" },
-  { key: "minor", label: "DÜŞÜK / ORTA kareler" },
-  { key: "decided", label: "Karar verilmiş kareler" },
-];
-
-function OverviewMap({
-  ctx,
-  hover,
-  selected,
-  visible,
-  decided,
-  alerts,
-  onSelect,
-}: {
-  ctx: MapContext;
-  hover: string | null;
-  selected: string | null;
-  visible: Set<string> | null;
-  decided: Set<string>;
-  alerts: Set<string>;
-  onSelect: (imageId: string) => void;
-}) {
-  const onSelectRef = useRef(onSelect);
-  onSelectRef.current = onSelect;
-  const mapRef = useRef<MLMap | null>(null);
-  const markers = useRef<Record<string, Marker>>({});
-  const zoneMarkers = useRef<Marker[]>([]);
-  const [ready, setReady] = useState(0); // markers exist only after the map loads
-  const { layers, toggle } = useLayers<OverviewLayer>("layers_overview", { rings: true, zones: true, minor: true, decided: true });
-  const onReady = (map: MLMap) => {
-    mapRef.current = map;
-    Object.values(markers.current).forEach((m) => m.remove());
-    zoneMarkers.current.forEach((m) => m.remove());
-    markers.current = {};
-    setGeo(map, "rings", fc(ctx.rings.map((r) => line(r.ring, { km: r.km }))));
-    if (!map.getLayer("rings"))
-      map.addLayer({
-        id: "rings",
-        type: "line",
-        source: "rings",
-        paint: { "line-color": token("--line-strong"), "line-width": 1, "line-dasharray": [3, 3] },
-      });
-    htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base");
-    zoneMarkers.current = ctx.zones.map((z) => htmlMarker(map, z.center, z.label, "mk mk-zone"));
-    for (const f of ctx.frames) {
-      markers.current[f.image_id] = htmlMarker(
-        map,
-        f.center,
-        `<span class="mk-frame-icon">${LEVEL_ICON[f.level]}</span>`,
-        `mk mk-frame ${LEVEL_CLASS[f.level]}`,
-        () => onSelectRef.current(f.image_id), // select (preview); double-click opens
-      );
-      const el = markers.current[f.image_id].getElement();
-      el.addEventListener("dblclick", () => go(`/frame/${f.image_id}`));
-      // frame markers can be dragged into the chat, like the alert cards
-      el.draggable = true;
-      el.addEventListener("dragstart", (e) => startDrag(e, frameItem(f)));
-      el.addEventListener("dragend", endDrag);
-      markers.current[f.image_id].getElement().title = `${f.image_id} · ${zoneName(f.zone)} · ${f.capture_time} · ${f.level}`;
-    }
-    setReady((r) => r + 1);
-  };
-  useEffect(() => {
-    for (const [id, m] of Object.entries(markers.current)) {
-      m.getElement().classList.toggle("mk-hover", id === hover);
-      m.getElement().classList.toggle("mk-selected", id === selected);
-    }
-  }, [hover, selected, ready]);
-  // Visual hierarchy: active alerts are full size (KRİTİK filled), other frames are small, decided ones recede.
-  useEffect(() => {
-    for (const f of ctx.frames) {
-      const el = markers.current[f.image_id]?.getElement();
-      if (!el) continue;
-      const done = decided.has(f.image_id);
-      el.classList.toggle("mk-quiet", done);
-      el.classList.toggle("mk-attn", !done && f.level === "KRİTİK");
-      el.classList.toggle("mk-minor", !alerts.has(f.image_id));
-    }
-  }, [decided, alerts, ctx, ready]);
-  // Layers + replay: a frame is shown if it has arrived and its layer is on; the selected frame always shows.
-  useEffect(() => {
-    const map = mapRef.current;
-    if (map?.getLayer("rings")) map.setLayoutProperty("rings", "visibility", layers.rings ? "visible" : "none");
-    zoneMarkers.current.forEach((m) => (m.getElement().style.display = layers.zones ? "" : "none"));
-    for (const f of ctx.frames) {
-      const el = markers.current[f.image_id]?.getElement();
-      if (!el) continue;
-      const arrived = !visible || visible.has(f.image_id);
-      const hiddenByLayer =
-        (!layers.decided && decided.has(f.image_id)) || (!layers.minor && (f.level === "DÜŞÜK" || f.level === "ORTA"));
-      el.style.display = arrived && (!hiddenByLayer || f.image_id === selected) ? "" : "none";
-    }
-  }, [visible, layers, decided, selected, ctx, ready]);
-  return (
-    <MapView
-      className="overview-map"
-      onReady={onReady}
-      initial={{ center: ctx.base.center, zoom: 11.6 }}
-      controls={<LayerMenu defs={OVERVIEW_LAYERS} layers={layers} onToggle={toggle} />}
-    />
-  );
-}
-
-/** Legend from the symbol vocabulary (lib/symbols.ts): levels with their action, then report verdicts. */
-function Legend() {
-  return (
-    <div className="legend">
-      {LEVEL_LEGEND.map((l) => (
-        <span key={l.level} className={`level ${LEVEL_CLASS[l.level]} level-sm`}>
-          {l.icon} {l.level}: {l.action}
-        </span>
-      ))}
-      {VERDICT_LEGEND.map((v) => (
-        <span key={v.icon} className="legend-verdict">
-          <b aria-hidden>{v.icon}</b> {v.text}
-        </span>
-      ))}
-    </div>
-  );
 }

@@ -112,6 +112,12 @@ def map_context() -> dict:
     return svc().map_context()
 
 
+@app.get("/api/vehicles")
+def vehicles() -> dict:
+    """Every vehicle's path over the day, with its detected class and level where a frame matched it."""
+    return svc().vehicles()
+
+
 @app.get("/api/frames/{image_id}")
 def frame(image_id: str):
     _check_frame(image_id)
@@ -235,6 +241,16 @@ def chat_suggestions_for(body: SuggestIn) -> dict:
     """Questions for what the operator put together in the chat (several vehicles and frames)."""
     ctx = [c.model_dump() for c in body.context]
     return {"suggestions": [s.model_dump() for s in svc().chat_suggestions(body.image_id, context=ctx)]}
+
+
+class LlmSwitchIn(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/llm")
+def llm_switch(body: LlmSwitchIn) -> dict:
+    """Operator switch: off → no LLM request is sent (briefs from the LLM cache or the template, chat says off)."""
+    return {"enabled": svc().set_llm_enabled(body.enabled)}
 
 
 class GoldIn(BaseModel):

@@ -21,6 +21,7 @@ import logging
 import os
 import time
 from functools import cached_property
+from typing import get_args
 
 from pydantic import BaseModel
 
@@ -34,6 +35,7 @@ from sentinel.domain.models import (
     EvaluationResult,
     EvidencePacket,
     Kinematics,
+    Label,
     OperatorDecision,
     ReportVerification,
     RiskLevel,
@@ -49,6 +51,7 @@ from sentinel.perception.factory import build_detector
 from sentinel.pipeline import Pipeline
 from sentinel.tracking.kinematics import compute_kinematics
 
+LABEL_ORDER: tuple[str, ...] = get_args(Label)  # map marker class counts, in the contract order
 log = logging.getLogger(__name__)
 
 
@@ -122,6 +125,9 @@ class SentinelService:
                 self.llm_error = str(e)
                 log.warning("LLM devre dışı: %s", e)
         self.llm = llm
+        # Operator switch (status bar): off → no LLM request leaves the service; briefs come from the LLM cache or
+        # the template, chat says it is off. Runtime only; a restart turns it back on.
+        self.llm_enabled = True
         self.analyst = Analyst(llm, self.s)
         from sentinel.agent.analyst import load_prompt
         from sentinel.agent.chat import PROMPT_FILE, ChatAgent
@@ -149,6 +155,8 @@ class SentinelService:
         `llm_cache_only` never calls the LLM (uses its cache or the template) for fast previews.
         `on_event(kind, payload)` receives step start/end and the packet as soon as steps 1–5 are done,
         so a UI can show progress and the evidence before the brief."""
+        if not self.llm_enabled:
+            llm_cache_only = True
         run_id = new_run_id()
         tracer = Tracer(self.runs_dir, run_id, image_id, listener=on_event)
         t0 = time.perf_counter()
@@ -177,7 +185,7 @@ class SentinelService:
         from sentinel.agent.analyst import CACHE_MISS_NOTE
 
         res = self._results.get(image_id)
-        if res is None or (res.llm_note == CACHE_MISS_NOTE and self.llm is not None):
+        if res is None or (res.llm_note == CACHE_MISS_NOTE and self.llm is not None and self.llm_enabled):
             return self.evaluate(image_id)
         return res
 
@@ -397,25 +405,92 @@ class SentinelService:
                     "zone": p.frame.zone,
                     "level": p.risk.level.value,
                     "score": p.risk.score,
+                    "d_base_m": p.frame.d_base_m,
                     "center": [p.frame.center_lon, p.frame.center_lat],
                     "corners": [
                         [pt[1], pt[0]] for pt in (c.top_left, c.top_right, c.bottom_right, c.bottom_left)
                     ],
+                    "motion": (motion := self._lead_motion(p)),
+                    "lead_label": self._lead_label(p, motion),
+                    "label_counts": {
+                        lb: n for lb in LABEL_ORDER if (n := sum(v.label == lb for v in p.vehicles))
+                    },
                 }
             )
         from sentinel.geo.zones import zone_display
 
+        # Build true-scale road corridors connecting base through the frame centers
+        roads_by_zone: dict[str, list[dict]] = {}
+        for f in frames:
+            roads_by_zone.setdefault(f["zone"], []).append(f)
+
+        zones_out = []
+        for z in self.repo.zones:
+            zone_frames = sorted(
+                roads_by_zone.get(z.name, []),
+                key=lambda item: item.get("d_base_m", 0),
+            )
+            road_path = [[base.lon, base.lat]] + [f["center"] for f in zone_frames]
+            real_center = zone_frames[2]["center"] if len(zone_frames) >= 3 else [z.center[1], z.center[0]]
+            zones_out.append(
+                {
+                    "name": z.name,
+                    "label": zone_display(z.name),
+                    "center": real_center,
+                    "theoretical_center": [z.center[1], z.center[0]],
+                    "path": road_path,
+                }
+            )
+
         return {
             "base": {"name": base.name, "center": [base.lon, base.lat]},
-            "zones": [
-                {"name": z.name, "label": zone_display(z.name), "center": [z.center[1], z.center[0]]}
-                for z in self.repo.zones
-            ],
+            "zones": zones_out,
             "rings": [
                 {"km": r.near_km, "ring": ring(r.near_km * 1000)},
                 {"km": r.mid_km, "ring": ring(r.mid_km * 1000)},
             ],
             "frames": frames,
+        }
+
+    @staticmethod
+    def _lead_label(p: EvidencePacket, motion: dict | None) -> str | None:
+        """Class shown on the frame's map marker: the lead moving vehicle's (the one its arrow shows), otherwise the
+        highest-scoring vehicle's (heavier class on ties); None for a frame without vehicles."""
+        if motion is not None:
+            return motion["label"]
+        if not p.vehicles:
+            return None
+        return max(p.vehicles, key=lambda v: (v.score, v.label in HEAVY_LABELS)).label
+
+    @staticmethod
+    def _lead_motion(p: EvidencePacket) -> dict | None:
+        """Heading and speed of the frame's lead moving vehicle (approaching first, then highest score, then
+        shortest ETA, then fastest), straight from its kinematics; None when no matched vehicle has a heading."""
+        moving = [v for v in p.vehicles if v.kinematics and v.kinematics.heading_deg is not None]
+        if not moving:
+            return None
+
+        def rank(v):
+            k = v.kinematics
+            return (
+                k.approaching,
+                v.score,
+                -(k.eta_min if k.eta_min is not None else float("inf")),
+                k.speed_now_mps,
+            )
+
+        v = max(moving, key=rank)
+        k = v.kinematics
+        return {
+            "vehicle_ref": v.ref,
+            "track_id": k.track_id,
+            "label": v.label,
+            "heading_deg": round(k.heading_deg, 1),
+            "heading_dir": k.heading_dir,
+            "speed_kmh": round(k.speed_now_mps * 3.6, 1),
+            "approaching": k.approaching,
+            "eta_min": k.eta_min,
+            "n_moving": len(moving),
         }
 
     def frame_tracks(self, image_id: str, max_report_tracks: int = 8) -> dict:
@@ -486,6 +561,75 @@ class SentinelService:
             ),
         }
 
+    def vehicles(self) -> dict:
+        """Every vehicle of the day for the main map's time bar: each track's full path, with the detected vehicle's
+        class, confidence, score and level (config thresholds) where a frame matched it; detections without a track
+        (e.g. parked) as a single point at capture time; tracks no frame detected with no identity. Raw points only:
+        the UI interpolates positions for display."""
+        from sentinel.risk.scoring import level_for
+        from sentinel.risk.timeline import score_timeline
+
+        def path(track_id: str) -> list[list[float]]:
+            return [[pt.t_min, pt.lat, pt.lon] for pt in self.repo.track(track_id).points]
+
+        def steps(pairs) -> list[list]:
+            return [[t, sc, level_for(sc, self.s.risk).value] for t, sc in pairs]
+
+        detected: dict[str, dict] = {}  # by track id; a track seen in two frames keeps its highest score
+        untracked: list[dict] = []
+        for meta in self.repo.frames():
+            pkt = self.packet(meta.image_id)
+            for v in pkt.vehicles:
+                item = {
+                    "id": v.track_id or f"{meta.image_id}/{v.ref}",
+                    "track_id": v.track_id,
+                    "image_id": meta.image_id,
+                    "vehicle_ref": v.ref,
+                    "label": v.label,
+                    "conf": round(v.conf, 2),
+                    "score": v.score,
+                    "level": level_for(v.score, self.s.risk).value,
+                }
+                if v.track_id is None:
+                    untracked.append(
+                        {
+                            **item,
+                            "points": [[meta.capture_min, v.lat, v.lon]],
+                            "timeline": steps([(meta.capture_min, v.score)]),
+                        }
+                    )
+                elif v.track_id not in detected or v.score > detected[v.track_id]["score"]:
+                    # Score along the track with what was known at each moment; capture time = the packet's score.
+                    line = score_timeline(
+                        v,
+                        self.repo.track(v.track_id),
+                        pkt.reports,
+                        meta.capture_min,
+                        self.repo.geo,
+                        self.repo.zone_index,
+                        self.s,
+                    )
+                    detected[v.track_id] = {**item, "timeline": steps(line)}
+        out = [{**item, "points": path(tid)} for tid, item in detected.items()] + untracked
+        out += [
+            {
+                "id": tid,
+                "track_id": tid,
+                "image_id": None,
+                "vehicle_ref": None,
+                "label": None,
+                "conf": None,
+                "score": None,
+                "level": None,
+                "points": path(tid),
+                "timeline": [],
+            }
+            for tid in self.repo.tracks
+            if tid not in detected
+        ]
+        t0, t1 = self.repo.time_range
+        return {"window": {"start": t0, "end": t1}, "vehicles": out}
+
     # ================================================================ chat
     def chat(
         self,
@@ -499,9 +643,14 @@ class SentinelService:
         context: what the operator put in the chat ([{kind: vehicle|frame, image_id, ref?}], ≤ 4); focus_ref is
         the older single-vehicle form (a vehicle of image_id). Tracks come from the packets, not the client."""
         from sentinel.agent import suggest
-        from sentinel.agent.chat import ChatMessage
+        from sentinel.agent.chat import ChatMessage, ChatTurn
 
         run_id = new_run_id()
+        if not self.llm_enabled:
+            return ChatTurn(
+                answer="LLM sorguları kapalı (durum çubuğundan açılabilir). Kare ekranlarındaki kanıtlar ve brief'ler kullanılabilir.",
+                note="llm_kapali",
+            ), run_id
         msgs = [m if isinstance(m, ChatMessage) else ChatMessage.model_validate(m) for m in history or []]
         if image_id is not None and image_id not in self.repo.meta:
             image_id = None
@@ -667,6 +816,12 @@ class SentinelService:
     ) -> OperatorDecision:
         return self.decisions.record(run_id, image_id, action, level, reason)
 
+    def set_llm_enabled(self, enabled: bool) -> bool:
+        """Operator switch for LLM queries (brief + chat)."""
+        self.llm_enabled = enabled
+        log.info("LLM sorguları %s", "açık" if enabled else "kapalı")
+        return self.llm_enabled
+
     @cached_property
     def _llm_name(self) -> str:
         return getattr(self.llm, "model", "yok") if self.llm else "yok"
@@ -675,7 +830,12 @@ class SentinelService:
         return {
             "detector": self.detector.name,
             "detector_fallback": getattr(self.detector, "load_error", None),
-            "llm": {"provider": self.s.llm.provider, "model": self._llm_name, "error": self.llm_error},
+            "llm": {
+                "provider": self.s.llm.provider,
+                "model": self._llm_name,
+                "error": self.llm_error,
+                "enabled": self.llm_enabled,
+            },
             "budget": self.budget.status(),
             "data": {
                 "frames": len(self.repo.meta),

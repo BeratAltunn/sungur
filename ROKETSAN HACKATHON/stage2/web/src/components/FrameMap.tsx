@@ -109,6 +109,10 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
     });
 
     htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base");
+    const activeZone = ctx.zones.find((z) => z.name === frame.zone);
+    if (activeZone) {
+      htmlMarker(map, activeZone.center, activeZone.label, "mk mk-zone");
+    }
     for (const tr of data.tracks) {
       const label = tr.vehicle_ref ? `${tr.vehicle_ref}` : tr.track_id;
       const m = htmlMarker(map, [0, 0], vehicleSymbol(label), `mk mk-veh mk-${tr.role}`, () => onFocusRef.current({ kind: "track", id: tr.track_id }));

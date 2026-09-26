@@ -4,25 +4,30 @@ import type { Feature, FeatureCollection } from "geojson";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { storage } from "../lib/format";
 import { token } from "../lib/theme";
+import { loadTerrain, terrainStyle, type TerrainManifest } from "../lib/terrain";
 
 // No glyphs/sprites: the map works offline. Text is drawn with HTML markers.
-function style(basemap: boolean): StyleSpecification {
+function style(basemap: boolean, terrain: TerrainManifest | null): StyleSpecification {
+  const t = terrain ? terrainStyle(terrain) : null;
   return {
     version: 8,
-    sources: basemap
-      ? {
-          carto: {
-            type: "raster",
-            tiles: ["https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"],
-            tileSize: 256,
-            attribution: "© OpenStreetMap katkıcıları © CARTO",
-          },
-        }
-      : {},
+    sources: {
+      ...t?.sources,
+      ...(basemap && {
+        carto: {
+          type: "raster",
+          tiles: ["https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png"],
+          tileSize: 256,
+          attribution: "© OpenStreetMap katkıcıları © CARTO",
+        },
+      }),
+    },
     layers: [
       { id: "bg", type: "background", paint: { "background-color": token("--bg") } },
+      ...(t?.layers ?? []),
       ...(basemap ? [{ id: "carto", type: "raster" as const, source: "carto", paint: { "raster-opacity": 0.55 } }] : []),
     ],
+    ...t?.extra,
   };
 }
 
@@ -31,52 +36,87 @@ interface Props {
   /** Called once the style is loaded, and again after the basemap is toggled (style reset). */
   onReady: (map: MLMap) => void;
   initial: { center: [number, number]; zoom: number };
-  /** Extra controls next to the basemap toggle (e.g. the layer menu). */
+  /** Tiltable, rotatable plane (right-drag or Ctrl+drag; compass resets). Off: a flat, north-up map. */
+  threeD?: { pitch: number; maxPitch: number };
+  /** 3D ground (DEM + texture) when the tiles are installed (scripts/build_terrain.py); the operator can turn it off. */
+  terrain?: boolean;
+  /** Extra controls next to the basemap / ground toggles (e.g. the layer menu). */
   controls?: ReactNode;
 }
 
-export function MapView({ className, onReady, initial, controls }: Props) {
+export function MapView({ className, onReady, initial, threeD, terrain, controls }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
   const readyRef = useRef(onReady);
   readyRef.current = onReady;
   const [basemap, setBasemap] = useState<boolean>(() => storage.get("basemap", false));
+  const [dem, setDem] = useState<TerrainManifest | null>(null); // installed tiles; null → no terrain toggle
+  const [ground, setGround] = useState<boolean>(() => storage.get("terrain", true));
 
   useEffect(() => {
-    if (!el.current) return;
-    const map = new maplibregl.Map({
-      container: el.current,
-      style: style(basemap),
-      center: initial.center,
-      zoom: initial.zoom,
-      attributionControl: { compact: true },
-      dragRotate: false,
+    let map: MLMap | null = null;
+    let gone = false;
+    // Terrain is part of the style (not added afterwards), so a basemap switch doesn't drop it. The manifest is a
+    // small local file; waiting for it avoids building the map twice.
+    (terrain ? loadTerrain() : Promise.resolve(null)).then((t) => {
+      if (gone || !el.current) return;
+      setDem(t);
+      map = new maplibregl.Map({
+        container: el.current,
+        style: style(basemap, ground ? t : null),
+        center: initial.center,
+        zoom: initial.zoom,
+        attributionControl: { compact: true },
+        dragRotate: !!threeD,
+        pitchWithRotate: !!threeD,
+        touchPitch: !!threeD,
+        pitch: threeD?.pitch ?? 0,
+        maxPitch: threeD?.maxPitch ?? 0,
+      });
+      if (!threeD) map.touchZoomRotate.disableRotation();
+      map.addControl(new maplibregl.NavigationControl({ showCompass: !!threeD, visualizePitch: !!threeD }), "top-right");
+      map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
+      const m = map;
+      m.on("load", () => readyRef.current(m));
+      mapRef.current = m;
     });
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
-    map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
-    map.on("load", () => readyRef.current(map));
-    mapRef.current = map;
-    return () => map.remove();
+    return () => {
+      gone = true;
+      map?.remove();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function toggle() {
-    const next = !basemap;
-    setBasemap(next);
-    storage.set("basemap", next);
+  function restyle(nextBasemap: boolean, nextGround: boolean) {
     const map = mapRef.current;
     if (!map) return;
-    map.setStyle(style(next));
+    // MapLibre cannot diff terrain away (it logs and rebuilds anyway), so a terrain switch rebuilds directly.
+    map.setStyle(style(nextBasemap, nextGround ? dem : null), { diff: nextGround === ground });
     map.once("styledata", () => readyRef.current(map));
+  }
+  function toggleBasemap() {
+    setBasemap(!basemap);
+    storage.set("basemap", !basemap);
+    restyle(!basemap, ground);
+  }
+  function toggleGround() {
+    setGround(!ground);
+    storage.set("terrain", !ground);
+    restyle(basemap, !ground);
   }
 
   return (
     <div className={`map-wrap ${className ?? ""}`}>
       <div ref={el} className="map" />
-      <div className="map-controls">
-        <button className="map-toggle" onClick={toggle} title="Altlık harita internet gerektirir">
+      <div className="map-toggles">
+        <button className="map-toggle" onClick={toggleBasemap} title="Altlık harita internet gerektirir">
           {basemap ? "Altlık: açık" : "Altlık: kapalı"}
         </button>
+        {dem && (
+          <button className="map-toggle" onClick={toggleGround} title="3B arazi ve uydu dokusu (yalnızca görsel; konumlar düz zemine göre hesaplanır)">
+            {ground ? "Arazi: açık" : "Arazi: kapalı"}
+          </button>
+        )}
         {controls}
       </div>
     </div>
@@ -102,8 +142,16 @@ export const polygon = (coords: [number, number][], props: Record<string, unknow
   geometry: { type: "Polygon", coordinates: [coords] },
 });
 
-/** HTML marker whose element is fully controlled by the caller. */
-export function htmlMarker(map: MLMap, lngLat: [number, number], html: string, className: string, onClick?: () => void) {
+/** HTML marker whose element is fully controlled by the caller. `onGround` lays it on the map plane (it tilts and
+ *  rotates with the map, e.g. a heading arrow); otherwise it stays upright facing the viewer. */
+export function htmlMarker(
+  map: MLMap,
+  lngLat: [number, number],
+  html: string,
+  className: string,
+  onClick?: () => void,
+  onGround = false,
+) {
   const node = document.createElement("div");
   node.className = className;
   node.innerHTML = html;
@@ -114,5 +162,9 @@ export function htmlMarker(map: MLMap, lngLat: [number, number], html: string, c
       onClick();
     });
   }
-  return new maplibregl.Marker({ element: node }).setLngLat(lngLat).addTo(map);
+  const align = onGround ? "map" : "viewport";
+  // opacityWhenCovered: a marker behind a ridge stays fully visible; the terrain is decoration, never a reason to hide evidence.
+  return new maplibregl.Marker({ element: node, pitchAlignment: align, rotationAlignment: align, opacityWhenCovered: 1 })
+    .setLngLat(lngLat)
+    .addTo(map);
 }

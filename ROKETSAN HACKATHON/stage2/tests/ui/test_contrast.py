@@ -37,7 +37,7 @@ SCAN = r"""() => {
 }"""
 
 PAGES = [
-    ("/#/", "li.row"),
+    ("/#/", ".frame-card"),
     ("/#/frame/img_000860", ".brief .level"),
     ("/#/handover", ".ho-section"),
     ("/#/impact", ".tl-row"),
@@ -59,6 +59,15 @@ def test_text_contrast(page: Page, path: str, ready: str):
         page.locator('button.tick[title^="R125"]').click()  # the report card is part of the demo screen
     bad = _failures(page)
     assert bad == [], f"{path}: {len(bad)} metin {MIN}:1 altında: {bad[:8]}"
+
+
+def test_text_contrast_vehicle_view(page: Page):
+    page.add_init_script("localStorage.setItem('map_mode', JSON.stringify('vehicles'))")
+    page.goto("/#/")
+    page.wait_for_selector(".timebar")
+    page.wait_for_selector(".frame-card")  # measured once the card has faded in, as on the frame view
+    bad = _failures(page)
+    assert bad == [], f"araç görünümü: {len(bad)} metin {MIN}:1 altında: {bad[:8]}"
 
 
 def test_text_contrast_blind_labelling(page: Page):

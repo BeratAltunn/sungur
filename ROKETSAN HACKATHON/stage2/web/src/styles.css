@@ -205,6 +205,7 @@ select, input[type="text"], input[type="search"], input:not([type]) {
 /* ---------- map ---------- */
 .map-wrap { position: relative; height: 100%; }
 .map { position: absolute; inset: 0; border-radius: 0 0 var(--radius) var(--radius); overflow: hidden; }
+.map-toggles { position: absolute; left: 10px; top: 10px; z-index: 3; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 .map-toggle { background: var(--overlay); border: 1px solid var(--line-strong); border-radius: 6px; padding: 3px 9px; font-size: 12px; cursor: pointer; color: var(--text-2); }
 .maplibregl-ctrl-group { background: var(--raised) !important; }
 .maplibregl-ctrl-group button span { filter: invert(1); }
@@ -214,9 +215,9 @@ select, input[type="text"], input[type="search"], input:not([type]) {
 
 .mk { font: 12px/1.2 var(--font); white-space: nowrap; }
 .mk-base { color: var(--text); display: flex; gap: 4px; align-items: center; text-shadow: 0 1px 3px #000; }
-.mk-zone { color: var(--muted); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; text-shadow: 0 1px 2px #000; }
-.mk-frame { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 4px; border: 2px solid var(--lvc); background: var(--overlay); cursor: pointer; font-size: 12px; font-weight: 800; }
-.mk-frame.mk-hover, .mk-frame:hover { transform: scale(1.35); box-shadow: 0 0 0 3px rgba(255,255,255,.25); z-index: 5; }
+.mk-zone { color: var(--text-2); font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; background: var(--overlay); border: 1px solid var(--line-strong); padding: 2px 7px; border-radius: 4px; pointer-events: none; backdrop-filter: blur(2px); }
+.mk-frame { width: 32px; height: 26px; --mk-bg: var(--bg); display: grid; place-items: center; border-radius: 4px; border: 2px solid var(--lvc); background: var(--overlay); cursor: pointer; font-size: 12px; font-weight: 800; }
+.mk-frame.mk-hover, .mk-frame:hover { width: 42px; height: 34px; font-size: 15px; box-shadow: 0 0 0 3px rgba(255,255,255,.25); z-index: 5; } /* size, not transform: MapLibre owns the marker transform */
 .mk-veh { z-index: 4; display: flex; align-items: center; gap: 3px; cursor: pointer; }
 
 .mk-report { font-weight: 600; }
@@ -253,6 +254,8 @@ select, input[type="text"], input[type="search"], input:not([type]) {
 .image-box { position: relative; width: 100%; border-radius: 8px; overflow: hidden; background: #000; }
 .image-box img, .image-box svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .image-box img { object-fit: fill; }
+.image-badge-hud { position: absolute; top: 8px; right: 8px; background: var(--overlay); border: 1px solid var(--line); border-radius: 5px; padding: 3px 8px; font-size: 11px; color: var(--text); z-index: 2; pointer-events: none; backdrop-filter: blur(4px); display: flex; align-items: center; gap: 4px; }
+.image-badge-hud .hud-sep { color: var(--text-2); }
 .box { cursor: pointer; }
 .box-label { font: 700 15px var(--mono); paint-order: stroke; stroke: #000; stroke-width: 4px; }
 .box-legend { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 3px; font-size: 13px; color: var(--text-2); }
@@ -587,56 +590,23 @@ a.btn-primary, a.btn-ok { color: var(--ink); }
 }
 .legend-verdict { display: inline-flex; gap: 4px; align-items: center; font-size: 12px; color: var(--text-2); }
 
-/* ---------- layered triage (L1 alerts rail · L0 map · L2 focus card) ---------- */
-/* L1: active alerts are cards, everything else is one compact line under a divider. */
-.cop .row-card { display: block; padding: 10px 12px; margin: 0 0 8px; border: 1px solid var(--line-strong); background: var(--raised); }
-.cop .row-card-crit { border-left: 4px solid var(--lv-crit); }
-.cop .row-card.row-cursor, .cop .row-card[aria-selected="true"] { border-color: var(--accent); }
-.cop .row-card-crit.row-cursor, .cop .row-card-crit[aria-selected="true"] { border-left-color: var(--lv-crit); }
 .card-body { display: grid; gap: 4px; }
 .card-top { display: flex; align-items: center; gap: 10px; }
 .card-eta { font-size: 18px; font-weight: 700; color: var(--text); }
-.row-card-crit .card-eta { font-size: 20px; }
 .card-eta.muted { font-size: 14px; font-weight: 400; color: var(--muted); }
 .card-top .unseen { margin-left: auto; }
 .card-headline { margin: 2px 0 0; font-size: 14px; line-height: 1.4; color: var(--text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .row-seen .card-headline { color: var(--text-2); }
 .card-foot { display: flex; align-items: center; gap: 8px; justify-content: space-between; min-height: 26px; }
-.cop .row-compact { padding: 4px 8px; gap: 10px; }
-.cop .row-compact .row-top { font-size: 13px; }
-.cop .row-compact .row-sub { font-size: 12px; }
-.rows-divider { list-style: none; margin: 10px 4px 4px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-.cop .filters { display: flex; gap: 6px; }
-.cop .filters .search { flex: 1; }
-.cop .filters-more { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
 
-/* one-line shift bar; details open as a small panel */
-.shift { padding: 8px 16px; }
-.shift-stats { flex-wrap: wrap; row-gap: 6px; }
-.shift-more { position: relative; }
-.shift-more summary { cursor: pointer; color: var(--text-2); font-size: 14px; }
-.shift-more-body { position: absolute; z-index: 25; top: calc(100% + 6px); left: 0; min-width: 420px; display: grid; gap: 6px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,.4); }
-
-/* L2: focus card, details on demand */
-.preview-more summary { cursor: pointer; color: var(--text-2); font-size: 14px; }
-.preview-more .preview-img { margin-top: 6px; }
-
-/* L0: map layers. Non-alert frames are small so the alerts stand out. */
-.map-controls { position: absolute; left: 10px; top: 10px; z-index: 3; display: flex; gap: 6px; align-items: flex-start; }
 .layer-menu { position: relative; }
 .layer-list { position: absolute; top: calc(100% + 4px); left: 0; margin: 0; padding: 8px 10px; list-style: none; display: grid; gap: 4px; min-width: 210px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,.4); }
 .layer-list .check { font-size: 13px; }
-.mk-frame.mk-minor { width: 18px; height: 18px; font-size: 9px; border-width: 1.5px; }
-/* YÜKSEK cards stay one step quieter than KRİTİK: smaller ETA, one-line headline */
-.cop .row-card:not(.row-card-crit) { padding: 8px 12px; }
-.row-card:not(.row-card-crit) .card-eta { font-size: 16px; }
-.row-card:not(.row-card-crit) .card-headline { -webkit-line-clamp: 1; }
 
 /* ---------- chat agent: vehicle chips, drop zone, quick questions ---------- */
 .vchips { display: grid; gap: 6px; }
 .vchips-title { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
 .vchips-list { display: flex; flex-wrap: wrap; gap: 6px; }
-.col-left > .vchips { padding: 12px 16px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); }
 .vchip { display: inline-flex; align-items: center; gap: 8px; padding: 4px 4px 4px 10px; border: 1px dashed var(--line-strong); border-radius: 8px; background: var(--raised); cursor: grab; font-size: 13px; white-space: nowrap; }
 .vchip:hover { border-color: var(--accent); }
 .vchip:active { cursor: grabbing; }
@@ -659,9 +629,6 @@ body.dragging-item .chat-fab { outline: 2px dashed var(--accent); outline-offset
 .ctx-pill { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border: 1px solid var(--line-strong); border-radius: 6px; font-size: 13px; color: var(--text); }
 .ctx-vehicle { border-color: var(--accent); background: var(--raised); }
 .ctx-clear { background: none; border: none; color: var(--text-2); cursor: pointer; padding: 0 0 0 4px; font-size: 13px; }
-/* chat open on the queue: narrower rail and focus card so the map keeps a usable width */
-.shell.chat-open .triage.cop { grid-template-columns: minmax(300px, 340px) minmax(260px, 1fr) minmax(250px, 280px); gap: 10px; padding-left: 12px; padding-right: 12px; }
-@media (max-width: 1500px) { .shell.chat-open .triage.cop { grid-template-columns: minmax(300px, 340px) minmax(0, 1fr); } .shell.chat-open .cop .preview { grid-column: 1 / -1; height: auto; } }
 /* chips never overflow a narrow column: the reason text shortens, id and "Sor" stay whole */
 .vchip { max-width: 100%; min-width: 0; }
 .vchip-id, .vchip-ask { flex: none; }
@@ -670,7 +637,6 @@ body.dragging-item .chat-fab { outline: 2px dashed var(--accent); outline-offset
 .vchips-list { min-width: 0; }
 /* context basket: frames and vehicles in the chat */
 .card-actions { display: inline-flex; gap: 6px; margin-left: auto; }
-.cop .row[draggable="true"] { cursor: grab; }
 .ctx-frame { border-color: var(--line-strong); }
 .mk-frame[draggable="true"] { cursor: grab; }
 
@@ -686,3 +652,153 @@ body.dragging-item .chat-fab { outline: 2px dashed var(--accent); outline-offset
 /* narrow cards (chat open): buttons never break inside; the tag row wraps instead */
 .card-foot { flex-wrap: wrap; row-gap: 4px; }
 .card-actions .btn { white-space: nowrap; }
+
+/* ---------------------------------------------------------------- COP: map-only triage + frame card */
+.triage.cop.cop-map { grid-template-columns: minmax(0, 1fr); }
+.cop-map .overview { height: calc(100vh - var(--topbar-h, 72px) - 150px); min-height: 560px; position: relative; }
+.overview-head h2 { margin-right: auto; }
+.map-filters.filters { width: auto; display: flex; flex-wrap: wrap; gap: 6px; }
+.map-filters .search { width: 150px; }
+.overview-stage { position: relative; flex: 1; min-height: 0; }
+.overview-stage .overview-map { position: absolute; inset: 0; }
+.map-empty { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 3; background: var(--panel); border: 1px solid var(--line-strong); border-radius: 6px; padding: 10px 16px; color: var(--text-2); }
+
+.mk-frame.mk-hidden { display: none !important; }
+.mk-frame:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.mk-frame.mk-new { box-shadow: 0 0 0 3px var(--accent); }
+/* Arrow: origin at the marker centre, drawn downwards, rotated to the compass heading (0 = north, clockwise). */
+.mk-arrow { position: absolute; left: 50%; top: 50%; width: 12px; margin-left: -6px; transform-origin: 50% 0; transform: rotate(calc(var(--hd) + 180deg)); pointer-events: none; }
+.mk-arrow svg { display: block; overflow: visible; }
+.mk-arrow line { stroke: var(--muted); stroke-width: 3.5; stroke-linecap: round; }
+.mk-arrow path { fill: var(--muted); }
+.mk-arrow.mk-arrow-in line { stroke: var(--lvc); }
+.mk-arrow.mk-arrow-in path { fill: var(--lvc); }
+.mk-arrow-mk { width: 0; height: 0; pointer-events: none; } /* sits exactly on the frame point, on the map plane */
+.mk-arrow-mk.mk-hidden { display: none !important; }
+.mk-arrow-mk.mk-quiet .mk-arrow { opacity: .6; }
+
+.frame-card-wrap { position: absolute; z-index: 10; max-height: calc(100% - 16px); display: flex; }
+.frame-card { background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0,0,0,.55); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; width: 100%; }
+.frame-card:not(.frame-card-pinned) { cursor: pointer; border-style: dashed; }
+.frame-card-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.frame-card-score { margin-left: auto; }
+.frame-card-close { padding: 2px 8px; }
+.frame-card .action { margin-bottom: 0; }
+.frame-card .preview-img { max-height: 170px; object-fit: cover; }
+.legend-arrow { display: inline-flex; gap: 6px; align-items: center; color: var(--text-2); font-size: 13px; }
+.legend-arrow line { stroke: var(--text-2); stroke-width: 2.5; }
+.legend-arrow path { fill: var(--text-2); }
+@media (max-width: 1100px) {
+  .cop-map .overview { height: auto; }
+  .overview-stage { min-height: 480px; }
+}
+
+/* Frame marker: the lead vehicle's class silhouette (backend lead_label); level stays as colour + corner glyph. */
+.mk-frame .veh-sil { width: 24px; height: 14px; fill: currentColor; }
+.mk-frame.mk-attn { --mk-bg: var(--lvc); }
+.mk-frame.mk-hover .veh-sil, .mk-frame:hover .veh-sil { width: 32px; height: 19px; }
+.veh-sil .wheel { stroke: var(--mk-bg, var(--panel)); stroke-width: 1.3; }
+.veh-sil .win { fill: var(--mk-bg, var(--panel)); }
+.veh-sil .unk { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-dasharray: 3 2; }
+.mk-lv { position: absolute; top: -9px; right: -9px; min-width: 14px; padding: 0 2px; border-radius: 3px; background: var(--bg); border: 1px solid var(--lvc); color: var(--lvt); font: 800 9px/12px var(--font); text-align: center; pointer-events: none; }
+.card-classes { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.card-class { display: inline-flex; align-items: center; gap: 5px; }
+.card-sil .veh-sil { width: 22px; height: 13px; fill: var(--text-2); display: block; }
+.card-sil .veh-sil .wheel, .card-sil .veh-sil .win { stroke: var(--panel); fill: var(--text-2); }
+.card-sil .veh-sil .win { fill: var(--panel); }
+
+/* Card fade: in on hover/select, out when the pointer leaves (then the pinned card, if any, fades back in). */
+@keyframes card-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes card-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(6px); } }
+.frame-card-wrap.card-in { animation: card-in 200ms ease-out both; }
+.frame-card-wrap.card-out { animation: card-out 250ms ease-in both; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+  .frame-card-wrap.card-in, .frame-card-wrap.card-out { animation: none; }
+}
+
+/* ---------------------------------------------------------------- Map as the page background, minimal HUD on top */
+.app-map { position: relative; height: 100vh; overflow: hidden; }
+.map-bg { position: fixed; inset: 0; z-index: 0; }
+.map-bg .overview-stage { position: absolute; inset: 0; }
+.map-bg .map { border-radius: 0; }
+.hud { position: fixed; left: 0; right: 0; z-index: 10; pointer-events: none; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.hud > * { pointer-events: auto; }
+.hud-top { top: 0; padding-bottom: 4px; }
+.hud-top > .topbar { align-self: stretch; }
+.hud-bottom { bottom: 36px; left: 10px; right: auto; }
+.hud-panel { background: var(--overlay); backdrop-filter: blur(6px); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: 0 4px 16px rgba(0,0,0,.45); }
+.app-map .topbar { position: relative; background: var(--overlay); backdrop-filter: blur(6px); }
+.app-map .topbar-row { padding: 4px 16px; }
+.app-map .shift { margin: 0 12px; padding: 5px 8px; gap: 6px; }
+.app-map .shift-stats { gap: 10px; }
+.app-map .shift-links { margin-left: 4px; }
+.shift-more { display: flex; gap: 14px; flex-wrap: wrap; color: var(--text-2); font-size: 13px; padding: 2px 4px 2px; }
+.hud-tools { margin: 0 12px; padding: 5px 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.hud-tools .search { width: 140px; }
+.hud-tools select { max-width: 150px; }
+.hud-count { color: var(--text-2); padding: 0 4px; font-size: 13px; white-space: nowrap; }
+.app-map .tip { margin: 0 12px; padding: 5px 8px 5px 12px; max-width: 520px; font-size: 13px; }
+.legend-box { padding: 3px; max-width: min(520px, calc(100vw - 24px)); }
+.legend-box .legend { border-top: 1px solid var(--line); padding: 8px 8px 4px; flex-direction: column; align-items: flex-start; gap: 6px; }
+.legend-toggle { padding: 2px 10px; }
+/* map controls clear the floating layers */
+.app-map .maplibregl-ctrl-top-right { top: var(--hud-top, 0px); }
+.app-map .map-toggles { left: auto; right: 10px; top: calc(var(--hud-top, 0px) + 112px); align-items: flex-end; } /* below zoom + compass */
+.shell.chat-open .app-map { padding-right: 0; }
+.shell.chat-open .app-map .hud-top { right: 440px; }
+@media (max-width: 1100px) {
+  .shell.chat-open .app-map .hud-top { right: 0; }
+}
+/* HUD polish: compact controls, one legend type size, card action always reachable */
+.hud-tools input, .hud-tools select { font-size: 14px; padding: 4px 8px; min-height: 30px; }
+.legend-box .legend, .legend-box .legend .muted { font-size: 13px; }
+.frame-card { gap: 8px; padding: 10px 12px 0; }
+.frame-card .preview-headline { font-size: 15px; }
+.frame-card .preview-id .mono { font-size: 16px; }
+.frame-card .preview-img { max-height: 120px; }
+.frame-card-open { position: sticky; bottom: 0; margin: 0 -12px; border-radius: 0 0 var(--radius) var(--radius); box-shadow: 0 -6px 12px var(--panel); }
+
+/* ---------------------------------------------------------------- vehicle view + time bar (main map) */
+.veh-mode .mk-frame, .veh-mode .mk-arrow-mk { display: none !important; } /* vehicles replace the frame markers */
+.mk-v { --mk-bg: var(--bg); display: grid; place-items: center; width: 24px; height: 17px; border: 1.5px solid var(--lvc); border-radius: 3px; background: var(--overlay); cursor: pointer; }
+.mk-v .veh-sil { width: 18px; height: 11px; fill: currentColor; }
+.mk-v.lv-crit { background: var(--lv-crit); color: var(--ink); --mk-bg: var(--lv-crit); }
+.mk-v-still { border-style: dashed; } /* detected without a track: position known at capture time only */
+.mk-v:hover { width: 30px; height: 21px; z-index: 6; box-shadow: 0 0 0 3px rgba(255,255,255,.25); }
+.mk-v:hover .veh-sil { width: 23px; height: 14px; }
+.mk-vdot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); border: 1px solid var(--bg); opacity: .8; }
+.mk-v.mk-hidden, .mk-vdot.mk-hidden { display: none !important; }
+.seg { display: inline-flex; gap: 2px; margin-left: 4px; padding: 2px; border: 1px solid var(--line-strong); border-radius: 6px; }
+.seg .btn { padding: 2px 10px; }
+.seg-on { background: var(--accent); color: var(--ink); border-color: var(--accent); }
+.timebar { width: min(780px, calc(100vw - 200px)); padding: 6px 12px 8px; display: grid; gap: 2px; }
+.timebar-row { display: flex; align-items: center; gap: 10px; }
+.timebar-play { min-width: 40px; justify-content: center; }
+.timebar-now { font-size: 18px; font-weight: 700; min-width: 54px; color: var(--text); }
+.timebar-track { position: relative; flex: 1; display: flex; align-items: center; height: 34px; padding-top: 12px; }
+.timebar-track input[type="range"] { width: 100%; margin: 0; }
+.timebar-tick { position: absolute; top: 2px; width: 3px; height: 10px; transform: translateX(-50%); background: var(--muted); opacity: .7; border: 0; border-radius: 1px; padding: 0; cursor: pointer; }
+.timebar-tick:hover, .timebar-tick:focus-visible { opacity: 1; width: 5px; height: 13px; top: 0; background: var(--text); }
+.timebar-sub { font-size: 13px; color: var(--text-2); }
+.timebar-thr { display: inline-flex; align-items: center; gap: 6px; }
+.timebar-thr input { width: 170px; }
+.llm-switch { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--text-2); cursor: pointer; white-space: nowrap; }
+.llm-switch input { margin: 0; accent-color: var(--accent); }
+
+/* ---------- merged main screen: alert rail floating on the map (left) ---------- */
+.rail { position: fixed; left: 10px; z-index: 9; display: flex; flex-direction: column; overflow: hidden; }
+.rail-closed { bottom: auto !important; }
+.rail-head { display: flex; gap: 8px; align-items: baseline; padding: 8px 12px; background: none; border: none; color: var(--text); cursor: pointer; text-align: left; font-size: 14px; }
+.rail-toggle { margin-left: auto; }
+.rail-list { list-style: none; margin: 0; padding: 0 8px 8px; overflow-y: auto; display: grid; gap: 6px; align-content: start; }
+.rail-card { padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--raised); cursor: grab; display: grid; gap: 3px; }
+.rail-card-crit { border-left: 4px solid var(--lv-crit); }
+.rail-card.rail-on { border-color: var(--accent); }
+.rail-card-crit.rail-on { border-left-color: var(--lv-crit); }
+.rail-card:not(.rail-card-crit) .card-eta { font-size: 16px; }
+.rail-card:not(.rail-card-crit) .card-headline { -webkit-line-clamp: 1; }
+.rail .row-sub { display: flex; gap: 8px; flex-wrap: wrap; font-size: 13px; }
+/* frame card: open + ask side by side, sticky at the bottom of the card */
+.frame-card-actions { position: sticky; bottom: 0; margin: 0 -12px; display: flex; box-shadow: 0 -6px 12px var(--panel); }
+.frame-card-actions .frame-card-open { position: static; margin: 0; flex: 1; border-radius: 0 0 0 var(--radius); box-shadow: none; }
+.frame-card-actions .btn:last-child { border-radius: 0 0 var(--radius) 0; }
