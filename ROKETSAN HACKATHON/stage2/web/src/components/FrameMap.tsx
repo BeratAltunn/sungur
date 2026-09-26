@@ -57,6 +57,30 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
 
     setGeo(map, "rings", fc(ctx.rings.map((r) => line(r.ring))));
     map.addLayer({ id: "rings", type: "line", source: "rings", paint: { "line-color": "#334155", "line-dasharray": [3, 3] } });
+
+    // Road corridors: true scale paths connecting base through frame centers
+    const roadFeatures = ctx.zones
+      .filter((z) => z.path && z.path.length > 1)
+      .map((z) => line(z.path!, { name: z.name, active: z.name === frame.zone }));
+    setGeo(map, "roads", fc(roadFeatures));
+    map.addLayer({
+      id: "roads-casing",
+      type: "line",
+      source: "roads",
+      paint: { "line-color": "#0b1320", "line-width": 4.5, "line-opacity": 0.8 },
+    });
+    map.addLayer({
+      id: "roads-line",
+      type: "line",
+      source: "roads",
+      paint: {
+        "line-color": ["case", ["get", "active"], "#38bdf8", "#334155"],
+        "line-width": ["case", ["get", "active"], 2.5, 1.5],
+        "line-dasharray": [4, 2],
+        "line-opacity": ["case", ["get", "active"], 0.95, 0.4],
+      },
+    });
+
     map.addSource("frame-img", { type: "image", url: imageUrl, coordinates: frameCorners as never });
     map.addLayer({ id: "frame-img", type: "raster", source: "frame-img", paint: { "raster-opacity": 0.95 } });
     setGeo(map, "frame-outline", fc([line([...frameCorners, frameCorners[0]])]));
@@ -94,6 +118,10 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
     });
 
     htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base");
+    const activeZone = ctx.zones.find((z) => z.name === frame.zone);
+    if (activeZone) {
+      htmlMarker(map, activeZone.center, activeZone.label, "mk mk-zone");
+    }
     for (const tr of data.tracks) {
       const label = tr.vehicle_ref ? `${tr.vehicle_ref}` : tr.track_id;
       const m = htmlMarker(map, [0, 0], vehicleSymbol(label), `mk mk-veh mk-${tr.role}`, () => onFocusRef.current({ kind: "track", id: tr.track_id }));

@@ -13,6 +13,8 @@ services:
       - path: .env        # LLM anahtarı imaja girmez (.dockerignore); yoksa sistem şablon brief ile çalışır
         required: false
     volumes:
+      - ./src:/app/stage2/src       # kod değişiklikleri doğrudan konteynerde
+      - ./web/dist:/app/stage2/web/dist # derlenmiş arayüz doğrudan konteynerde
       - ./runs:/app/stage2/runs     # iz (trace.jsonl) ve operatör kararları kalıcı
       - ./cache:/app/stage2/cache   # tespit ve LLM önbelleği host ile paylaşılır
       - ./calibration:/app/stage2/calibration   # kör etiketler host'a yazılır (git'e girer)
