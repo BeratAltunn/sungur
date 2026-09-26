@@ -499,7 +499,7 @@ function OverviewMap({
         id: "rings",
         type: "line",
         source: "rings",
-        paint: { "line-color": "#3a5775", "line-width": 1, "line-dasharray": [3, 3] },
+        paint: { "line-color": "#5b7ea3", "line-width": 1.25, "line-dasharray": [3, 3] }, // readable on the terrain texture too
       });
     htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base");
     for (const z of ctx.zones) htmlMarker(map, z.center, z.label, "mk mk-zone");
@@ -634,7 +634,7 @@ function OverviewMap({
 
   return (
     <div className="overview-stage">
-      <MapView className="overview-map" onReady={onReady} initial={{ center: ctx.base.center, zoom: 11.6 }} threeD={MAP_3D} />
+      <MapView className="overview-map" onReady={onReady} initial={{ center: ctx.base.center, zoom: 11.6 }} threeD={MAP_3D} terrain />
       {card && style && (
         <div key={cardKey} ref={cardRef} className={`frame-card-wrap ${cardLeaving ? "card-out" : "card-in"}`} style={style}>
           {card}

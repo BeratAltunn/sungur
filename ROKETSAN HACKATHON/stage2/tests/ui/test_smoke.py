@@ -7,7 +7,10 @@ from __future__ import annotations
 
 import re
 
+import pytest
 from playwright.sync_api import Page, expect
+
+from sentinel.config import PROJECT_ROOT
 
 DEMO = "img_000860"
 CONTRAST = "img_001733"
@@ -98,6 +101,8 @@ def test_triage_map_card_and_shift_card(page: Page):
 
 def test_markers_stay_anchored_when_zooming(page: Page):
     """Frame markers keep their geographic place relative to the base: one zoom step doubles every offset."""
+    # ×2 holds only on flat ground; with 3D terrain markers sit at their elevation (test_terrain_* covers that).
+    page.add_init_script("localStorage.setItem('terrain', 'false')")
     page.goto("/#/")
     expect(page.locator(FRAMES)).to_have_count(40)
     page.keyboard.press("Escape")  # card closed: nothing covers the controls
@@ -113,6 +118,29 @@ def test_markers_stay_anchored_when_zooming(page: Page):
     after = page.evaluate(offsets)
     for (x0, y0), (x1, y1) in zip(before, after, strict=True):
         assert abs(x1 - 2 * x0) < 3 and abs(y1 - 2 * y0) < 3, (x0, y0, x1, y1)
+
+
+def test_terrain_draped_on_main_map_and_can_be_turned_off(page: Page):
+    """With tiles installed (scripts/build_terrain.py), the main map loads the local DEM + texture; the operator can
+    turn it off (remembered), and the evidence markers are untouched either way."""
+    if not (PROJECT_ROOT / "web" / "dist" / "terrain" / "manifest.json").exists():
+        pytest.skip("arazi karoları yok: python3 scripts/build_terrain.py")
+    tiles: list[int] = []
+    page.on(
+        "response",
+        lambda r: "/terrain/" in r.url and r.url.endswith((".png", ".jpg")) and tiles.append(r.status),
+    )
+    page.goto("/#/")
+    expect(page.locator(FRAMES)).to_have_count(40)
+    toggle = page.get_by_role("button", name=re.compile("^Arazi"))
+    expect(toggle).to_have_text("Arazi: açık")
+    page.wait_for_timeout(600)
+    assert tiles and all(s == 200 for s in tiles), tiles  # local tiles only, none missing inside the bounds
+    toggle.click()
+    expect(toggle).to_have_text("Arazi: kapalı")
+    expect(page.locator(FRAMES)).to_have_count(40)  # markers re-added after the style change
+    page.reload()
+    expect(page.get_by_role("button", name=re.compile("^Arazi"))).to_have_text("Arazi: kapalı")
 
 
 def test_hover_grows_marker_in_place_and_card_fits(page: Page):

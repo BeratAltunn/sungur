@@ -141,7 +141,7 @@ python3 -m sentinel evaluate img_000860      # (PYTHONPATH=src ya da make instal
 7. **Eşik ve ağırlıklar `config.yaml`'da.** Kodda sabit eşik yazma. `domain/models.py` ekip sözleşmesidir; alan eklemek/değiştirmek ekiple konuşulur.
 8. **Altın sayı testlerini değiştirme.** `tests/unit/test_geo.py`, `test_tracking.py`, `test_reports.py` organizatörün örneğindeki sayıları (756,301 → 39.92531, 32.87183; T0122 < 1 m, 2. aday T0032 ~41 m; 5,5 → 1,6 km; 10,5 km yol; ETA ~4,4 dk; 12:35 raporu ✗) sabitler. Bu testler kırılırsa kod yanlıştır, test değil.
 9. **Prompt'lar sürümlüdür.** Prompt değiştirirken mevcut dosyayı düzenleme; `agent/prompts/analyst_vN.md` (ya da `chat_vN.md`) yeni dosya aç ve `config.yaml → llm.prompt_version`'ı güncelle. LLM önbelleği sürüme bağlıdır; ardından `python3 scripts/precompute.py` ile 40 brief'i yeniden üret (~15 dk).
-10. **Git'e girmeyecekler:** `.env`, `ROKETSAN HACKATHON/dataset/`, organizatör PDF/PPTX'leri, `stage2/runs/`, `models/*.pt`, `ROKETSAN HACKATHON/data/` (resmî paket), `*.pth`, `web/node_modules`, `web/dist`. Commit'ten önce `git status`'a bak.
+10. **Git'e girmeyecekler:** `.env`, `ROKETSAN HACKATHON/dataset/`, organizatör PDF/PPTX'leri, `stage2/runs/`, `models/*.pt`, `ROKETSAN HACKATHON/data/` (resmî paket), `*.pth`, `web/node_modules`, `web/dist`, `web/public/terrain/` (`make terrain` indirir). Commit'ten önce `git status`'a bak.
 
 ## 6. Nereyi değiştireyim? (görev → dosya)
 
@@ -185,6 +185,7 @@ make calibrate      altın set ↔ sistem + ağırlık duyarlılığı   make de
 make stopwatch      kronometre testi özeti
 python3 scripts/precompute.py            40 kare için tespit + LLM brief önbelleği
 python3 scripts/compare_detectors.py     yeni detektör kabul raporu
+make terrain                             ana harita 3B arazi karoları (DEM + doku) → web/public/terrain; yalnızca görsel
 python3 -m sentinel reports --zone "Dogu Yolu"    raporların zaman-duyarlı doğrulaması
 ```
 
