@@ -272,6 +272,8 @@ export interface DayVehicle {
   score: number | null;
   level: Level | null;
   points: [number, number, number][]; // [t_min, lat, lon]
+  /** Score and level at each track point, with what was known then (backend); the last entry is the capture score. */
+  timeline: [number, number, Level][]; // [t_min, score, level]
 }
 export interface VehicleDay {
   window: { start: number; end: number };

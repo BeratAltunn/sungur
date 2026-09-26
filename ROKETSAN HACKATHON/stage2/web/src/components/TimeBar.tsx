@@ -3,15 +3,15 @@
 import { useEffect, useMemo, useSyncExternalStore } from "react";
 import type { Clock } from "../lib/clock";
 import { visibleAt } from "../lib/dayVehicles";
-import { LEVEL_CLASS, LEVEL_ICON, hhmm } from "../lib/format";
-import type { DayVehicle, Level } from "../lib/types";
+import { hhmm } from "../lib/format";
+import type { DayVehicle } from "../lib/types";
 
 const SPEEDS = [1, 2, 5, 10]; // simulated minutes per second
 
+/** A frame's capture moment on the bar (no threat level: the vehicles carry it). */
 export interface Tick {
   image_id: string;
   t: number;
-  level: Level;
   time: string;
 }
 
@@ -71,23 +71,21 @@ export function TimeBar({
             step={0.5}
             value={t}
             onChange={(e) => clock.set({ t: Number(e.target.value), playing: false })}
-            aria-label="Saat"
+            aria-label="Zaman çubuğu saati"
             aria-valuetext={hhmm(t)}
           />
           {ticks.map((k) => (
             <button
               key={k.image_id}
-              className={`timebar-tick ${LEVEL_CLASS[k.level]}`}
+              className="timebar-tick"
               style={{ left: pct(k.t) }}
-              title={`${k.image_id} · ${k.time} · ${k.level}`}
-              aria-label={`${k.time} ${k.image_id} ${k.level}: saate git`}
+              title={`${k.image_id} · ${k.time} çekimi`}
+              aria-label={`${k.time} ${k.image_id}: çekim saatine git`}
               onClick={() => {
                 clock.set({ t: k.t, playing: false });
                 onTick(k.image_id);
               }}
-            >
-              <span aria-hidden>{LEVEL_ICON[k.level].slice(0, 1)}</span>
-            </button>
+            />
           ))}
         </div>
         <select value={speed} onChange={(e) => clock.set({ speed: Number(e.target.value) })} aria-label="Oynatma hızı">

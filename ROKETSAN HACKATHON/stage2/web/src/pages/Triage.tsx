@@ -112,7 +112,7 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
   const frameInfo = useMemo(() => new Map((mapCtx?.frames ?? []).map((f) => [f.image_id, f])), [mapCtx]);
   // Time bar ticks: every frame at its capture time. The clock opens on the most urgent frame's moment.
   const ticks = useMemo(
-    () => (mapCtx?.frames ?? []).map((f) => ({ image_id: f.image_id, t: toMin(f.capture_time), level: f.level, time: f.capture_time })),
+    () => (mapCtx?.frames ?? []).map((f) => ({ image_id: f.image_id, t: toMin(f.capture_time), time: f.capture_time })),
     [mapCtx],
   );
   useEffect(() => {
@@ -561,6 +561,8 @@ function OverviewMap({
   const cardRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(0); // markers exist only after the map loads
   const [pos, setPos] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
+  // Vehicle view: hovering a vehicle previews its frame's card next to the vehicle (not at the frame).
+  const [vehAnchor, setVehAnchor] = useState<{ id: string; at: LngLat } | null>(null);
   useVehicleLayer({
     map: ready ? mapRef.current : null,
     ready,
@@ -569,7 +571,13 @@ function OverviewMap({
     threshold,
     clock,
     onSelect: (id) => cb.current.onSelect(id),
+    onHover: (id, at) => {
+      setVehAnchor({ id, at });
+      cb.current.onHover(id);
+    },
+    onHoverOut: () => cb.current.onHoverOut(),
   });
+  const anchorAt = vehicles && vehAnchor && vehAnchor.id === cardKey ? vehAnchor.at : cardAt;
 
   const onReady = (map: MLMap) => {
     mapRef.current = map;
@@ -608,24 +616,6 @@ function OverviewMap({
         type: "line",
         source: "frame-footprints",
         paint: { "line-color": ["get", "outlineColor"], "line-width": ["get", "lineWidth"], "line-opacity": ["get", "lineOpacity"] },
-      });
-    }
-    // Road corridors: true-scale paths from the base through each zone's frame centres (from /api/map)
-    setGeo(map, "roads", fc(ctx.zones.filter((z) => z.path && z.path.length > 1).map((z) => line(z.path!, { name: z.name }))));
-    if (!map.getLayer("roads-casing")) {
-      map.addLayer({ id: "roads-casing", type: "line", source: "roads", paint: { "line-color": "#0b1320", "line-width": 4.5, "line-opacity": 0.85 } });
-      map.addLayer({
-        id: "roads-line",
-        type: "line",
-        source: "roads",
-        paint: { "line-color": "#475569", "line-width": 2, "line-dasharray": [4, 2], "line-opacity": 0.8 },
-      });
-      map.addLayer({
-        id: "roads-active",
-        type: "line",
-        source: "roads",
-        filter: ["==", "name", ""],
-        paint: { "line-color": "#38bdf8", "line-width": 3.5, "line-opacity": 0.95 },
       });
     }
     // Layer handlers live on the map, not the layer: bind them once per map, not on every style reload.
@@ -703,8 +693,7 @@ function OverviewMap({
     }
   }, [rows, ctx, decided, viewed, isNew, ready]);
 
-  // Footprints follow the filtered rows, selection, hover and decisions; the selected (or hovered) frame's road
-  // corridor is highlighted.
+  // Footprints follow the filtered rows, selection, hover and decisions.
   useEffect(() => {
     const map = mapRef.current;
     if (!map || !map.getSource("frame-footprints")) return;
@@ -716,20 +705,19 @@ function OverviewMap({
         const isSel = f.image_id === selected;
         const isHov = f.image_id === hover;
         const isDec = decided.has(f.image_id);
-        const color = isDec ? "#64748b" : LEVEL_COLOR[f.level];
+        // Vehicle view: footprints are neutral (the vehicles carry the threat colour, not the frames).
+        const color = isDec ? "#64748b" : vehicles ? "#9fbcdb" : LEVEL_COLOR[f.level];
         return polygon([...f.corners, f.corners[0]], {
           image_id: f.image_id,
           color,
-          opacity: isSel ? 0.35 : isHov ? 0.25 : isDec ? 0.04 : f.level === "KRİTİK" ? 0.2 : 0.08,
+          opacity: isSel ? 0.35 : isHov ? 0.25 : isDec ? 0.04 : !vehicles && f.level === "KRİTİK" ? 0.2 : 0.08,
           outlineColor: isSel ? "#ffffff" : isHov ? "#e2e8f0" : color,
           lineWidth: isSel ? 2.5 : isHov ? 2 : isDec ? 1 : 1.5,
           lineOpacity: isDec ? 0.4 : 0.9,
         });
       });
     setGeo(map, "frame-footprints", fc(features));
-    const active = ctx.frames.find((f) => f.image_id === (selected ?? hover))?.zone ?? "";
-    if (map.getLayer("roads-active")) map.setFilter("roads-active", ["==", "name", active]);
-  }, [rows, selected, shown, decided, ready, ctx]);
+  }, [rows, selected, shown, decided, ready, ctx, vehicles]);
 
   // Roving focus: the map is one Tab stop; J/K move the selection and, if a marker has focus, the focus too.
   useEffect(() => {
@@ -751,12 +739,12 @@ function OverviewMap({
       map.easeTo({ center: markers.current[selected!].getLngLat(), duration: 300 });
   }, [selected, shown, rows, ready]);
 
-  // The card follows its marker as the map pans and zooms.
+  // The card follows its marker (or the hovered vehicle) as the map pans and zooms.
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !cardAt) return setPos(null);
+    if (!map || !anchorAt) return setPos(null);
     const update = () => {
-      const p = map.project(cardAt);
+      const p = map.project(anchorAt);
       const c = map.getContainer();
       setPos({ x: p.x, y: p.y, w: c.clientWidth, h: c.clientHeight });
     };
@@ -767,7 +755,7 @@ function OverviewMap({
       map.off("move", update);
       map.off("resize", update);
     };
-  }, [cardAt, ready]);
+  }, [anchorAt?.[0], anchorAt?.[1], ready]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The card's real height, measured after layout (before paint) and again whenever its content resizes
   // (e.g. the thumbnail loads), so it is placed from its actual size, never last render's.

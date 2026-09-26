@@ -152,6 +152,26 @@ def test_vehicle_view_plays_the_day_and_the_threshold_thins_it(page: Page):
     page.locator('.timebar-tick[title^="img_000860"]').click()
     expect(page.locator(".timebar-now")).to_have_text("14:10")
     expect(page.locator(".frame-card")).to_contain_text(DEMO)
+    # real-time level: the demo truck is KRİTİK at capture (14:10), not yet at 14:05 before its final dash
+    truck = page.locator('.mk-v[data-vehicle="T0122"]')
+    expect(truck).to_have_class(re.compile(r"\blv-crit\b"))
+    page.get_by_role("slider", name="Zaman çubuğu saati").fill("845")
+    expect(truck).not_to_have_class(re.compile(r"\blv-crit\b"))
+    page.get_by_role("slider", name="Zaman çubuğu saati").fill("850")
+    # hovering another frame's vehicle fades in that frame's card, next to the vehicle
+    other = page.locator(".mk-v:not(.mk-hidden)").evaluate_all(
+        "els => els.map(e => [e.dataset.vehicle, (e.title.match(/img_\\d+/) || [''])[0]]).find(([, im]) => im && im !== 'img_000860')"
+    )
+    assert other, "no vehicle from another frame on screen"
+    veh = page.locator(f'.mk-v[data-vehicle="{other[0]}"]')
+    veh.dispatch_event("mouseenter")
+    card = page.locator(".frame-card-wrap")
+    expect(card).to_contain_text(other[1])
+    expect(card).to_have_class(re.compile(r"\bcard-in\b"))
+    vb, cbox = veh.bounding_box(), card.bounding_box()
+    assert min(abs(cbox["x"] - (vb["x"] + vb["width"])), abs(cbox["x"] + cbox["width"] - vb["x"])) < 80
+    veh.dispatch_event("mouseleave")
+    expect(card).to_contain_text(DEMO)  # back to the pinned frame
     # threshold: fewer vehicles, all at or above it
     page.get_by_label("Tehdit skoru eşiği").fill("50")
     thinned = page.locator(VEHICLES).count()

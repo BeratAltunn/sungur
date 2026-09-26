@@ -6,6 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sentinel.agent.llm import MockLLM
+from sentinel.domain.models import to_min
 from sentinel.interfaces import api
 from sentinel.risk.scoring import level_for
 from sentinel.service import SentinelService
@@ -60,3 +61,34 @@ def test_llm_switch_off_sends_nothing_to_the_model(mock_client):
     assert client.post("/api/llm", json={"enabled": True}).json() == {"enabled": True}
     client.post("/api/chat", json={"question": "Üsse en yakın araç hangisi?"})
     assert len(llm.calls) > before  # back on: the chat reaches the model again
+
+
+def test_threat_timeline_ends_at_the_packet_score_and_is_real_time(service):
+    """Each detected vehicle's score over time ends at its frame's own score; the demo truck T0122 is ORTA while it
+    idles and becomes KRİTİK only with its last 5-minute dash to the base (the reason for real-time levels)."""
+    vs = {v["id"]: v for v in service.vehicles()["vehicles"]}
+    for meta in service.repo.frames():
+        for pv in service.packet(meta.image_id).vehicles:
+            v = vs[pv.track_id or f"{meta.image_id}/{pv.ref}"]
+            if v["image_id"] != meta.image_id:
+                continue  # a track seen in two frames keeps its higher-scoring detection
+            t, score, level = v["timeline"][-1]
+            assert (t, score) == (meta.capture_min, pv.score)
+            assert all(lv == level_for(sc, service.s.risk).value for _, sc, lv in v["timeline"])
+            assert [e[0] for e in v["timeline"]] == sorted(e[0] for e in v["timeline"])
+    truck = {t: lv for t, _, lv in vs["T0122"]["timeline"]}
+    assert truck[845] != "KRİTİK" and truck[850] == "KRİTİK"  # 14:05 vs 14:10 (capture)
+
+
+def test_a_report_counts_only_from_its_own_time(service):
+    from sentinel.risk.timeline import score_timeline
+
+    pkt = service.packet("img_000860")
+    v = next(x for x in pkt.vehicles if x.track_id == "T0122")
+    args = (service.repo.track("T0122"), 850, service.repo.geo, service.repo.zone_index, service.s)
+    with_reports = score_timeline(v, args[0], pkt.reports, *args[1:])
+    without = score_timeline(v, args[0], [], *args[1:])
+    first_report = min(to_min(r.time) for r in pkt.reports)
+    for (t, a), (_, b) in zip(with_reports[:-1], without[:-1], strict=True):
+        if t < first_report:
+            assert a == b, t  # nothing had been reported yet
