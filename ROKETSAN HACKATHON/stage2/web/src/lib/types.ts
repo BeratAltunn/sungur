@@ -273,7 +273,24 @@ export interface MapContext {
     score: number;
     center: LngLat;
     corners: LngLat[];
+    /** Lead moving vehicle's heading/speed from its kinematics (backend); null when nothing moves. */
+    motion: FrameMotion | null;
+    /** Class drawn on the marker: the arrow's vehicle, else the top-scoring one (backend); null without vehicles. */
+    lead_label: Label | null;
+    label_counts: Partial<Record<Label, number>>;
   }[];
+}
+
+export interface FrameMotion {
+  vehicle_ref: string;
+  track_id: string;
+  label: Label;
+  heading_deg: number; // compass, 0 = north, clockwise
+  heading_dir: string | null;
+  speed_kmh: number;
+  approaching: boolean;
+  eta_min: number | null;
+  n_moving: number;
 }
 
 export interface TrackPath {

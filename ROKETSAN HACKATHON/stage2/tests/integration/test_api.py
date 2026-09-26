@@ -55,6 +55,36 @@ def test_read_endpoints(client):
     assert steps[0] == "1_tespit"
 
 
+def test_map_motion_is_the_lead_vehicles_own_kinematics(client):
+    """Overview arrows: heading and speed come from the packet's lead vehicle, never recomputed in the UI."""
+    frames = {f["image_id"]: f for f in client.get("/api/map").json()["frames"]}
+    assert any(f["motion"] for f in frames.values())
+    mo = frames["img_000860"]["motion"]
+    assert mo["track_id"] == "T0122" and mo["approaching"]  # the demo truck leads its frame
+    pkt = client.get("/api/frames/img_000860/packet").json()
+    k = next(v for v in pkt["vehicles"] if v["ref"] == mo["vehicle_ref"])["kinematics"]
+    assert mo["heading_deg"] == round(k["heading_deg"], 1) and mo["heading_dir"] == k["heading_dir"]
+    assert mo["speed_kmh"] == round(k["speed_now_mps"] * 3.6, 1) and mo["eta_min"] == k["eta_min"]
+    for f in frames.values():
+        assert f["motion"] is None or 0 <= f["motion"]["heading_deg"] < 360
+
+
+def test_map_marker_class_is_the_packets_own(client):
+    """Marker silhouettes: the class shown is the arrow's vehicle (else the top-scoring one); counts from the packet."""
+    frames = {f["image_id"]: f for f in client.get("/api/map").json()["frames"]}
+    for image_id in ("img_000860", "img_006388"):
+        f, pkt = frames[image_id], client.get(f"/api/frames/{image_id}/packet").json()
+        labels = {v["ref"]: v["label"] for v in pkt["vehicles"]}
+        counts: dict[str, int] = {}
+        for lb in labels.values():
+            counts[lb] = counts.get(lb, 0) + 1
+        assert f["label_counts"] == counts
+        if f["motion"]:  # the silhouette and the arrow describe the same vehicle
+            assert f["lead_label"] == f["motion"]["label"] == labels[f["motion"]["vehicle_ref"]]
+    for f in frames.values():
+        assert (f["lead_label"] is None) == (not f["label_counts"])
+
+
 def test_errors_and_decisions(client):
     assert client.get("/api/frames/yok").status_code == 404
     run_id = client.get("/api/frames/img_000860").json()["result"]["run_id"]

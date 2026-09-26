@@ -21,6 +21,7 @@ import logging
 import os
 import time
 from functools import cached_property
+from typing import get_args
 
 from pydantic import BaseModel
 
@@ -34,6 +35,7 @@ from sentinel.domain.models import (
     EvaluationResult,
     EvidencePacket,
     Kinematics,
+    Label,
     OperatorDecision,
     ReportVerification,
     RiskLevel,
@@ -49,6 +51,7 @@ from sentinel.perception.factory import build_detector
 from sentinel.pipeline import Pipeline
 from sentinel.tracking.kinematics import compute_kinematics
 
+LABEL_ORDER: tuple[str, ...] = get_args(Label)  # map marker class counts, in the contract order
 log = logging.getLogger(__name__)
 
 
@@ -398,6 +401,11 @@ class SentinelService:
                     "corners": [
                         [pt[1], pt[0]] for pt in (c.top_left, c.top_right, c.bottom_right, c.bottom_left)
                     ],
+                    "motion": (motion := self._lead_motion(p)),
+                    "lead_label": self._lead_label(p, motion),
+                    "label_counts": {
+                        lb: n for lb in LABEL_ORDER if (n := sum(v.label == lb for v in p.vehicles))
+                    },
                 }
             )
         from sentinel.geo.zones import zone_display
@@ -413,6 +421,47 @@ class SentinelService:
                 {"km": r.mid_km, "ring": ring(r.mid_km * 1000)},
             ],
             "frames": frames,
+        }
+
+    @staticmethod
+    def _lead_label(p: EvidencePacket, motion: dict | None) -> str | None:
+        """Class shown on the frame's map marker: the lead moving vehicle's (the one its arrow shows), otherwise the
+        highest-scoring vehicle's (heavier class on ties); None for a frame without vehicles."""
+        if motion is not None:
+            return motion["label"]
+        if not p.vehicles:
+            return None
+        return max(p.vehicles, key=lambda v: (v.score, v.label in HEAVY_LABELS)).label
+
+    @staticmethod
+    def _lead_motion(p: EvidencePacket) -> dict | None:
+        """Heading and speed of the frame's lead moving vehicle (approaching first, then highest score, then
+        shortest ETA, then fastest), straight from its kinematics; None when no matched vehicle has a heading."""
+        moving = [v for v in p.vehicles if v.kinematics and v.kinematics.heading_deg is not None]
+        if not moving:
+            return None
+
+        def rank(v):
+            k = v.kinematics
+            return (
+                k.approaching,
+                v.score,
+                -(k.eta_min if k.eta_min is not None else float("inf")),
+                k.speed_now_mps,
+            )
+
+        v = max(moving, key=rank)
+        k = v.kinematics
+        return {
+            "vehicle_ref": v.ref,
+            "track_id": k.track_id,
+            "label": v.label,
+            "heading_deg": round(k.heading_deg, 1),
+            "heading_dir": k.heading_dir,
+            "speed_kmh": round(k.speed_now_mps * 3.6, 1),
+            "approaching": k.approaching,
+            "eta_min": k.eta_min,
+            "n_moving": len(moving),
         }
 
     def frame_tracks(self, image_id: str, max_report_tracks: int = 8) -> dict:

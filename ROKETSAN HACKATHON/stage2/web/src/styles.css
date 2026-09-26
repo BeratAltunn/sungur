@@ -235,8 +235,8 @@ select, input[type="text"], input[type="search"], input:not([type]) {
 .mk { font: 12px/1.2 var(--font); white-space: nowrap; }
 .mk-base { color: var(--text); display: flex; gap: 4px; align-items: center; text-shadow: 0 1px 3px #000; }
 .mk-zone { color: var(--muted); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; text-shadow: 0 1px 2px #000; }
-.mk-frame { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 4px; border: 2px solid var(--lvc); background: rgba(16,25,35,.9); cursor: pointer; font-size: 12px; font-weight: 800; }
-.mk-frame.mk-hover, .mk-frame:hover { transform: scale(1.35); box-shadow: 0 0 0 3px rgba(255,255,255,.25); z-index: 5; }
+.mk-frame { width: 32px; height: 26px; --mk-bg: rgb(16,25,35); display: grid; place-items: center; border-radius: 4px; border: 2px solid var(--lvc); background: rgba(16,25,35,.9); cursor: pointer; font-size: 12px; font-weight: 800; }
+.mk-frame.mk-hover, .mk-frame:hover { width: 42px; height: 34px; font-size: 15px; box-shadow: 0 0 0 3px rgba(255,255,255,.25); z-index: 5; } /* size, not transform: MapLibre owns the marker transform */
 .mk-veh { z-index: 4; display: flex; align-items: center; gap: 3px; cursor: pointer; }
 
 .mk-report { font-weight: 600; }
@@ -599,3 +599,108 @@ a.btn-primary, a.btn-ok { color: #080c11; }
   .cop .queue, .cop .overview, .cop .preview { height: auto; }
   .cop .overview-map { min-height: 420px; }
 }
+
+/* ---------------------------------------------------------------- COP: map-only triage + frame card */
+.triage.cop.cop-map { grid-template-columns: minmax(0, 1fr); }
+.cop-map .overview { height: calc(100vh - var(--topbar-h, 72px) - 150px); min-height: 560px; position: relative; }
+.overview-head h2 { margin-right: auto; }
+.map-filters.filters { width: auto; display: flex; flex-wrap: wrap; gap: 6px; }
+.map-filters .search { width: 150px; }
+.overview-stage { position: relative; flex: 1; min-height: 0; }
+.overview-stage .overview-map { position: absolute; inset: 0; }
+.map-empty { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 3; background: var(--panel); border: 1px solid var(--line-2); border-radius: 6px; padding: 10px 16px; color: var(--text-2); }
+
+.mk-frame.mk-hidden { display: none !important; }
+.mk-frame:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.mk-frame.mk-new { box-shadow: 0 0 0 3px var(--accent); }
+/* Arrow: origin at the marker centre, drawn downwards, rotated to the compass heading (0 = north, clockwise). */
+.mk-arrow { position: absolute; left: 50%; top: 50%; width: 12px; margin-left: -6px; transform-origin: 50% 0; transform: rotate(calc(var(--hd) + 180deg)); pointer-events: none; }
+.mk-arrow svg { display: block; overflow: visible; }
+.mk-arrow line { stroke: var(--st-off); stroke-width: 3.5; stroke-linecap: round; }
+.mk-arrow path { fill: var(--st-off); }
+.mk-arrow.mk-arrow-in line { stroke: var(--lvc); }
+.mk-arrow.mk-arrow-in path { fill: var(--lvc); }
+.mk-arrow-mk { width: 0; height: 0; pointer-events: none; } /* sits exactly on the frame point, on the map plane */
+.mk-arrow-mk.mk-hidden { display: none !important; }
+.mk-arrow-mk.mk-quiet .mk-arrow { opacity: .6; }
+
+.frame-card-wrap { position: absolute; z-index: 10; max-height: calc(100% - 16px); display: flex; }
+.frame-card { background: var(--panel); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 10px 30px rgba(0,0,0,.55); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; overflow-y: auto; width: 100%; }
+.frame-card:not(.frame-card-pinned) { cursor: pointer; border-style: dashed; }
+.frame-card-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.frame-card-score { margin-left: auto; }
+.frame-card-close { padding: 2px 8px; }
+.frame-card .action { margin-bottom: 0; }
+.frame-card .preview-img { max-height: 170px; object-fit: cover; }
+.legend-arrow { display: inline-flex; gap: 6px; align-items: center; color: var(--text-2); font-size: 13px; }
+.legend-arrow line { stroke: var(--text-2); stroke-width: 2.5; }
+.legend-arrow path { fill: var(--text-2); }
+@media (max-width: 1100px) {
+  .cop-map .overview { height: auto; }
+  .overview-stage { min-height: 480px; }
+}
+
+/* Frame marker: the lead vehicle's class silhouette (backend lead_label); level stays as colour + corner glyph. */
+.mk-frame .veh-sil { width: 24px; height: 14px; fill: currentColor; }
+.mk-frame.mk-attn { --mk-bg: var(--lvc); }
+.mk-frame.mk-hover .veh-sil, .mk-frame:hover .veh-sil { width: 32px; height: 19px; }
+.veh-sil .wheel { stroke: var(--mk-bg, var(--panel)); stroke-width: 1.3; }
+.veh-sil .win { fill: var(--mk-bg, var(--panel)); }
+.veh-sil .unk { fill: none; stroke: currentColor; stroke-width: 1.6; stroke-dasharray: 3 2; }
+.mk-lv { position: absolute; top: -9px; right: -9px; min-width: 14px; padding: 0 2px; border-radius: 3px; background: var(--bg); border: 1px solid var(--lvc); color: var(--lvt); font: 800 9px/12px var(--font); text-align: center; pointer-events: none; }
+.card-classes { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.card-class { display: inline-flex; align-items: center; gap: 5px; }
+.card-sil .veh-sil { width: 22px; height: 13px; fill: var(--text-2); display: block; }
+.card-sil .veh-sil .wheel, .card-sil .veh-sil .win { stroke: var(--panel); fill: var(--text-2); }
+.card-sil .veh-sil .win { fill: var(--panel); }
+
+/* Card fade: in on hover/select, out when the pointer leaves (then the pinned card, if any, fades back in). */
+@keyframes card-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@keyframes card-out { from { opacity: 1; transform: none; } to { opacity: 0; transform: translateY(6px); } }
+.frame-card-wrap.card-in { animation: card-in 200ms ease-out both; }
+.frame-card-wrap.card-out { animation: card-out 250ms ease-in both; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) {
+  .frame-card-wrap.card-in, .frame-card-wrap.card-out { animation: none; }
+}
+
+/* ---------------------------------------------------------------- Map as the page background, minimal HUD on top */
+.app-map { position: relative; height: 100vh; overflow: hidden; }
+.map-bg { position: fixed; inset: 0; z-index: 0; }
+.map-bg .overview-stage { position: absolute; inset: 0; }
+.map-bg .map { border-radius: 0; }
+.hud { position: fixed; left: 0; right: 0; z-index: 10; pointer-events: none; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.hud > * { pointer-events: auto; }
+.hud-top { top: 0; padding-bottom: 4px; }
+.hud-top > .topbar { align-self: stretch; }
+.hud-bottom { bottom: 36px; left: 10px; right: auto; }
+.hud-panel { background: rgba(16,25,35,.88); backdrop-filter: blur(6px); border: 1px solid var(--line-2); border-radius: var(--radius); box-shadow: 0 4px 16px rgba(0,0,0,.45); }
+.app-map .topbar { position: relative; background: rgba(23,38,53,.9); backdrop-filter: blur(6px); }
+.app-map .topbar-row { padding: 4px 16px; }
+.app-map .shift { margin: 0 12px; padding: 5px 8px; gap: 6px; }
+.app-map .shift-stats { gap: 10px; }
+.app-map .shift-links { margin-left: 4px; }
+.shift-more { display: flex; gap: 14px; flex-wrap: wrap; color: var(--text-2); font-size: 13px; padding: 2px 4px 2px; }
+.hud-tools { margin: 0 12px; padding: 5px 6px; display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.hud-tools .search { width: 140px; }
+.hud-tools select { max-width: 150px; }
+.hud-count { color: var(--text-2); padding: 0 4px; font-size: 13px; white-space: nowrap; }
+.app-map .tip { margin: 0 12px; padding: 5px 8px 5px 12px; max-width: 520px; font-size: 13px; }
+.legend-box { padding: 3px; max-width: min(520px, calc(100vw - 24px)); }
+.legend-box .legend { border-top: 1px solid var(--line); padding: 8px 8px 4px; flex-direction: column; align-items: flex-start; gap: 6px; }
+.legend-toggle { padding: 2px 10px; }
+/* map controls clear the floating layers */
+.app-map .maplibregl-ctrl-top-right { top: var(--hud-top, 0px); }
+.app-map .map-toggle { left: auto; right: 10px; top: calc(var(--hud-top, 0px) + 112px); } /* below zoom + compass */
+.shell.chat-open .app-map { padding-right: 0; }
+.shell.chat-open .app-map .hud-top { right: 440px; }
+@media (max-width: 1100px) {
+  .shell.chat-open .app-map .hud-top { right: 0; }
+}
+/* HUD polish: compact controls, one legend type size, card action always reachable */
+.hud-tools input, .hud-tools select { font-size: 14px; padding: 4px 8px; min-height: 30px; }
+.legend-box .legend, .legend-box .legend .muted { font-size: 13px; }
+.frame-card { gap: 8px; padding: 10px 12px 0; }
+.frame-card .preview-headline { font-size: 15px; }
+.frame-card .preview-id .mono { font-size: 16px; }
+.frame-card .preview-img { max-height: 120px; }
+.frame-card-open { position: sticky; bottom: 0; margin: 0 -12px; border-radius: 0 0 var(--radius) var(--radius); box-shadow: 0 -6px 12px var(--panel); }

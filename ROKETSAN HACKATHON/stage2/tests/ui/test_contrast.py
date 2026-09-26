@@ -37,7 +37,7 @@ SCAN = r"""() => {
 }"""
 
 PAGES = [
-    ("/#/", "li.row"),
+    ("/#/", ".frame-card"),
     ("/#/frame/img_000860", ".brief .level"),
     ("/#/handover", ".ho-section"),
     ("/#/impact", ".tl-row"),

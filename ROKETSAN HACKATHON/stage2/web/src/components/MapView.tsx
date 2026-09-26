@@ -30,9 +30,11 @@ interface Props {
   /** Called once the style is loaded, and again after the basemap is toggled (style reset). */
   onReady: (map: MLMap) => void;
   initial: { center: [number, number]; zoom: number };
+  /** Tiltable, rotatable plane (right-drag or Ctrl+drag; compass resets). Off: a flat, north-up map. */
+  threeD?: { pitch: number; maxPitch: number };
 }
 
-export function MapView({ className, onReady, initial }: Props) {
+export function MapView({ className, onReady, initial, threeD }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
   const readyRef = useRef(onReady);
@@ -47,9 +49,14 @@ export function MapView({ className, onReady, initial }: Props) {
       center: initial.center,
       zoom: initial.zoom,
       attributionControl: { compact: true },
-      dragRotate: false,
+      dragRotate: !!threeD,
+      pitchWithRotate: !!threeD,
+      touchPitch: !!threeD,
+      pitch: threeD?.pitch ?? 0,
+      maxPitch: threeD?.maxPitch ?? 0,
     });
-    map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    if (!threeD) map.touchZoomRotate.disableRotation();
+    map.addControl(new maplibregl.NavigationControl({ showCompass: !!threeD, visualizePitch: !!threeD }), "top-right");
     map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
     map.on("load", () => readyRef.current(map));
     mapRef.current = map;
@@ -96,8 +103,16 @@ export const polygon = (coords: [number, number][], props: Record<string, unknow
   geometry: { type: "Polygon", coordinates: [coords] },
 });
 
-/** HTML marker whose element is fully controlled by the caller. */
-export function htmlMarker(map: MLMap, lngLat: [number, number], html: string, className: string, onClick?: () => void) {
+/** HTML marker whose element is fully controlled by the caller. `onGround` lays it on the map plane (it tilts and
+ *  rotates with the map, e.g. a heading arrow); otherwise it stays upright facing the viewer. */
+export function htmlMarker(
+  map: MLMap,
+  lngLat: [number, number],
+  html: string,
+  className: string,
+  onClick?: () => void,
+  onGround = false,
+) {
   const node = document.createElement("div");
   node.className = className;
   node.innerHTML = html;
@@ -108,5 +123,6 @@ export function htmlMarker(map: MLMap, lngLat: [number, number], html: string, c
       onClick();
     });
   }
-  return new maplibregl.Marker({ element: node }).setLngLat(lngLat).addTo(map);
+  const align = onGround ? "map" : "viewport";
+  return new maplibregl.Marker({ element: node, pitchAlignment: align, rotationAlignment: align }).setLngLat(lngLat).addTo(map);
 }
