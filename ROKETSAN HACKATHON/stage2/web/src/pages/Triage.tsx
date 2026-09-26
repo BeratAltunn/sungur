@@ -52,7 +52,8 @@ export function TriagePage({
   const [showTip, setShowTip] = useState(() => !storage.get("tip_seen", false));
   const viewed = useMemo(() => new Set(storage.get<string[]>("viewed", [])), []);
   const replay = useReplay();
-  const [mode, setMode] = useState<MapMode>(() => storage.get<MapMode>("map_mode", "vehicles"));
+  // Frames first: the alert rail, the map card and the decision flow are built on frames; vehicles are one click away.
+  const [mode, setMode] = useState<MapMode>(() => storage.get<MapMode>("map_mode", "frames"));
   const [vehDay, setVehDay] = useState<VehicleDay | null>(null);
   const [threshold, setThreshold] = useState<number>(() => storage.get("veh_threshold", 0));
   const clock = useMemo(() => createClock({ t: -1, playing: false, speed: 2 }), []);
@@ -264,7 +265,7 @@ export function TriagePage({
             ) : (
               <span>
                 Her işaret bir kare: üzerine gel ya da tıkla, kartı açılır. <Kbd>J</Kbd>/<Kbd>K</Kbd> risk sırasıyla gezer,{" "}
-                <Kbd>Enter</Kbd> açar. Ok öncü aracın yönü, uzunluğu hızı.
+                <Kbd>Enter</Kbd> açar. Ok yalnızca üsse yaklaşan karelerde: öncü aracın yönü, uzunluğu hızı.
               </span>
             )}
             <button
@@ -680,8 +681,9 @@ function OverviewMap({
     for (const z of ctx.zones) htmlMarker(map, z.center, z.label, "mk mk-zone");
     // Arrows first (painted on the ground, under the upright icons); same point as the frame, so they tilt and
     // rotate with the plane and always point along the true heading.
+    // Only frames whose lead vehicle approaches the base get an arrow: the threat stands out, not every movement.
     for (const f of ctx.frames) {
-      if (!f.motion) continue;
+      if (!f.motion?.approaching) continue;
       const a = htmlMarker(map, f.center, arrowHtml(f.motion), `mk-arrow-mk ${LEVEL_CLASS[f.level]}`, undefined, true);
       a.getElement().dataset.arrow = f.image_id;
       arrows.current[f.image_id] = a;
@@ -878,7 +880,7 @@ function Legend({ rings }: { rings: number[] }) {
               <line x1="1" y1="5" x2="19" y2="5" />
               <path d="M17 1 L25 5 L17 9 Z" />
             </svg>
-            öncü aracın yönü · uzunluk = hız (≥ {ARROW_FULL_KMH} km/sa en uzun) · renkli ok: üsse yaklaşıyor
+            yalnızca üsse yaklaşan karelerde: öncü aracın yönü · uzunluk = hız (≥ {ARROW_FULL_KMH} km/sa en uzun)
           </span>
           <span className="muted">Halkalar: üsten {rings.map((k) => `${k} km`).join(" / ")}</span>
           <span className="muted">

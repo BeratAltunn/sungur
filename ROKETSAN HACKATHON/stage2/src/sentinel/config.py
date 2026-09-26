@@ -126,6 +126,7 @@ class LLMCfg(BaseModel):
 class DemoChatQ(BaseModel):
     question: str
     image_id: str | None = None
+    vehicle_ref: str | None = None  # a vehicle of image_id in the chat's context (as the UI sends it)
 
 
 class DemoCfg(BaseModel):

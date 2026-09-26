@@ -58,7 +58,7 @@ export function TimeBar({
     <section className="timebar hud-panel" aria-label="Zaman çubuğu">
       <div className="timebar-row">
         <button className="btn btn-sm timebar-play" onClick={play} aria-label={playing ? "Zamanı durdur" : "Zamanı oynat"} title="Zamanı oynat / durdur (Space)">
-          {playing ? "❚❚" : "▶"}
+          {playing ? "Durdur" : "Oynat"}
         </button>
         <span className="mono timebar-now" aria-live="off">
           {hhmm(t)}

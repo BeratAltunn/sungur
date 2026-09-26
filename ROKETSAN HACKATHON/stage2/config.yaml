@@ -118,5 +118,9 @@ demo:
     - question: "Bu karedeki kamyon neden riskli?"   # demo sorusu: 4 araç 100 puanda eşit, anlatı kamyon üzerine
       image_id: img_000860
     - question: "T0122 12:35'te neredeydi?"
+    # demo akışı: V7 kartta "Sor" ile bağlama eklenir, Alt+1 ilk hazır soruyu sorar (metin öneri üreticisinden gelir)
+    - question: "R119 raporundaki kimlik iddiası V7 (T0122) için neden kanıtla çelişiyor?"
+      image_id: img_000860
+      vehicle_ref: V7
   chat_max_s: 45
 
