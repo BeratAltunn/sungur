@@ -1,4 +1,5 @@
 import type {
+  ChatItem,
   ChatTurn,
   Decision,
   EvidencePacket,
@@ -98,6 +99,9 @@ async function ndjson(path: string, init: RequestInit, onEvent: (ev: LiveEvent) 
   }
 }
 
+/** What the backend needs of a chat item (it resolves tracks and levels itself). */
+const wire = (c: ChatItem) => (c.kind === "vehicle" ? { kind: c.kind, image_id: c.image_id, ref: c.ref } : { kind: c.kind, image_id: c.image_id });
+
 export const api = {
   health: () => http<Health>("/api/health"),
   summary: () => http<ShiftSummary>("/api/summary"),
@@ -119,21 +123,22 @@ export const api = {
     question: string,
     history: { role: string; content: string }[],
     imageId: string | null,
-    vehicleRef: string | null,
+    context: ChatItem[],
     signal?: AbortSignal,
   ) =>
     http<ChatTurn>("/api/chat", {
       method: "POST",
-      body: JSON.stringify({ question, history, image_id: imageId, vehicle_ref: vehicleRef }),
+      body: JSON.stringify({ question, history, image_id: imageId, context: context.map(wire) }),
       signal,
     }),
-  /** Questions for the situation: the frame (and dragged vehicle), or the queue when no frame is given. */
-  suggestions: (imageId: string | null, vehicleRef: string | null) => {
-    const q = new URLSearchParams();
-    if (imageId) q.set("image_id", imageId);
-    if (vehicleRef) q.set("vehicle_ref", vehicleRef);
-    return http<{ suggestions: Suggestion[] }>(`/api/chat/suggestions?${q}`);
-  },
+  /** Questions for the situation: what is in the chat's context, else the frame, else the queue. */
+  suggestions: (imageId: string | null, context: ChatItem[]) =>
+    context.length
+      ? http<{ suggestions: Suggestion[] }>("/api/chat/suggestions", {
+          method: "POST",
+          body: JSON.stringify({ image_id: imageId, context: context.map(wire) }),
+        })
+      : http<{ suggestions: Suggestion[] }>(`/api/chat/suggestions${imageId ? `?image_id=${imageId}` : ""}`),
   goldProgress: (labeler: string) =>
     http<{ labeler: string; done: Record<string, Level>; order: string[]; total: number }>(
       `/api/gold/${encodeURIComponent(labeler)}`,

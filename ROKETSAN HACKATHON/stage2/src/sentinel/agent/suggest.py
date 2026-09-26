@@ -8,6 +8,7 @@ would enter the grounding bank and let an answer "prove" a value by quoting the 
 from __future__ import annotations
 
 import re
+from dataclasses import dataclass
 
 from pydantic import BaseModel
 
@@ -237,6 +238,158 @@ def general_suggestions(rows: list[TriageRow], limit: int = LIMIT) -> list[Sugge
         )
     )
     return _top(ranked, limit)
+
+
+@dataclass(frozen=True)
+class CtxVehicle:
+    """A vehicle the operator put in the chat's context (resolved against its frame's packet)."""
+
+    packet: EvidencePacket
+    v: VehicleEvidence
+
+    @property
+    def name(self) -> str:  # tracks are global ids; a bare V-ref needs its frame
+        return self.v.track_id or f"{self.v.ref} ({self.packet.image_id})"
+
+
+@dataclass(frozen=True)
+class CtxFrame:
+    packet: EvidencePacket
+
+
+def context_suggestions(items: list[CtxVehicle | CtxFrame], limit: int = LIMIT) -> list[Suggestion]:
+    """Questions for what the operator put together in the chat: one item → the usual questions about it,
+    several → questions that connect them (moving together, which is more urgent, did one pass the other's area)."""
+    if not items:
+        return []
+    if len(items) == 1:
+        it = items[0]
+        if isinstance(it, CtxVehicle):
+            return frame_suggestions(it.packet, it.v.ref, limit)
+        return frame_suggestions(it.packet, None, limit)
+    vehicles = [i for i in items if isinstance(i, CtxVehicle)]
+    frames = [i for i in items if isinstance(i, CtxFrame)]
+    ranked: list[tuple[int, Suggestion]] = []
+
+    if len(vehicles) >= 2:
+        a, b = vehicles[0], vehicles[1]
+        names = [x.name for x in vehicles]
+        refs = [r for x in vehicles for r in (x.v.ref, x.v.track_id) if r]
+        joined = ", ".join(names[:-1]) + f" ve {names[-1]}"
+        if all(x.v.track_id for x in vehicles):
+            ranked.append(
+                (
+                    90,
+                    Suggestion(
+                        text=f"{joined} birlikte mi hareket ediyor, ne zamandan beri?",
+                        reason="birlikte hareket",
+                        refs=refs,
+                    ),
+                )
+            )
+            ranked.append(
+                (
+                    70,
+                    Suggestion(
+                        text=f"{joined} son iki saatte aynı bölgelerden geçti mi?",
+                        reason="ortak güzergâh",
+                        refs=refs,
+                    ),
+                )
+            )
+        if any(x.v.kinematics and x.v.kinematics.approaching for x in vehicles):
+            ranked.append(
+                (
+                    85,
+                    Suggestion(
+                        text=f"{joined} arasında hangisi üsse önce ulaşır?", reason="karşılaştırma", refs=refs
+                    ),
+                )
+            )
+        for x in (a, b):  # plus each one's most urgent own question
+            own = _vehicle_questions(x.v, x.packet)
+            if own:
+                pr, q = max(own, key=lambda t: t[0])
+                ranked.append((pr - 30, q))
+
+    if len(frames) >= 2:
+        fa, fb = frames[0].packet, frames[1].packet
+        ids = [f.packet.image_id for f in frames]
+        joined = ", ".join(ids[:-1]) + f" ve {ids[-1]}"
+        ranked.append(
+            (
+                88,
+                Suggestion(
+                    text=f"{joined} karelerinden hangisi daha acil, neden?", reason="karşılaştırma", refs=ids
+                ),
+            )
+        )
+        if fa.frame.zone == fb.frame.zone:
+            zone = zone_display(fa.frame.zone)
+            ranked.append(
+                (
+                    80,
+                    Suggestion(
+                        text=f"{zone} bölgesinde {fa.image_id} ile {fb.image_id} arasında ne değişti?",
+                        reason="aynı bölge",
+                        refs=ids,
+                    ),
+                )
+            )
+        else:
+            ranked.append(
+                (
+                    60,
+                    Suggestion(
+                        text=f"{joined} karelerindeki araçlar aynı yöne mi gidiyor?", reason="yön", refs=ids
+                    ),
+                )
+            )
+        if all(any(r.verdict == Verdict.CELISIYOR for r in f.packet.reports) for f in frames[:2]):
+            ranked.append(
+                (
+                    75,
+                    Suggestion(
+                        text=f"{joined} karelerinde kanıtla çelişen raporlar birbiriyle ilgili mi?",
+                        reason="çelişen raporlar",
+                        refs=ids,
+                    ),
+                )
+            )
+
+    # A vehicle that drove through another item's area (from its own track, not a guess).
+    for x in vehicles:
+        passed = set(x.v.kinematics.zones_passed) if x.v.kinematics else set()
+        for f in frames:
+            if f.packet.image_id != x.packet.image_id and f.packet.frame.zone in passed:
+                zone = zone_display(f.packet.frame.zone)
+                ranked.append(
+                    (
+                        92,
+                        Suggestion(
+                            text=f"{x.name}, {f.packet.image_id} karesinin bölgesinden ({zone}) geçmiş; oradayken ne yapıyordu?",
+                            reason="bölgeden geçti",
+                            refs=[r for r in (x.v.ref, x.v.track_id, f.packet.image_id) if r],
+                        ),
+                    )
+                )
+    for f in frames:  # frame + vehicles of other frames: is it the same situation?
+        for x in vehicles:
+            if x.packet.image_id != f.packet.image_id:
+                ranked.append(
+                    (
+                        55,
+                        Suggestion(
+                            text=f"{x.name} ile {f.packet.image_id} karesindeki araçlar arasında bağlantı var mı?",
+                            reason="bağlantı",
+                            refs=[x.v.ref, f.packet.image_id],
+                        ),
+                    )
+                )
+    # Fill with each item's own most urgent questions (below the connecting ones).
+    for it in items:
+        ranked += [(40 - i, s) for i, s in enumerate(context_suggestions([it], 2))]
+    return _top(ranked, limit, one_per_reason=True)
 
 
 def followups(

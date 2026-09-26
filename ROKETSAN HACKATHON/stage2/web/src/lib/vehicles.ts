@@ -1,7 +1,8 @@
-// What makes a vehicle worth a question, in the operator's words. Everything is read from the packet's risk
-// factors (computed in the backend); this file only names them.
+// Chat context items (vehicles and frames) and what makes a vehicle worth a question, in the operator's words.
+// Everything is read from the packet's risk factors (computed in the backend); this file only names them.
+import type { DragEvent as ReactDragEvent } from "react";
 import { dec } from "./format";
-import type { Vehicle, VehicleFocus } from "./types";
+import type { ChatItem, Level, Vehicle } from "./types";
 
 /** Short labels for a vehicle's anomalies, most urgent first. Empty = nothing unusual. */
 export function anomalies(v: Vehicle): string[] {
@@ -23,24 +24,47 @@ export function anomalies(v: Vehicle): string[] {
 export const anomalous = (vehicles: Vehicle[]) =>
   [...vehicles].filter((v) => anomalies(v).length > 0).sort((a, b) => b.score - a.score);
 
-export const toFocus = (imageId: string, v: Vehicle): VehicleFocus => ({
+export const vehicleItem = (imageId: string, v: Vehicle): ChatItem => ({
+  kind: "vehicle",
   image_id: imageId,
   ref: v.ref,
   track_id: v.track_id,
   label: v.label,
 });
 
-/** Drag-and-drop payload type (a custom type so only vehicle chips can be dropped on the chat). */
-export const DRAG_TYPE = "application/x-nobetci-vehicle";
+export const frameItem = (f: { image_id: string; level: Level; zone: string; capture_time: string }): ChatItem => ({
+  kind: "frame",
+  image_id: f.image_id,
+  level: f.level,
+  zone: f.zone,
+  capture_time: f.capture_time,
+});
 
-export function readDrag(dt: DataTransfer): VehicleFocus | null {
+/** Identity of an item in the context (no duplicates). */
+export const itemKey = (c: ChatItem) => (c.kind === "vehicle" ? `v:${c.image_id}:${c.ref}` : `f:${c.image_id}`);
+
+/** The chat can hold this many items; a new one pushes out the oldest. */
+export const MAX_CONTEXT = 4;
+
+/** Drag-and-drop payload type (a custom type so only chat items can be dropped on the chat). */
+export const DRAG_TYPE = "application/x-nobetci-item";
+
+export function startDrag(e: DragEvent | ReactDragEvent, item: ChatItem) {
+  e.dataTransfer?.setData(DRAG_TYPE, JSON.stringify(item));
+  e.dataTransfer?.setData("text/plain", item.kind === "vehicle" ? `${item.ref} ${item.track_id ?? ""}`.trim() : item.image_id);
+  if (e.dataTransfer) e.dataTransfer.effectAllowed = "copy";
+  document.body.classList.add("dragging-item");
+}
+export const endDrag = () => document.body.classList.remove("dragging-item");
+
+export function readDrag(dt: DataTransfer): ChatItem | null {
   try {
     const raw = dt.getData(DRAG_TYPE);
-    return raw ? (JSON.parse(raw) as VehicleFocus) : null;
+    return raw ? (JSON.parse(raw) as ChatItem) : null;
   } catch {
     return null;
   }
 }
 
-/** Put a vehicle into the chat without dragging (button / keyboard). App opens the chat. */
-export const focusChat = (f: VehicleFocus) => window.dispatchEvent(new CustomEvent("sentinel:chat-focus", { detail: f }));
+/** Put an item into the chat without dragging (button / keyboard). App adds it and opens the chat. */
+export const addToChat = (item: ChatItem) => window.dispatchEvent(new CustomEvent("sentinel:chat-add", { detail: item }));

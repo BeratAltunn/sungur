@@ -91,6 +91,18 @@ def test_chat_suggestions_endpoint(client):
     assert frame and {"text", "reason", "refs"} <= frame[0].keys()
     queue = client.get("/api/chat/suggestions").json()["suggestions"]
     assert queue and queue != frame
+    two = client.post(
+        "/api/chat/suggestions",
+        json={
+            "context": [
+                {"kind": "frame", "image_id": "img_000860"},
+                {"kind": "frame", "image_id": "img_006673"},
+            ]
+        },
+    ).json()["suggestions"]
+    assert any("img_000860" in x["text"] and "img_006673" in x["text"] for x in two)
+    bad = client.post("/api/chat/suggestions", json={"context": [{"kind": "zone", "image_id": "x"}]})
+    assert bad.status_code == 422
 
 
 def test_blind_labelling_endpoints(client, settings):

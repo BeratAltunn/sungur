@@ -14,6 +14,7 @@ import threading
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.encoders import jsonable_encoder
@@ -187,11 +188,18 @@ def evaluate_stream(image_id: str, live: bool = False):
     return StreamingResponse(lines(), media_type="application/x-ndjson")
 
 
+class ContextIn(BaseModel):
+    kind: Literal["vehicle", "frame"]
+    image_id: str
+    ref: str | None = None  # vehicle ref within image_id (V7)
+
+
 class ChatIn(BaseModel):
     question: str
     history: list[dict] = []
     image_id: str | None = None
-    vehicle_ref: str | None = None  # a vehicle of image_id dragged into the chat (V7)
+    vehicle_ref: str | None = None  # older single-vehicle form: a vehicle of image_id
+    context: list[ContextIn] = []  # what the operator put in the chat (≤ 4, extra items dropped)
 
 
 @app.post("/api/chat")
@@ -200,7 +208,8 @@ def chat(body: ChatIn) -> dict:
     q = body.question.strip()
     if not q:
         raise HTTPException(422, "soru boş")
-    turn, run_id = svc().chat(q[:2000], body.history[-8:], body.image_id, body.vehicle_ref)
+    ctx = [c.model_dump() for c in body.context]
+    turn, run_id = svc().chat(q[:2000], body.history[-8:], body.image_id, body.vehicle_ref, ctx)
     return {**turn.model_dump(), "run_id": run_id}
 
 
@@ -208,6 +217,18 @@ def chat(body: ChatIn) -> dict:
 def chat_suggestions(image_id: str | None = None, vehicle_ref: str | None = None) -> dict:
     """Questions for the current situation (rule-based, no LLM call)."""
     return {"suggestions": [s.model_dump() for s in svc().chat_suggestions(image_id, vehicle_ref)]}
+
+
+class SuggestIn(BaseModel):
+    image_id: str | None = None
+    context: list[ContextIn] = []
+
+
+@app.post("/api/chat/suggestions")
+def chat_suggestions_for(body: SuggestIn) -> dict:
+    """Questions for what the operator put together in the chat (several vehicles and frames)."""
+    ctx = [c.model_dump() for c in body.context]
+    return {"suggestions": [s.model_dump() for s in svc().chat_suggestions(body.image_id, context=ctx)]}
 
 
 class GoldIn(BaseModel):

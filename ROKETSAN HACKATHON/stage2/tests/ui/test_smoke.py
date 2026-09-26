@@ -198,5 +198,31 @@ def test_drag_vehicle_into_chat_changes_the_questions(page: Page):
     expect(page.locator(".msg-bot").last).to_contain_text("Kayıtlara göre")
     expect(page.get_by_label("Sıradaki sorular")).to_be_visible()  # follow-ups keep the loop going
     assert first not in page.locator(".quick").inner_text()
-    page.get_by_role("button", name="Araç odağını kaldır").click()
+    page.get_by_role("button", name=f"{ref} · T0122 bağlamdan çıkar").click()
     expect(page.locator(".chat-context")).not_to_contain_text("T0122")
+
+
+def test_two_alert_cards_in_the_chat_ask_to_compare(page: Page):
+    page.goto("/#/")
+    rows = page.locator("li.row")
+    expect(rows).to_have_count(40)
+    page.get_by_role("button", name=re.compile("^Sohbet")).click()
+    chat = page.locator(".chat")
+    a = rows.nth(0).locator(".row-sub .mono").first.inner_text()
+    b = rows.nth(1).locator(".row-sub .mono").first.inner_text()
+    # drag by the id line (a button inside the card cannot start a drag)
+    rows.nth(0).locator(".row-sub").drag_to(chat)
+    rows.nth(1).locator(".row-sub").drag_to(chat)
+    ctx = page.locator(".chat-context")
+    expect(ctx).to_contain_text(a)
+    expect(ctx).to_contain_text(b)
+    first = page.locator(".quick .suggestion").first
+    expect(first).to_contain_text(a)  # the questions now connect the two frames
+    expect(first).to_contain_text(b)
+    # the same card again is not added twice; "Sor" on a card is the no-drag way in
+    rows.nth(0).locator(".row-sub").drag_to(chat)
+    expect(ctx.locator(".ctx-pill")).to_have_count(2)
+    page.get_by_role("button", name=f"{b} bağlamdan çıkar").click()
+    expect(ctx).not_to_contain_text(b)
+    page.get_by_role("button", name=f"{b} karesini sohbete ekle").click()
+    expect(ctx).to_contain_text(b)

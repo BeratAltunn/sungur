@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, explain } from "../lib/api";
-import { LABEL_TR, dec, smooth, storage } from "../lib/format";
-import type { ChatTurn, Suggestion, VehicleFocus } from "../lib/types";
-import { DRAG_TYPE, readDrag } from "../lib/vehicles";
+import { LABEL_TR, LEVEL_ICON, dec, smooth, storage, zoneName } from "../lib/format";
+import type { ChatItem, ChatTurn, Suggestion } from "../lib/types";
+import { DRAG_TYPE, endDrag, itemKey, readDrag } from "../lib/vehicles";
 import { RefText } from "./ui";
 
 interface Msg {
@@ -11,7 +11,7 @@ interface Msg {
   turn?: ChatTurn;
   error?: boolean;
   imageId?: string | null;
-  vehicle?: string | null; // "V7 · T0122" when a vehicle was in focus
+  context?: string | null; // "V7 · T0122; img_006673": what was in the chat's context
 }
 
 const TOOL_TR: Record<string, string> = {
@@ -73,20 +73,27 @@ function Inline({ text }: { text: string }) {
   );
 }
 
-/** Chat with the evidence: the questions offered change with the situation (open frame, dragged vehicle,
- *  last answer). `imageId` is the page's frame (the selected one on the queue); `focus` a dragged vehicle. */
+/** Short label of a context item, as it appears in the conversation. */
+const itemLabel = (c: ChatItem) => (c.kind === "vehicle" ? `${c.ref}${c.track_id ? ` · ${c.track_id}` : ""}` : c.image_id);
+
+/** Chat with the evidence: the questions offered change with the situation (what the operator put in the
+ *  context, else the page's frame, else the queue) and with the last answer. */
 export function ChatPanel({
   open,
   onClose,
   imageId,
-  focus,
-  onFocus,
+  items,
+  onAdd,
+  onRemove,
+  onClear,
 }: {
   open: boolean;
   onClose: () => void;
   imageId: string | null;
-  focus: VehicleFocus | null;
-  onFocus: (f: VehicleFocus | null) => void;
+  items: ChatItem[];
+  onAdd: (item: ChatItem) => void;
+  onRemove: (key: string) => void;
+  onClear: () => void;
 }) {
   const [msgs, setMsgs] = useState<Msg[]>(() => storage.get<Msg[]>("chat", []));
   const [input, setInput] = useState("");
@@ -98,9 +105,10 @@ export function ChatPanel({
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  // A dragged vehicle brings its own frame; otherwise the page's frame; otherwise the whole queue.
-  const ctxImage = focus?.image_id ?? imageId;
-  const vehicleLabel = focus ? `${focus.ref}${focus.track_id ? ` · ${focus.track_id}` : ""}` : null;
+  // The page's frame stays the open one; with nothing open, the first item's frame is.
+  const ctxImage = imageId ?? items[0]?.image_id ?? null;
+  const ctxLabel = items.length ? items.map(itemLabel).join("; ") : null;
+  const ctxKey = items.map(itemKey).join("|");
 
   useEffect(() => storage.set("chat", msgs.slice(-40)), [msgs]);
   useEffect(() => {
@@ -108,7 +116,7 @@ export function ChatPanel({
   }, [msgs, pending]);
   useEffect(() => {
     if (open) inputRef.current?.focus();
-  }, [open, focus]);
+  }, [open, ctxKey]);
   useEffect(() => {
     if (pending === null) return;
     const h = window.setInterval(() => setElapsed(Math.round((Date.now() - pending) / 1000)), 500);
@@ -119,27 +127,28 @@ export function ChatPanel({
     if (!open) return;
     let alive = true;
     api
-      .suggestions(ctxImage, focus?.ref ?? null)
+      .suggestions(ctxImage, items)
       .then((r) => alive && setSituation(r.suggestions))
       .catch(() => alive && setSituation([]));
     return () => {
       alive = false;
     };
-  }, [open, ctxImage, focus?.ref]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, ctxImage, ctxKey]);
 
   const send = useCallback(
     async (question: string) => {
       const q = question.trim();
       if (!q || pending !== null) return;
       const history = msgs.filter((m) => !m.error).slice(-8).map(({ role, content }) => ({ role, content }));
-      setMsgs((m) => [...m, { role: "user", content: q, imageId: ctxImage, vehicle: vehicleLabel }]);
+      setMsgs((m) => [...m, { role: "user", content: q, imageId: ctxImage, context: ctxLabel }]);
       setInput("");
       setElapsed(0);
       setPending(Date.now());
       const ctrl = new AbortController();
       abortRef.current = ctrl;
       try {
-        const turn = await api.chat(q, history, ctxImage, focus?.ref ?? null, ctrl.signal);
+        const turn = await api.chat(q, history, ctxImage, items, ctrl.signal);
         setMsgs((m) => [...m, { role: "assistant", content: turn.answer, turn, error: turn.note === "llm_hata" }]);
       } catch (e) {
         const content = ctrl.signal.aborted ? "Soru iptal edildi." : `Soru yanıtlanamadı. ${explain(e)}`;
@@ -149,14 +158,14 @@ export function ChatPanel({
         setPending(null);
       }
     },
-    [msgs, pending, ctxImage, focus?.ref, vehicleLabel],
+    [msgs, pending, ctxImage, items, ctxLabel],
   );
 
   // Quick questions: the last answer's follow-ups (same context), else the situation questions; never one asked.
   const asked = new Set(msgs.filter((m) => m.role === "user").map((m) => m.content));
   const last = msgs[msgs.length - 1];
   const lastUser = [...msgs].reverse().find((m) => m.role === "user");
-  const sameCtx = !!lastUser && (lastUser.imageId ?? null) === ctxImage && (lastUser.vehicle ?? null) === vehicleLabel;
+  const sameCtx = !!lastUser && (lastUser.imageId ?? null) === ctxImage && (lastUser.context ?? null) === ctxLabel;
   const followups = last?.role === "assistant" && sameCtx ? (last.turn?.followups ?? []) : [];
   const quick = (followups.length ? followups : situation).filter((s) => !asked.has(s.text)).slice(0, 4);
 
@@ -195,12 +204,12 @@ export function ChatPanel({
         if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropping(false);
       }}
       onDrop={(e) => {
-        const f = readDrag(e.dataTransfer);
+        const item = readDrag(e.dataTransfer);
         setDropping(false);
-        document.body.classList.remove("dragging-vehicle");
-        if (!f) return;
+        endDrag();
+        if (!item) return;
         e.preventDefault();
-        onFocus(f);
+        onAdd(item);
       }}
     >
       <div className="chat-head">
@@ -227,8 +236,8 @@ export function ChatPanel({
         {msgs.map((m, i) =>
           m.role === "user" ? (
             <div key={i} className="msg msg-user">
-              {(m.imageId || m.vehicle) && (
-                <span className="muted small mono">{[m.imageId, m.vehicle].filter(Boolean).join(" · ")} · </span>
+              {(m.imageId || m.context) && (
+                <span className="muted small mono">{m.context ?? m.imageId} · </span>
               )}
               {m.content}
             </div>
@@ -312,21 +321,42 @@ export function ChatPanel({
         )}
       </div>
 
-      {dropping && <div className="chat-drop">Aracı bırakın: sorular bu araca göre değişir</div>}
+      {dropping && <div className="chat-drop">Bırakın: sorular bağlamdaki öğelere göre değişir</div>}
 
       <div className="chat-context" aria-label="Sohbet bağlamı">
         <span className="muted small">Bağlam:</span>
-        <span className="ctx-pill mono">{ctxImage ?? "tüm kareler"}</span>
-        {focus ? (
-          <span className="ctx-pill ctx-vehicle">
-            <b>{focus.ref}</b> {LABEL_TR[focus.label]}
-            {focus.track_id && <span className="mono"> · {focus.track_id}</span>}
-            <button className="ctx-clear" onClick={() => onFocus(null)} aria-label="Araç odağını kaldır">
-              ✕
-            </button>
-          </span>
+        {items.length === 0 ? (
+          <>
+            <span className="ctx-pill mono">{ctxImage ?? "tüm kareler"}</span>
+            <span className="muted small">araç ya da uyarı kartı sürükleyin (en fazla 4)</span>
+          </>
         ) : (
-          <span className="muted small">araç yok · bir aracı buraya sürükleyin</span>
+          <>
+            {items.map((c) => (
+              <span key={itemKey(c)} className={`ctx-pill ctx-${c.kind}`}>
+                {c.kind === "vehicle" ? (
+                  <>
+                    <b>{c.ref}</b> {LABEL_TR[c.label]}
+                    {c.track_id && <span className="mono"> · {c.track_id}</span>}
+                    <span className="muted mono"> · {c.image_id}</span>
+                  </>
+                ) : (
+                  <>
+                    <span aria-hidden>{LEVEL_ICON[c.level]}</span> <span className="mono">{c.image_id}</span>
+                    <span className="muted"> · {zoneName(c.zone)} {c.capture_time}</span>
+                  </>
+                )}
+                <button className="ctx-clear" onClick={() => onRemove(itemKey(c))} aria-label={`${itemLabel(c)} bağlamdan çıkar`}>
+                  ✕
+                </button>
+              </span>
+            ))}
+            {items.length > 1 && (
+              <button className="linklike" onClick={onClear}>
+                hepsini çıkar
+              </button>
+            )}
+          </>
         )}
       </div>
       <form
@@ -340,7 +370,15 @@ export function ChatPanel({
           ref={inputRef}
           rows={2}
           value={input}
-          placeholder={focus ? `${focus.ref} hakkında sorun… (Alt+1–4: hazır soru)` : ctxImage ? "Bu kare hakkında sorun… (Alt+1–4: hazır soru)" : "Bir soru sorun… (Alt+1–4: hazır soru)"}
+          placeholder={
+            items.length > 1
+              ? "Bu öğeler hakkında sorun… (Alt+1–4: hazır soru)"
+              : items.length === 1
+                ? `${itemLabel(items[0])} hakkında sorun… (Alt+1–4: hazır soru)`
+                : ctxImage
+                  ? "Bu kare hakkında sorun… (Alt+1–4: hazır soru)"
+                  : "Bir soru sorun… (Alt+1–4: hazır soru)"
+          }
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter" && !e.shiftKey) {

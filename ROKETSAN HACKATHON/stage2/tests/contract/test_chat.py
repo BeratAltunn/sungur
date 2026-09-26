@@ -135,3 +135,28 @@ def test_tool_specs_and_unknown_tool(svc):
     }
     with pytest.raises(ToolError):
         ChatTools(svc).call("rm_rf", {})
+
+
+def test_several_items_go_in_one_context_line(settings):
+    s = SentinelService(settings, llm=Scripted("Tamam."))
+    v = next(v for v in s.packet("img_000860").vehicles if v.track_id == "T0122")
+    ctx = [
+        {"kind": "vehicle", "image_id": "img_000860", "ref": v.ref},
+        {"kind": "frame", "image_id": "img_006673"},
+        {"kind": "frame", "image_id": "img_999999"},  # unknown: dropped
+        {"kind": "frame", "image_id": "img_006673"},  # duplicate: dropped
+    ]
+    turn, _ = s.chat("Bunlar arasında bağlantı var mı?", [], "img_000860", None, ctx)
+    user = [m for m in s.chat_agent.llm.seen[0] if m["role"] == "user"][-1]["content"]
+    assert (
+        user
+        == f"[Açık kare: img_000860]\n[Bağlam: {v.ref} · T0122 (img_000860); img_006673]\nBunlar arasında bağlantı var mı?"
+    )
+    assert turn.followups
+
+
+def test_context_is_capped(settings):
+    s = SentinelService(settings, use_llm=False)
+    frames = [m.image_id for m in s.repo.frames()][:6]
+    items = s._context(None, None, [{"kind": "frame", "image_id": f} for f in frames])
+    assert len(items) == 4

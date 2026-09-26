@@ -54,3 +54,47 @@ def test_followups_skip_a_question_asked_in_other_words(packet_860):
     assert not suggest._same_question(
         "R119 raporu neden kanıtla çelişiyor?", "R125 raporu neden kanıtla çelişiyor?"
     )
+
+
+def test_two_vehicles_get_questions_that_connect_them(packet_860):
+    a, b = [suggest.CtxVehicle(packet_860, v) for v in packet_860.vehicles if v.track_id][:2]
+    s = suggest.context_suggestions([a, b])
+    assert s and "birlikte hareket" in {x.reason for x in s}
+    assert all({a.name, b.name, a.v.ref, b.v.ref} & set(IDS.findall(x.text)) for x in s)  # about these two
+    for x in s:
+        assert not re.search(r"\d", IDS.sub("", x.text)), x.text
+
+
+def test_two_frames_of_one_zone_ask_what_changed(service):
+    p = service.packet("img_000860")
+    other = next(
+        m.image_id
+        for m in service.repo.frames()
+        if m.image_id != p.image_id and service.packet(m.image_id).frame.zone == p.frame.zone
+    )
+    s = suggest.context_suggestions([suggest.CtxFrame(p), suggest.CtxFrame(service.packet(other))])
+    reasons = {x.reason for x in s}
+    assert {"karşılaştırma", "aynı bölge"} <= reasons
+
+
+def test_vehicle_that_drove_through_another_frames_zone(service):
+    # a question is offered only when the vehicle's own track passed that frame's zone
+    for m in service.repo.frames():
+        for v in service.packet(m.image_id).vehicles:
+            passed = set(v.kinematics.zones_passed) if v.kinematics else set()
+            other = next(
+                (
+                    f.image_id
+                    for f in service.repo.frames()
+                    if f.image_id != m.image_id and service.packet(f.image_id).frame.zone in passed
+                ),
+                None,
+            )
+            if other:
+                items = [
+                    suggest.CtxVehicle(service.packet(m.image_id), v),
+                    suggest.CtxFrame(service.packet(other)),
+                ]
+                assert "bölgeden geçti" in {x.reason for x in suggest.context_suggestions(items)}
+                return
+    raise AssertionError("veride başka karenin bölgesinden geçen araç bulunamadı")

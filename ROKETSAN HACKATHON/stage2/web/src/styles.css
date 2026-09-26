@@ -637,7 +637,7 @@ a.btn-primary, a.btn-ok { color: var(--ink); }
 .vchip-ask { border: 1px solid var(--line-strong); background: var(--panel); color: var(--accent-text); border-radius: 6px; padding: 1px 8px; font-size: 12px; font-weight: 700; cursor: pointer; }
 .vchip-ask:hover { border-color: var(--accent); }
 .box-legend li.draggable { cursor: grab; }
-body.dragging-vehicle .chat-fab { outline: 2px dashed var(--accent); outline-offset: 4px; }
+body.dragging-item .chat-fab { outline: 2px dashed var(--accent); outline-offset: 4px; }
 .chat-dropping { box-shadow: inset 0 0 0 3px var(--accent), -12px 0 32px rgba(0,0,0,.35); }
 .chat-drop { margin: 0 16px 8px; padding: 10px 12px; border: 1px dashed var(--accent); border-radius: 8px; background: var(--raised); color: var(--text); font-size: 14px; text-align: center; }
 .chat-intro { margin: 0; }
@@ -660,3 +660,8 @@ body.dragging-vehicle .chat-fab { outline: 2px dashed var(--accent); outline-off
 .vchip-why { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .vchips { grid-template-columns: minmax(0, 1fr); min-width: 0; }
 .vchips-list { min-width: 0; }
+/* context basket: frames and vehicles in the chat */
+.card-actions { display: inline-flex; gap: 6px; margin-left: auto; }
+.cop .row[draggable="true"] { cursor: grab; }
+.ctx-frame { border-color: var(--line-strong); }
+.mk-frame[draggable="true"] { cursor: grab; }

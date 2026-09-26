@@ -10,6 +10,7 @@ import { DecisionPill, ErrorState, Kbd, LevelBadge, Loading, SummaryContext, Top
 import { api } from "../lib/api";
 import { LEVELS, LEVEL_ACTION, LEVEL_CLASS, LEVEL_ICON, dec, km, secs, storage, zoneName } from "../lib/format";
 import { LEVEL_VAR, token } from "../lib/theme";
+import { addToChat, endDrag, frameItem, startDrag } from "../lib/vehicles";
 import type { EvidencePacket, Health, Level, MapContext, ShiftSummary, TriageRow } from "../lib/types";
 
 /** An active alert: YÜKSEK/KRİTİK with no operator decision yet. These are the cards on top of the rail. */
@@ -206,6 +207,10 @@ export function TriagePage({
                     aria-label={`${r.level}, ${r.image_id}, ${zoneName(r.zone)}, ${r.capture_time}, üsse ${km(r.d_base_m)}, ${r.min_eta_min === null ? "yaklaşan yok" : `ETA yaklaşık ${dec(r.min_eta_min)} dakika`}${r.reports_contradicted ? `, ${r.reports_contradicted} rapor çelişiyor` : ""}${r.decision ? ", karar verildi" : ""}. ${r.headline}`}
                     onMouseEnter={() => setHover(r.image_id)}
                     onMouseLeave={() => setHover(null)}
+                    draggable
+                    onDragStart={(e) => startDrag(e, frameItem(r))}
+                    onDragEnd={endDrag}
+                    title="Sohbete sürükleyerek karşılaştırın"
                   >
                     {i < nAlerts ? (
                       <AlertCard r={r} isNew={!!replay.arrived && replay.isNew(r.image_id)} seen={viewed.has(r.image_id)} active={i === cursor} />
@@ -283,11 +288,25 @@ function AlertCard({ r, isNew, seen, active }: { r: TriageRow; isNew: boolean; s
           )}
           {isNew && <span className="tag tag-new">YENİ</span>}
         </span>
-        {active && (
-          <button className="btn btn-primary btn-sm" onClick={() => go(`/frame/${r.image_id}`)}>
-            Aç → <Kbd>Enter</Kbd>
+        {/* "Sor" stays at the right edge: "Aç" appears to its left when the card is selected (on mousedown),
+            so a first click on "Sor" never lands on a moved button. */}
+        <span className="card-actions">
+          {active && (
+            <button className="btn btn-primary btn-sm" onClick={() => go(`/frame/${r.image_id}`)}>
+              Aç → <Kbd>Enter</Kbd>
+            </button>
+          )}
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              addToChat(frameItem(r));
+            }}
+            aria-label={`${r.image_id} karesini sohbete ekle`}
+          >
+            Sor
           </button>
-        )}
+        </span>
       </div>
     </div>
   );
@@ -511,7 +530,12 @@ function OverviewMap({
         `mk mk-frame ${LEVEL_CLASS[f.level]}`,
         () => onSelectRef.current(f.image_id), // select (preview); double-click opens
       );
-      markers.current[f.image_id].getElement().addEventListener("dblclick", () => go(`/frame/${f.image_id}`));
+      const el = markers.current[f.image_id].getElement();
+      el.addEventListener("dblclick", () => go(`/frame/${f.image_id}`));
+      // frame markers can be dragged into the chat, like the alert cards
+      el.draggable = true;
+      el.addEventListener("dragstart", (e) => startDrag(e, frameItem(f)));
+      el.addEventListener("dragend", endDrag);
       markers.current[f.image_id].getElement().title = `${f.image_id} · ${zoneName(f.zone)} · ${f.capture_time} · ${f.level}`;
     }
     setReady((r) => r + 1);

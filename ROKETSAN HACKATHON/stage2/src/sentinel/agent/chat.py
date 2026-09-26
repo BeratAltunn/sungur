@@ -83,8 +83,10 @@ class ChatAgent:
         image_id: str | None = None,
         tracer: Tracer | None = None,
         focus: str | None = None,
+        context: str | None = None,
     ) -> ChatTurn:
-        """`focus`: the vehicle the operator dragged into the chat, e.g. "V7 · T0122" (ids only, no numbers)."""
+        """`focus`: the vehicle the operator dragged into the chat, e.g. "V7 · T0122" (ids only, no numbers).
+        `context`: several items put together, e.g. "V7 · T0122 (img_000860); img_006673"."""
         t0 = time.perf_counter()
         tracer = tracer or Tracer(None, "chat")
         if self.llm is None:
@@ -96,6 +98,8 @@ class ChatAgent:
 
         history = (history or [])[-self.history_limit :]
         user = question
+        if context:
+            user = f"[Bağlam: {context}]\n{user}"
         if focus:
             user = f"[Odak araç: {focus}]\n{user}"
         if image_id:

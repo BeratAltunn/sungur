@@ -367,10 +367,8 @@ export interface Suggestion {
   refs: string[];
 }
 
-/** A vehicle the operator drags into the chat: the frame and its ref; the track is resolved by the backend. */
-export interface VehicleFocus {
-  image_id: string;
-  ref: string;
-  track_id: string | null;
-  label: Label;
-}
+/** Something the operator put in the chat's context (dragged or "Sor"): a vehicle of a frame, or a frame.
+ *  Only kind, image_id and ref go to the backend; the rest is for display (tracks are resolved server-side). */
+export type ChatItem =
+  | { kind: "vehicle"; image_id: string; ref: string; track_id: string | null; label: Label }
+  | { kind: "frame"; image_id: string; level: Level; zone: string; capture_time: string };
