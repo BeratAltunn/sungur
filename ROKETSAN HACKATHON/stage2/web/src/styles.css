@@ -654,3 +654,9 @@ body.dragging-vehicle .chat-fab { outline: 2px dashed var(--accent); outline-off
 /* chat open on the queue: narrower rail and focus card so the map keeps a usable width */
 .shell.chat-open .triage.cop { grid-template-columns: minmax(300px, 340px) minmax(260px, 1fr) minmax(250px, 280px); gap: 10px; padding-left: 12px; padding-right: 12px; }
 @media (max-width: 1500px) { .shell.chat-open .triage.cop { grid-template-columns: minmax(300px, 340px) minmax(0, 1fr); } .shell.chat-open .cop .preview { grid-column: 1 / -1; height: auto; } }
+/* chips never overflow a narrow column: the reason text shortens, id and "Sor" stay whole */
+.vchip { max-width: 100%; min-width: 0; }
+.vchip-id, .vchip-ask { flex: none; }
+.vchip-why { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.vchips { grid-template-columns: minmax(0, 1fr); min-width: 0; }
+.vchips-list { min-width: 0; }
