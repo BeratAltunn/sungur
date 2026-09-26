@@ -69,9 +69,11 @@ Katman kuralı: `domain` hiçbir şeye bağlı değil; UI/CLI yalnızca `Sentine
 
 `make app` arayüzü derler (`web/dist`) ve FastAPI ile tek süreçte sunar: http://127.0.0.1:8000. İnternet gerekmez; altlık harita isteğe bağlıdır (haritadaki "Altlık" düğmesi).
 
-- **Triage:** nöbet devri kartı, risk sıralı kuyruk (bölge/seviye filtresi, "bakılmamışlar"), bölge haritası. <kbd>J</kbd>/<kbd>K</kbd> gez, <kbd>Enter</kbd> aç.
-- **Kare detayı:** brief (seviye → manşet → önerilen eylem → kanıt çipli bulgular → grounding rozeti), kutulu görüntü, 2 saatlik izlerle harita ve **zaman kaydırıcısı**, sekmeler: *Neden?* (faktör katkıları, taban kuralı), *Raporlar* (satıra tıkla → harita ve kaydırıcı rapor saatine gider), *Araçlar*, *Ajan izi*. Kararlar: Onayla (<kbd>A</kbd>), Seviyeyi değiştir (gerekçe zorunlu), Amire ilet (<kbd>E</kbd>, brief panoya kopyalanır), Geri al. <kbd>Space</kbd> oynat, <kbd>Esc</kbd> kuyruğa dön.
+- **Taktik ekran (triage):** üstte durum çubuğu (gizlilik bandı, saat, tesis tehdit durumu, alt sistemler) ve nöbet devri şeridi; solda risk sıralı uyarılar (arama, bölge/seviye/durum filtreleri), ortada bölge haritası (yalnızca kararsız KRİTİK kareler dolu renkte), sağda seçili karenin önizlemesi. Tek tıklama seçer; <kbd>J</kbd>/<kbd>K</kbd> gez, <kbd>Enter</kbd> ya da çift tıklama aç.
+- **Kare detayı:** brief (seviye → manşet → önerilen eylem → kanıt çipli bulgular → grounding rozeti), kutulu görüntü, 2 saatlik izlerle harita (araçlardan üsse tahmini varış vektörleri; üs dost dikdörtgen, araçlar kimliği belirsiz dört yaprak sembolü) ve **zaman kaydırıcısı**, sekmeler: *Neden?* (faktör katkıları, taban kuralı), *Raporlar* (satıra tıkla → harita ve kaydırıcı rapor saatine gider), *Araçlar*, *Ajan izi*. Kararlar: Onayla (<kbd>A</kbd>), Seviyeyi değiştir (gerekçe zorunlu), Amire ilet (<kbd>E</kbd>, brief panoya kopyalanır), Geri al. <kbd>Space</kbd> oynat, <kbd>Esc</kbd> kuyruğa dön.
 - **Canlı yeniden değerlendir:** tespit önbelleğini atlayıp 6 adımı yeniden çalıştırır (demodaki canlı çalıştırma).
+
+Görsel dil Astro UXDS koyu temasından (renk ve durum tokenleri, Roboto / Roboto Mono; `web/src/styles.css` başı). Durum renkleri dolgu ve sembolde kullanılır, metinler ≥ 6:1 kontrastlıdır (`tests/ui/test_contrast.py`).
 
 Arayüz hiçbir kanıt hesaplamaz; sayıların hepsi `EvidencePacket`'ten gelir. Kod: `web/src/pages` (ekranlar), `web/src/components` (parçalar), `web/src/lib` (API tipleri ve biçimlendirme). Geliştirirken `make app` açıkken `make dev-web` (:5173, anlık yenileme).
 
