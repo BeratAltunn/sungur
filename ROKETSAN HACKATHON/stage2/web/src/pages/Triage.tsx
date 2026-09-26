@@ -1,6 +1,7 @@
 import type { Map as MLMap, Marker } from "maplibre-gl";
-import { useContext, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { go } from "../App";
+import { LayerMenu, useLayers } from "../components/LayerMenu";
 import { MapView, fc, htmlMarker, line, setGeo } from "../components/MapView";
 import { LEVEL_LEGEND, VERDICT_LEGEND, baseSymbol } from "../lib/symbols";
 import { ReplayBar, useReplay } from "../components/Replay";
@@ -10,6 +11,10 @@ import { LEVELS, LEVEL_ACTION, LEVEL_CLASS, LEVEL_ICON, dec, km, secs, storage, 
 import { LEVEL_VAR, token } from "../lib/theme";
 import type { Health, Level, MapContext, ShiftSummary, TriageRow } from "../lib/types";
 
+/** An active alert: YÜKSEK/KRİTİK with no operator decision yet. These are the cards on top of the rail. */
+const isAlert = (r: TriageRow) => !r.decision && (r.level === "KRİTİK" || r.level === "YÜKSEK");
+const eta = (r: TriageRow) => (r.min_eta_min === null ? "yaklaşan yok" : `ETA ~${dec(r.min_eta_min)} dk`);
+
 export function TriagePage({ health, queue }: { health: Health | null; queue: TriageRow[] | null }) {
   const summary = useContext(SummaryContext);
   const [mapCtx, setMapCtx] = useState<MapContext | null>(null);
@@ -18,6 +23,7 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
   const [level, setLevel] = useState<Level | "">("");
   const [status, setStatus] = useState<Status>("");
   const [search, setSearch] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
   const [cursor, setCursor] = useState(0);
   const [hover, setHover] = useState<string | null>(null);
   const [showTip, setShowTip] = useState(() => !storage.get("tip_seen", false));
@@ -33,20 +39,21 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
   };
   useEffect(load, [queue]);
 
-  const rows = useMemo(
-    () =>
-      (queue ?? []).filter(
-        (r) =>
-          (!replay.arrived || replay.arrived.has(r.image_id)) &&
-          (!search.trim() || r.image_id.includes(search.trim().toLowerCase())) &&
-          (!zone || r.zone === zone) &&
-          (!level || r.level === level) &&
-          (status !== "unseen" || !viewed.has(r.image_id)) &&
-          (status !== "pending" || !r.decision) &&
-          (status !== "escalated" || r.decision?.action === "escalate"),
-      ),
-    [queue, zone, level, status, viewed, search, replay.arrived],
-  );
+  // Two layers in one list: active alerts first (backend risk order), then every other frame (same order).
+  const rows = useMemo(() => {
+    const shown = (queue ?? []).filter(
+      (r) =>
+        (!replay.arrived || replay.arrived.has(r.image_id)) &&
+        (!search.trim() || r.image_id.includes(search.trim().toLowerCase())) &&
+        (!zone || r.zone === zone) &&
+        (!level || r.level === level) &&
+        (status !== "unseen" || !viewed.has(r.image_id)) &&
+        (status !== "pending" || !r.decision) &&
+        (status !== "escalated" || r.decision?.action === "escalate"),
+    );
+    return [...shown.filter(isAlert), ...shown.filter((r) => !isAlert(r))];
+  }, [queue, zone, level, status, viewed, search, replay.arrived]);
+  const nAlerts = useMemo(() => rows.filter(isAlert).length, [rows]);
   useEffect(() => setCursor(0), [zone, level, status, search]);
 
   // J/K move, Enter opens: the queue is operated from the keyboard.
@@ -75,6 +82,8 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
 
   const zones = useMemo(() => [...new Set((queue ?? []).map((r) => r.zone))].sort(), [queue]);
   const decided = useMemo(() => new Set((queue ?? []).filter((r) => r.decision).map((r) => r.image_id)), [queue]);
+  const alerts = useMemo(() => new Set((queue ?? []).filter(isAlert).map((r) => r.image_id)), [queue]);
+  const nFilters = [zone, level, status].filter(Boolean).length;
 
   const selected = rows[cursor] ?? null;
 
@@ -90,9 +99,8 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
       {showTip && (
         <div className="tip" role="note">
           <span>
-            <strong>Nasıl kullanılır:</strong> Solda uyarılar risk sırasıyla; tıklayınca sağda önizleme açılır, <Kbd>Enter</Kbd>{" "}
-            kareyi açar. Karede önce brief, altında kanıt gelir; <em>Neden?</em> puanın kaynağını gösterir. Karar verince{" "}
-            <Kbd>N</Kbd> sonraki bekleyen kareye geçer.
+            <strong>Nasıl kullanılır:</strong> Solda karar bekleyen uyarılar kart olarak en üstte, diğer kareler altında.
+            Seçince sağda özeti açılır, <Kbd>Enter</Kbd> kareyi açar. Karar verince <Kbd>N</Kbd> sonraki bekleyene geçer.
           </span>
           <button
             className="btn btn-ghost"
@@ -106,15 +114,15 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
         </div>
       )}
 
-      {/* Common operational picture: alerts (left) · map (centre) · selected frame (right). */}
+      {/* Layers: alerts rail (what to act on) · map (where) · focus card (the selected frame, in brief). */}
       <main tabIndex={-1} className="triage cop">
         <section className="queue panel" aria-label="Uyarılar">
           <div className="panel-head">
             <h2>
-              Uyarılar{" "}
+              Aktif uyarılar{" "}
               <span className="muted small">
-                · {rows.length}
-                {replay.arrived ? " kare geldi" : " kare"}
+                · {nAlerts} karar bekliyor
+                {replay.arrived ? ` · ${rows.length} kare geldi` : ""}
               </span>
             </h2>
             <div className="filters">
@@ -126,29 +134,36 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
                 onChange={(e) => setSearch(e.target.value)}
                 aria-label="Kare ara"
               />
-              <select value={zone} onChange={(e) => setZone(e.target.value)} aria-label="Bölge">
-                <option value="">Tüm bölgeler</option>
-                {zones.map((z) => (
-                  <option key={z} value={z}>
-                    {zoneName(z)}
-                  </option>
-                ))}
-              </select>
-              <select value={level} onChange={(e) => setLevel(e.target.value as Level | "")} aria-label="Seviye">
-                <option value="">Tüm seviyeler</option>
-                {LEVELS.map((l) => (
-                  <option key={l} value={l}>
-                    {LEVEL_ICON[l]} {l}
-                  </option>
-                ))}
-              </select>
-              <select value={status} onChange={(e) => setStatus(e.target.value as Status)} aria-label="Durum">
-                <option value="">Tüm durumlar</option>
-                <option value="pending">Karar bekleyenler</option>
-                <option value="unseen">Bakılmamışlar</option>
-                <option value="escalated">Amire iletilenler</option>
-              </select>
+              <button className="btn btn-ghost btn-sm" aria-expanded={showFilters} onClick={() => setShowFilters((s) => !s)}>
+                Filtre{nFilters ? ` · ${nFilters}` : ""}
+              </button>
             </div>
+            {showFilters && (
+              <div className="filters filters-more">
+                <select value={zone} onChange={(e) => setZone(e.target.value)} aria-label="Bölge">
+                  <option value="">Tüm bölgeler</option>
+                  {zones.map((z) => (
+                    <option key={z} value={z}>
+                      {zoneName(z)}
+                    </option>
+                  ))}
+                </select>
+                <select value={level} onChange={(e) => setLevel(e.target.value as Level | "")} aria-label="Seviye">
+                  <option value="">Tüm seviyeler</option>
+                  {LEVELS.map((l) => (
+                    <option key={l} value={l}>
+                      {LEVEL_ICON[l]} {l}
+                    </option>
+                  ))}
+                </select>
+                <select value={status} onChange={(e) => setStatus(e.target.value as Status)} aria-label="Durum">
+                  <option value="">Tüm durumlar</option>
+                  <option value="pending">Karar bekleyenler</option>
+                  <option value="unseen">Bakılmamışlar</option>
+                  <option value="escalated">Amire iletilenler</option>
+                </select>
+              </div>
+            )}
           </div>
           {!queue ? (
             <Loading label="Kareler değerlendiriliyor" />
@@ -156,65 +171,37 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
             <div className="state">Bu filtreyle eşleşen kare yok.</div>
           ) : (
             <ol className="rows">
-              {rows.map((r, i) => (
-                <li
-                  key={r.image_id}
-                  data-row={i}
-                  className={`row ${i === cursor ? "row-cursor" : ""} ${viewed.has(r.image_id) ? "row-seen" : ""}`}
-                  onClick={() => setCursor(i)}
-                  onDoubleClick={() => go(`/frame/${r.image_id}`)}
-                  tabIndex={i === cursor ? 0 : -1}
-                  onFocus={() => setCursor(i)}
-                  aria-selected={i === cursor}
-                  aria-label={`${r.level}, ${r.image_id}, ${zoneName(r.zone)}, ${r.capture_time}, üsse ${km(r.d_base_m)}, ${r.min_eta_min === null ? "yaklaşan yok" : `ETA yaklaşık ${dec(r.min_eta_min)} dakika`}${r.reports_contradicted ? `, ${r.reports_contradicted} rapor çelişiyor` : ""}${r.decision ? ", karar verildi" : ""}. ${r.headline}`}
-                  onMouseEnter={() => setHover(r.image_id)}
-                  onMouseLeave={() => setHover(null)}
-                >
-                  <div className="row-level">
-                    <LevelBadge level={r.level} size="sm" tone={r.decision ? "quiet" : "auto"} />
-                    {r.decision && <DecisionPill decision={r.decision} />}
-                  </div>
-                  <div className="row-main">
-                    <div className="row-top">
-                      <span className="mono">{r.capture_time}</span>
-                      <span className="row-zone">{zoneName(r.zone)}</span>
-                      <span
-                        className={`mono row-eta ${r.min_eta_min === null ? "muted" : ""}`}
-                        title="Üsse yaklaşan araçlar arasında en kısa varış süresi"
-                      >
-                        {r.min_eta_min === null ? "yaklaşan yok" : `ETA ~${dec(r.min_eta_min)} dk`}
-                      </span>
-                    </div>
-                    <div className="row-sub">
-                      <span className="mono muted">{r.image_id}</span>
-                      <span className="mono muted" title="Kare merkezinin üsse mesafesi">
-                        {km(r.d_base_m)}
-                      </span>
-                      <span className="row-tags">
-                        {r.n_approaching > 0 && (
-                          <span className="tag" title={`${r.n_approaching} araç üsse yaklaşıyor`}>
-                            {r.n_approaching} yaklaşan
-                          </span>
-                        )}
-                        {r.n_heavy > 0 && (
-                          <span className="tag" title="Kamyon / otobüs">
-                            {r.n_heavy} ağır
-                          </span>
-                        )}
-                        {r.reports_contradicted > 0 && (
-                          <span className="verdict vd-bad" title="Kanıtla çelişen rapor">
-                            ✗{r.reports_contradicted}
-                          </span>
-                        )}
-                        {replay.arrived && replay.isNew(r.image_id) && <span className="tag tag-new">YENİ</span>}
-                        {!viewed.has(r.image_id) && <span className="unseen" title="Bakılmadı" />}
-                      </span>
-                    </div>
-                  </div>
-                  <span className="score mono" title="Risk skoru">
-                    {r.score}
-                  </span>
+              {nAlerts === 0 && (
+                <li className="rows-divider" role="presentation">
+                  Karar bekleyen YÜKSEK/KRİTİK uyarı yok
                 </li>
+              )}
+              {rows.map((r, i) => (
+                <Fragment key={r.image_id}>
+                  {i === nAlerts && nAlerts > 0 && (
+                    <li className="rows-divider" role="presentation">
+                      Diğer kareler · {rows.length - nAlerts}
+                    </li>
+                  )}
+                  <li
+                    data-row={i}
+                    className={`row ${i < nAlerts ? `row-card ${r.level === "KRİTİK" ? "row-card-crit" : ""}` : "row-compact"} ${i === cursor ? "row-cursor" : ""} ${viewed.has(r.image_id) ? "row-seen" : ""}`}
+                    onClick={() => setCursor(i)}
+                    onDoubleClick={() => go(`/frame/${r.image_id}`)}
+                    tabIndex={i === cursor ? 0 : -1}
+                    onFocus={() => setCursor(i)}
+                    aria-selected={i === cursor}
+                    aria-label={`${r.level}, ${r.image_id}, ${zoneName(r.zone)}, ${r.capture_time}, üsse ${km(r.d_base_m)}, ${r.min_eta_min === null ? "yaklaşan yok" : `ETA yaklaşık ${dec(r.min_eta_min)} dakika`}${r.reports_contradicted ? `, ${r.reports_contradicted} rapor çelişiyor` : ""}${r.decision ? ", karar verildi" : ""}. ${r.headline}`}
+                    onMouseEnter={() => setHover(r.image_id)}
+                    onMouseLeave={() => setHover(null)}
+                  >
+                    {i < nAlerts ? (
+                      <AlertCard r={r} isNew={!!replay.arrived && replay.isNew(r.image_id)} seen={viewed.has(r.image_id)} active={i === cursor} />
+                    ) : (
+                      <CompactRow r={r} isNew={!!replay.arrived && replay.isNew(r.image_id)} />
+                    )}
+                  </li>
+                </Fragment>
               ))}
             </ol>
           )}
@@ -235,6 +222,7 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
               selected={selected?.image_id ?? null}
               visible={replay.arrived}
               decided={decided}
+              alerts={alerts}
               onSelect={(id) => {
                 const i = rows.findIndex((r) => r.image_id === id);
                 if (i >= 0) setCursor(i);
@@ -253,6 +241,68 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
 }
 
 type Status = "" | "pending" | "unseen" | "escalated";
+
+/** Active alert: level and ETA first (the two facts that decide "now or later"), then where and what. */
+function AlertCard({ r, isNew, seen, active }: { r: TriageRow; isNew: boolean; seen: boolean; active: boolean }) {
+  return (
+    <div className="card-body">
+      <div className="card-top">
+        <LevelBadge level={r.level} size={r.level === "KRİTİK" ? "md" : "sm"} />
+        <span className={`mono card-eta ${r.min_eta_min === null ? "muted" : ""}`} title="Üsse yaklaşan araçlar arasında en kısa varış süresi">
+          {eta(r)}
+        </span>
+        {!seen && <span className="unseen" title="Bakılmadı" />}
+      </div>
+      <div className="row-sub">
+        <span className="mono">{r.image_id}</span>
+        <span className="muted">
+          {zoneName(r.zone)} · {r.capture_time} · {km(r.d_base_m)}
+        </span>
+      </div>
+      <p className="card-headline">{r.headline}</p>
+      <div className="card-foot">
+        <span className="row-tags">
+          {r.n_approaching > 0 && <span className="tag">{r.n_approaching} yaklaşan</span>}
+          {r.n_heavy > 0 && <span className="tag">{r.n_heavy} ağır</span>}
+          {r.reports_contradicted > 0 && (
+            <span className="verdict vd-bad" title="Kanıtla çelişen rapor">
+              ✗{r.reports_contradicted}
+            </span>
+          )}
+          {isNew && <span className="tag tag-new">YENİ</span>}
+        </span>
+        {active && (
+          <button className="btn btn-primary btn-sm" onClick={() => go(`/frame/${r.image_id}`)}>
+            Aç → <Kbd>Enter</Kbd>
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Everything else: one line, the decision (if any) instead of details. */
+function CompactRow({ r, isNew }: { r: TriageRow; isNew: boolean }) {
+  return (
+    <>
+      <div className="row-level">
+        <LevelBadge level={r.level} size="sm" tone={r.decision ? "quiet" : "outline"} />
+      </div>
+      <div className="row-main">
+        <div className="row-top">
+          <span className="mono">{r.capture_time}</span>
+          <span className="row-zone">{zoneName(r.zone)}</span>
+          <span className={`mono row-eta ${r.min_eta_min === null ? "muted" : ""}`}>{eta(r)}</span>
+        </div>
+        <div className="row-sub">
+          <span className="mono muted">{r.image_id}</span>
+          {r.decision && <DecisionPill decision={r.decision} />}
+          {isNew && <span className="tag tag-new">YENİ</span>}
+        </div>
+      </div>
+    </>
+  );
+}
 
 /** Measured in the product (decision log + frame openings), not assumed: see PROJECT_DESIGN §1.4, §1.6. */
 export function DecisionMetrics({ summary: s }: { summary: ShiftSummary }) {
@@ -277,16 +327,13 @@ export function DecisionMetrics({ summary: s }: { summary: ShiftSummary }) {
   );
 }
 
-/** Shift strip: counts, measured decision metrics and the duty-officer links (the most urgent frame is the
- *  default selection of the alert list, shown in the preview panel). */
+/** Shift line: the one number that matters (pending YÜKSEK/KRİTİK) up front; the rest behind "Ayrıntı". */
 function ShiftStrip({ summary, onReplay }: { summary: ShiftSummary; onReplay: () => void }) {
   return (
     <section className="shift" aria-label="Nöbet devri">
       <div className="shift-stats">
-        <span className="shift-title">Nöbet devri</span>
-        <span>
-          <strong>{summary.frames}</strong> kare · <strong>{summary.reports}</strong> rapor
-        </span>
+        <span className="shift-title">Nöbet</span>
+        <strong className={summary.awaiting_high ? "attn-text" : ""}>{summary.awaiting_high} YÜKSEK/KRİTİK karar bekliyor</strong>
         <span className="shift-levels">
           {LEVELS.map((l) => (
             <span key={l} className={`level ${LEVEL_CLASS[l]} level-sm`}>
@@ -294,11 +341,16 @@ function ShiftStrip({ summary, onReplay }: { summary: ShiftSummary; onReplay: ()
             </span>
           ))}
         </span>
-        <span className="muted">
-          {summary.contradicted_reports} rapor çelişiyor · {summary.decided} karar ·{" "}
-          <strong className={summary.awaiting_high ? "attn-text" : ""}>{summary.awaiting_high} YÜKSEK/KRİTİK karar bekliyor</strong>
-        </span>
-        <DecisionMetrics summary={summary} />
+        <details className="shift-more">
+          <summary>Ayrıntı</summary>
+          <div className="shift-more-body">
+            <span>
+              <strong>{summary.frames}</strong> kare · <strong>{summary.reports}</strong> rapor · {summary.contradicted_reports} rapor
+              çelişiyor · {summary.decided} karar
+            </span>
+            <DecisionMetrics summary={summary} />
+          </div>
+        </details>
         <span className="shift-links">
           <button className="btn btn-ghost btn-sm" onClick={onReplay} title="Günü simüle saatle oynat: kareler çekim saatinde kuyruğa düşer">
             Vardiyayı oynat
@@ -315,7 +367,7 @@ function ShiftStrip({ summary, onReplay }: { summary: ShiftSummary; onReplay: ()
   );
 }
 
-/** Selected alert, without opening it: what the queue row knows (all from the backend) + a thumbnail. */
+/** Focus card: the selected frame in brief (headline, action, three facts); the frame page has the evidence. */
 function Preview({ row: r }: { row: TriageRow | null }) {
   if (!r)
     return (
@@ -325,10 +377,6 @@ function Preview({ row: r }: { row: TriageRow | null }) {
     );
   return (
     <aside className="panel preview" aria-label="Seçili kare">
-      <div className="panel-head">
-        <h2>Seçili kare</h2>
-        <span className="mono muted small">skor {r.score}</span>
-      </div>
       <div className="preview-body">
         <div className="preview-head">
           <LevelBadge level={r.level} tone={r.decision ? "quiet" : "auto"} />
@@ -340,9 +388,6 @@ function Preview({ row: r }: { row: TriageRow | null }) {
             {zoneName(r.zone)} · {r.capture_time} · üsten {km(r.d_base_m)}
           </span>
         </div>
-        <button className="btn btn-primary preview-open" onClick={() => go(`/frame/${r.image_id}`)}>
-          Kareyi aç → <Kbd>Enter</Kbd>
-        </button>
         <p className="preview-headline">{r.headline}</p>
         <div className="action" role="note" style={{ ["--act" as string]: `var(${LEVEL_VAR[r.level]})` }}>
           <span className="action-label">Seviye eylemi</span>
@@ -361,11 +406,26 @@ function Preview({ row: r }: { row: TriageRow | null }) {
             <span className="verdict vd-bad">✗{r.reports_contradicted}</span>
           </dd>
         </dl>
-        <img className="preview-img" src={api.imageUrl(r.image_id)} alt={`${r.image_id} drone karesi (önizleme)`} loading="lazy" />
+        <button className="btn btn-primary preview-open" onClick={() => go(`/frame/${r.image_id}`)}>
+          Kareyi aç → <Kbd>Enter</Kbd>
+        </button>
+        <details className="preview-more">
+          <summary>Görüntü ve skor</summary>
+          <p className="muted small">Risk skoru {r.score} / 100</p>
+          <img className="preview-img" src={api.imageUrl(r.image_id)} alt={`${r.image_id} drone karesi (önizleme)`} loading="lazy" />
+        </details>
       </div>
     </aside>
   );
 }
+
+type OverviewLayer = "rings" | "zones" | "minor" | "decided";
+const OVERVIEW_LAYERS: { key: OverviewLayer; label: string }[] = [
+  { key: "rings", label: "Mesafe halkaları" },
+  { key: "zones", label: "Bölge adları" },
+  { key: "minor", label: "DÜŞÜK / ORTA kareler" },
+  { key: "decided", label: "Karar verilmiş kareler" },
+];
 
 function OverviewMap({
   ctx,
@@ -373,6 +433,7 @@ function OverviewMap({
   selected,
   visible,
   decided,
+  alerts,
   onSelect,
 }: {
   ctx: MapContext;
@@ -380,14 +441,20 @@ function OverviewMap({
   selected: string | null;
   visible: Set<string> | null;
   decided: Set<string>;
+  alerts: Set<string>;
   onSelect: (imageId: string) => void;
 }) {
   const onSelectRef = useRef(onSelect);
   onSelectRef.current = onSelect;
+  const mapRef = useRef<MLMap | null>(null);
   const markers = useRef<Record<string, Marker>>({});
+  const zoneMarkers = useRef<Marker[]>([]);
   const [ready, setReady] = useState(0); // markers exist only after the map loads
+  const { layers, toggle } = useLayers<OverviewLayer>("layers_overview", { rings: true, zones: true, minor: true, decided: true });
   const onReady = (map: MLMap) => {
+    mapRef.current = map;
     Object.values(markers.current).forEach((m) => m.remove());
+    zoneMarkers.current.forEach((m) => m.remove());
     markers.current = {};
     setGeo(map, "rings", fc(ctx.rings.map((r) => line(r.ring, { km: r.km }))));
     if (!map.getLayer("rings"))
@@ -398,7 +465,7 @@ function OverviewMap({
         paint: { "line-color": token("--line-strong"), "line-width": 1, "line-dasharray": [3, 3] },
       });
     htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base");
-    for (const z of ctx.zones) htmlMarker(map, z.center, z.label, "mk mk-zone");
+    zoneMarkers.current = ctx.zones.map((z) => htmlMarker(map, z.center, z.label, "mk mk-zone"));
     for (const f of ctx.frames) {
       markers.current[f.image_id] = htmlMarker(
         map,
@@ -418,7 +485,7 @@ function OverviewMap({
       m.getElement().classList.toggle("mk-selected", id === selected);
     }
   }, [hover, selected, ready]);
-  // Visual quiet: undecided KRİTİK frames are filled; decided ones recede.
+  // Visual hierarchy: active alerts are full size (KRİTİK filled), other frames are small, decided ones recede.
   useEffect(() => {
     for (const f of ctx.frames) {
       const el = markers.current[f.image_id]?.getElement();
@@ -426,13 +493,31 @@ function OverviewMap({
       const done = decided.has(f.image_id);
       el.classList.toggle("mk-quiet", done);
       el.classList.toggle("mk-attn", !done && f.level === "KRİTİK");
+      el.classList.toggle("mk-minor", !alerts.has(f.image_id));
     }
-  }, [decided, ctx, ready]);
-  // Replay: only frames that have arrived by the simulated clock.
+  }, [decided, alerts, ctx, ready]);
+  // Layers + replay: a frame is shown if it has arrived and its layer is on; the selected frame always shows.
   useEffect(() => {
-    for (const [id, m] of Object.entries(markers.current)) m.getElement().style.display = !visible || visible.has(id) ? "" : "none";
-  }, [visible, ready]);
-  return <MapView className="overview-map" onReady={onReady} initial={{ center: ctx.base.center, zoom: 11.6 }} />;
+    const map = mapRef.current;
+    if (map?.getLayer("rings")) map.setLayoutProperty("rings", "visibility", layers.rings ? "visible" : "none");
+    zoneMarkers.current.forEach((m) => (m.getElement().style.display = layers.zones ? "" : "none"));
+    for (const f of ctx.frames) {
+      const el = markers.current[f.image_id]?.getElement();
+      if (!el) continue;
+      const arrived = !visible || visible.has(f.image_id);
+      const hiddenByLayer =
+        (!layers.decided && decided.has(f.image_id)) || (!layers.minor && (f.level === "DÜŞÜK" || f.level === "ORTA"));
+      el.style.display = arrived && (!hiddenByLayer || f.image_id === selected) ? "" : "none";
+    }
+  }, [visible, layers, decided, selected, ctx, ready]);
+  return (
+    <MapView
+      className="overview-map"
+      onReady={onReady}
+      initial={{ center: ctx.base.center, zoom: 11.6 }}
+      controls={<LayerMenu defs={OVERVIEW_LAYERS} layers={layers} onToggle={toggle} />}
+    />
+  );
 }
 
 /** Legend from the symbol vocabulary (lib/symbols.ts): levels with their action, then report verdicts. */

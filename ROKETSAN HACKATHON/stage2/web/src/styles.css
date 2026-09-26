@@ -205,7 +205,7 @@ select, input[type="text"], input[type="search"], input:not([type]) {
 /* ---------- map ---------- */
 .map-wrap { position: relative; height: 100%; }
 .map { position: absolute; inset: 0; border-radius: 0 0 var(--radius) var(--radius); overflow: hidden; }
-.map-toggle { position: absolute; left: 10px; top: 10px; z-index: 2; background: var(--overlay); border: 1px solid var(--line-strong); border-radius: 6px; padding: 3px 9px; font-size: 12px; cursor: pointer; color: var(--text-2); }
+.map-toggle { background: var(--overlay); border: 1px solid var(--line-strong); border-radius: 6px; padding: 3px 9px; font-size: 12px; cursor: pointer; color: var(--text-2); }
 .maplibregl-ctrl-group { background: var(--raised) !important; }
 .maplibregl-ctrl-group button span { filter: invert(1); }
 .maplibregl-ctrl-scale { background: var(--overlay) !important; color: var(--text-2) !important; border-color: var(--text-2) !important; }
@@ -578,3 +578,48 @@ a.btn-primary, a.btn-ok { color: var(--ink); }
   .cop .overview-map { min-height: 420px; }
 }
 .legend-verdict { display: inline-flex; gap: 4px; align-items: center; font-size: 12px; color: var(--text-2); }
+
+/* ---------- layered triage (L1 alerts rail · L0 map · L2 focus card) ---------- */
+/* L1: active alerts are cards, everything else is one compact line under a divider. */
+.cop .row-card { display: block; padding: 10px 12px; margin: 0 0 8px; border: 1px solid var(--line-strong); background: var(--raised); }
+.cop .row-card-crit { border-left: 4px solid var(--lv-crit); }
+.cop .row-card.row-cursor, .cop .row-card[aria-selected="true"] { border-color: var(--accent); }
+.cop .row-card-crit.row-cursor, .cop .row-card-crit[aria-selected="true"] { border-left-color: var(--lv-crit); }
+.card-body { display: grid; gap: 4px; }
+.card-top { display: flex; align-items: center; gap: 10px; }
+.card-eta { font-size: 18px; font-weight: 700; color: var(--text); }
+.row-card-crit .card-eta { font-size: 20px; }
+.card-eta.muted { font-size: 14px; font-weight: 400; color: var(--muted); }
+.card-top .unseen { margin-left: auto; }
+.card-headline { margin: 2px 0 0; font-size: 14px; line-height: 1.4; color: var(--text); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.row-seen .card-headline { color: var(--text-2); }
+.card-foot { display: flex; align-items: center; gap: 8px; justify-content: space-between; min-height: 26px; }
+.cop .row-compact { padding: 4px 8px; gap: 10px; }
+.cop .row-compact .row-top { font-size: 13px; }
+.cop .row-compact .row-sub { font-size: 12px; }
+.rows-divider { list-style: none; margin: 10px 4px 4px; padding-top: 8px; border-top: 1px solid var(--line); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.cop .filters { display: flex; gap: 6px; }
+.cop .filters .search { flex: 1; }
+.cop .filters-more { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+
+/* one-line shift bar; details open as a small panel */
+.shift { padding: 8px 16px; }
+.shift-stats { flex-wrap: wrap; row-gap: 6px; }
+.shift-more { position: relative; }
+.shift-more summary { cursor: pointer; color: var(--text-2); font-size: 14px; }
+.shift-more-body { position: absolute; z-index: 25; top: calc(100% + 6px); left: 0; min-width: 420px; display: grid; gap: 6px; padding: 10px 14px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+
+/* L2: focus card, details on demand */
+.preview-more summary { cursor: pointer; color: var(--text-2); font-size: 14px; }
+.preview-more .preview-img { margin-top: 6px; }
+
+/* L0: map layers. Non-alert frames are small so the alerts stand out. */
+.map-controls { position: absolute; left: 10px; top: 10px; z-index: 3; display: flex; gap: 6px; align-items: flex-start; }
+.layer-menu { position: relative; }
+.layer-list { position: absolute; top: calc(100% + 4px); left: 0; margin: 0; padding: 8px 10px; list-style: none; display: grid; gap: 4px; min-width: 210px; background: var(--panel); border: 1px solid var(--line-strong); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(0,0,0,.4); }
+.layer-list .check { font-size: 13px; }
+.mk-frame.mk-minor { width: 18px; height: 18px; font-size: 9px; border-width: 1.5px; }
+/* YÜKSEK cards stay one step quieter than KRİTİK: smaller ETA, one-line headline */
+.cop .row-card:not(.row-card-crit) { padding: 8px 12px; }
+.row-card:not(.row-card-crit) .card-eta { font-size: 16px; }
+.row-card:not(.row-card-crit) .card-headline { -webkit-line-clamp: 1; }

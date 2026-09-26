@@ -161,7 +161,7 @@ export function TopBar({ health, left, blind = false }: { health: Health | null;
   return (
     <header className="topbar" ref={ref}>
       <div className="classification" role="note">
-        TASNİF DIŞI · DEMO VERİSİ
+        TASNİF DIŞI
       </div>
       <div className="topbar-row">
         <button className="skip" onClick={() => document.querySelector<HTMLElement>("main")?.focus()}>

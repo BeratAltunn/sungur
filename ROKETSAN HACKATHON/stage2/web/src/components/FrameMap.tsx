@@ -5,10 +5,19 @@ import { QUATREFOIL, baseSymbol, vehicleSymbol } from "../lib/symbols";
 import { levelColor, token } from "../lib/theme";
 import { bounds, circle, fullPath, pathUntil, positionAt } from "../lib/geo";
 import type { FrameInfo, FrameTracks, LngLat, MapContext, ReportVerification, TrackPath } from "../lib/types";
+import { LayerMenu, useLayers } from "./LayerMenu";
 import { MapView, fc, htmlMarker, line, polygon, setGeo } from "./MapView";
 import { RefText, VerdictBadge } from "./ui";
 
 export type Focus = { kind: "track"; id: string } | { kind: "report"; id: string } | null;
+
+type FrameLayer = "others" | "pins" | "projections" | "rings";
+const FRAME_LAYERS: { key: FrameLayer; label: string }[] = [
+  { key: "others", label: "Diğer izler (raporla ilgili, tespitsiz)" },
+  { key: "pins", label: "Rapor işaretleri" },
+  { key: "projections", label: "Tahmini varış çizgileri" },
+  { key: "rings", label: "Mesafe halkaları" },
+];
 
 interface Props {
   ctx: MapContext;
@@ -33,6 +42,7 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
         ? token("--muted")
         : token("--line-strong");
   const mapRef = useRef<MLMap | null>(null);
+  const { layers, toggle } = useLayers<FrameLayer>("layers_frame", { others: true, pins: true, projections: true, rings: true });
   const vehicleMarkers = useRef<Record<string, Marker>>({});
   const pinMarkers = useRef<Record<string, Marker>>({});
   const [ready, setReady] = useState(0);
@@ -41,6 +51,9 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
 
   const focusedTrack = focus?.kind === "track" ? focus.id : null;
   const pin = focus?.kind === "report" ? data.report_pins.find((p) => p.report_id === focus.id) ?? null : null;
+  // Layer "others" hides tracks that are not this frame's vehicles; a focused track or report's tracks always show.
+  const trackShown = (tr: TrackPath) =>
+    layers.others || tr.role === "vehicle" || tr.track_id === focusedTrack || !!pin?.related_tracks.includes(tr.track_id);
 
   const fitAll = () => {
     const map = mapRef.current;
@@ -127,13 +140,13 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
     setGeo(
       map,
       "paths-full",
-      fc(data.tracks.map((tr) => line(fullPath(tr.points), { color: trackColor(tr) }))),
+      fc(data.tracks.filter(trackShown).map((tr) => line(fullPath(tr.points), { color: trackColor(tr) }))),
     );
     setGeo(
       map,
       "paths-sofar",
       fc(
-        data.tracks.map((tr) =>
+        data.tracks.filter(trackShown).map((tr) =>
           line(pathUntil(tr.points, t), {
             color: tr.track_id === focusedTrack ? token("--text") : trackColor(tr),
             width: tr.track_id === focusedTrack ? 4 : tr.role === "vehicle" ? 2.5 : 1.5,
@@ -145,7 +158,7 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
       const m = vehicleMarkers.current[tr.track_id];
       const pos = positionAt(tr.points, t);
       const el = m.getElement();
-      el.style.display = pos ? "" : "none";
+      el.style.display = pos && trackShown(tr) ? "" : "none";
       if (pos) m.setLngLat(pos);
       el.classList.toggle("mk-focus", tr.track_id === focusedTrack || !!pin?.related_tracks.includes(tr.track_id));
     }
@@ -162,14 +175,18 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
       setGeo(map, "report-circle", fc([]));
       setGeo(map, "links", fc([]));
     }
-    for (const [id, m] of Object.entries(pinMarkers.current)) m.getElement().classList.toggle("mk-focus", id === pin?.report_id);
+    for (const [id, m] of Object.entries(pinMarkers.current)) {
+      m.getElement().classList.toggle("mk-focus", id === pin?.report_id);
+      m.getElement().style.display = layers.pins || id === pin?.report_id ? "" : "none";
+    }
+    if (map.getLayer("rings")) map.setLayoutProperty("rings", "visibility", layers.rings ? "visible" : "none");
     // Projection is from the capture moment: shown only when the slider is there.
     const atCapture = t >= data.window.end;
     setGeo(
       map,
       "projections",
       fc(
-        atCapture
+        atCapture && layers.projections
           ? data.projections.map((p) =>
               line([[p.lon, p.lat], ctx.base.center], { color: blind ? token("--text-2") : levelColor(p.level) }),
             )
@@ -177,7 +194,8 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
       ),
     );
 
-  }, [t, focusedTrack, pin, data, ready, blind, ctx]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t, focusedTrack, pin, data, ready, blind, ctx, layers]);
 
   // Focusing a report frames the pin and its vehicles so the gap is visible at a glance.
   useEffect(() => {
@@ -194,7 +212,11 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
 
   return (
     <div className="frame-map">
-      <MapView onReady={onReady} initial={{ center: [frame.center_lon, frame.center_lat], zoom: 13 }} />
+      <MapView
+        onReady={onReady}
+        initial={{ center: [frame.center_lon, frame.center_lat], zoom: 13 }}
+        controls={<LayerMenu defs={FRAME_LAYERS} layers={layers} onToggle={toggle} />}
+      />
       {/* Projection readout (HUD): the soonest arrival, first in the backend's order; vectors are on the map. */}
       {data.projections.length > 0 && (
         <div className={`map-hud ${t >= data.window.end ? "" : "map-hud-off"}`} role="status">

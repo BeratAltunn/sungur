@@ -1,7 +1,7 @@
 import maplibregl, { type Map as MLMap, type StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Feature, FeatureCollection } from "geojson";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { storage } from "../lib/format";
 import { token } from "../lib/theme";
 
@@ -31,9 +31,11 @@ interface Props {
   /** Called once the style is loaded, and again after the basemap is toggled (style reset). */
   onReady: (map: MLMap) => void;
   initial: { center: [number, number]; zoom: number };
+  /** Extra controls next to the basemap toggle (e.g. the layer menu). */
+  controls?: ReactNode;
 }
 
-export function MapView({ className, onReady, initial }: Props) {
+export function MapView({ className, onReady, initial, controls }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
   const readyRef = useRef(onReady);
@@ -71,9 +73,12 @@ export function MapView({ className, onReady, initial }: Props) {
   return (
     <div className={`map-wrap ${className ?? ""}`}>
       <div ref={el} className="map" />
-      <button className="map-toggle" onClick={toggle} title="Altlık harita internet gerektirir">
-        {basemap ? "Altlık: açık" : "Altlık: kapalı"}
-      </button>
+      <div className="map-controls">
+        <button className="map-toggle" onClick={toggle} title="Altlık harita internet gerektirir">
+          {basemap ? "Altlık: açık" : "Altlık: kapalı"}
+        </button>
+        {controls}
+      </div>
     </div>
   );
 }
