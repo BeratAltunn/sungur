@@ -1,7 +1,7 @@
-import type { Map as MLMap, Marker } from "maplibre-gl";
+import type { MapLayerMouseEvent, Map as MLMap, Marker } from "maplibre-gl";
 import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { go } from "../App";
-import { MapView, fc, htmlMarker, line, setGeo } from "../components/MapView";
+import { MapView, fc, htmlMarker, line, polygon, setGeo } from "../components/MapView";
 import { grid } from "../lib/geo";
 import { baseSymbol, classSymbol } from "../lib/symbols";
 import { ReplayBar, useReplay } from "../components/Replay";
@@ -486,6 +486,7 @@ function OverviewMap({
   const markers = useRef<Record<string, Marker>>({});
   const arrows = useRef<Record<string, Marker>>({}); // heading arrows, laid on the map plane
   const mapRef = useRef<MLMap | null>(null);
+  const footprintHandlers = useRef<MLMap | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(0); // markers exist only after the map loads
   const [pos, setPos] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
@@ -513,6 +514,55 @@ function OverviewMap({
         source: "rings",
         paint: { "line-color": "#5b7ea3", "line-width": 1.25, "line-dasharray": [3, 3] }, // readable on the terrain texture too
       });
+    // Frame footprints: each frame's real ground coverage, coloured by level (filled in by the effect below)
+    setGeo(map, "frame-footprints", fc([]));
+    if (!map.getLayer("frame-footprints-fill")) {
+      map.addLayer({
+        id: "frame-footprints-fill",
+        type: "fill",
+        source: "frame-footprints",
+        paint: { "fill-color": ["get", "color"], "fill-opacity": ["get", "opacity"] },
+      });
+      map.addLayer({
+        id: "frame-footprints-line",
+        type: "line",
+        source: "frame-footprints",
+        paint: { "line-color": ["get", "outlineColor"], "line-width": ["get", "lineWidth"], "line-opacity": ["get", "lineOpacity"] },
+      });
+    }
+    // Road corridors: true-scale paths from the base through each zone's frame centres (from /api/map)
+    setGeo(map, "roads", fc(ctx.zones.filter((z) => z.path && z.path.length > 1).map((z) => line(z.path!, { name: z.name }))));
+    if (!map.getLayer("roads-casing")) {
+      map.addLayer({ id: "roads-casing", type: "line", source: "roads", paint: { "line-color": "#0b1320", "line-width": 4.5, "line-opacity": 0.85 } });
+      map.addLayer({
+        id: "roads-line",
+        type: "line",
+        source: "roads",
+        paint: { "line-color": "#475569", "line-width": 2, "line-dasharray": [4, 2], "line-opacity": 0.8 },
+      });
+      map.addLayer({
+        id: "roads-active",
+        type: "line",
+        source: "roads",
+        filter: ["==", "name", ""],
+        paint: { "line-color": "#38bdf8", "line-width": 3.5, "line-opacity": 0.95 },
+      });
+    }
+    // Layer handlers live on the map, not the layer: bind them once per map, not on every style reload.
+    if (footprintHandlers.current !== map) {
+      footprintHandlers.current = map;
+      const imageId = (e: MapLayerMouseEvent) => e.features?.[0]?.properties?.image_id as string | undefined;
+      map.on("click", "frame-footprints-fill", (e) => {
+        const id = imageId(e);
+        if (id) cb.current.onSelect(id);
+      });
+      map.on("dblclick", "frame-footprints-fill", (e) => {
+        const id = imageId(e);
+        if (id) go(`/frame/${id}`);
+      });
+      map.on("mouseenter", "frame-footprints-fill", () => (map.getCanvas().style.cursor = "pointer"));
+      map.on("mouseleave", "frame-footprints-fill", () => (map.getCanvas().style.cursor = ""));
+    }
     htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base");
     for (const z of ctx.zones) htmlMarker(map, z.center, z.label, "mk mk-zone");
     // Arrows first (painted on the ground, under the upright icons); same point as the frame, so they tilt and
@@ -572,6 +622,34 @@ function OverviewMap({
       }
     }
   }, [rows, ctx, decided, viewed, isNew, ready]);
+
+  // Footprints follow the filtered rows, selection, hover and decisions; the selected (or hovered) frame's road
+  // corridor is highlighted.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !map.getSource("frame-footprints")) return;
+    const visible = new Set(rows.map((r) => r.image_id));
+    const hover = shown !== selected ? shown : null;
+    const features = ctx.frames
+      .filter((f) => visible.has(f.image_id))
+      .map((f) => {
+        const isSel = f.image_id === selected;
+        const isHov = f.image_id === hover;
+        const isDec = decided.has(f.image_id);
+        const color = isDec ? "#64748b" : LEVEL_COLOR[f.level];
+        return polygon([...f.corners, f.corners[0]], {
+          image_id: f.image_id,
+          color,
+          opacity: isSel ? 0.35 : isHov ? 0.25 : isDec ? 0.04 : f.level === "KRİTİK" ? 0.2 : 0.08,
+          outlineColor: isSel ? "#ffffff" : isHov ? "#e2e8f0" : color,
+          lineWidth: isSel ? 2.5 : isHov ? 2 : isDec ? 1 : 1.5,
+          lineOpacity: isDec ? 0.4 : 0.9,
+        });
+      });
+    setGeo(map, "frame-footprints", fc(features));
+    const active = ctx.frames.find((f) => f.image_id === (selected ?? hover))?.zone ?? "";
+    if (map.getLayer("roads-active")) map.setFilter("roads-active", ["==", "name", active]);
+  }, [rows, selected, shown, decided, ready, ctx]);
 
   // Roving focus: the map is one Tab stop; J/K move the selection and, if a marker has focus, the focus too.
   useEffect(() => {

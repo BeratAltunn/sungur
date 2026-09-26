@@ -235,7 +235,7 @@ select, input[type="text"], input[type="search"], input:not([type]) {
 
 .mk { font: 12px/1.2 var(--font); white-space: nowrap; }
 .mk-base { color: var(--text); display: flex; gap: 4px; align-items: center; text-shadow: 0 1px 3px #000; }
-.mk-zone { color: var(--muted); font-size: 12px; letter-spacing: .04em; text-transform: uppercase; text-shadow: 0 1px 2px #000; }
+.mk-zone { color: var(--text-2); font-size: 11px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; background: rgba(15, 23, 42, 0.82); border: 1px solid rgba(148, 163, 184, 0.3); padding: 2px 7px; border-radius: 4px; pointer-events: none; backdrop-filter: blur(2px); }
 .mk-frame { width: 32px; height: 26px; --mk-bg: rgb(16,25,35); display: grid; place-items: center; border-radius: 4px; border: 2px solid var(--lvc); background: rgba(16,25,35,.9); cursor: pointer; font-size: 12px; font-weight: 800; }
 .mk-frame.mk-hover, .mk-frame:hover { width: 42px; height: 34px; font-size: 15px; box-shadow: 0 0 0 3px rgba(255,255,255,.25); z-index: 5; } /* size, not transform: MapLibre owns the marker transform */
 .mk-veh { z-index: 4; display: flex; align-items: center; gap: 3px; cursor: pointer; }
@@ -274,6 +274,8 @@ select, input[type="text"], input[type="search"], input:not([type]) {
 .image-box { position: relative; width: 100%; border-radius: 8px; overflow: hidden; background: #000; }
 .image-box img, .image-box svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .image-box img { object-fit: fill; }
+.image-badge-hud { position: absolute; top: 8px; right: 8px; background: rgba(8, 12, 17, 0.85); border: 1px solid var(--line); border-radius: 5px; padding: 3px 8px; font-size: 11px; color: var(--text); z-index: 2; pointer-events: none; backdrop-filter: blur(4px); display: flex; align-items: center; gap: 4px; }
+.image-badge-hud .hud-sep { color: var(--text-2); }
 .box { cursor: pointer; }
 .box-label { font: 700 15px var(--mono); paint-order: stroke; stroke: #000; stroke-width: 4px; }
 .box-legend { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 3px; font-size: 13px; color: var(--text-2); }

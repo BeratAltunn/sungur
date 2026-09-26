@@ -263,7 +263,13 @@ export type LngLat = [number, number];
 
 export interface MapContext {
   base: { name: string; center: LngLat };
-  zones: { name: string; label: string; center: LngLat }[];
+  zones: {
+    name: string;
+    label: string;
+    center: LngLat;
+    theoretical_center?: LngLat;
+    path?: LngLat[];
+  }[];
   rings: { km: number; ring: LngLat[] }[];
   frames: {
     image_id: string;
@@ -271,6 +277,7 @@ export interface MapContext {
     zone: string;
     level: Level;
     score: number;
+    d_base_m?: number;
     center: LngLat;
     corners: LngLat[];
     /** Lead moving vehicle's heading/speed from its kinematics (backend); null when nothing moves. */

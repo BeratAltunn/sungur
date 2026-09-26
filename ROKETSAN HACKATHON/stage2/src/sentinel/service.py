@@ -397,6 +397,7 @@ class SentinelService:
                     "zone": p.frame.zone,
                     "level": p.risk.level.value,
                     "score": p.risk.score,
+                    "d_base_m": p.frame.d_base_m,
                     "center": [p.frame.center_lon, p.frame.center_lat],
                     "corners": [
                         [pt[1], pt[0]] for pt in (c.top_left, c.top_right, c.bottom_right, c.bottom_left)
@@ -410,12 +411,32 @@ class SentinelService:
             )
         from sentinel.geo.zones import zone_display
 
+        # Build true-scale road corridors connecting base through the frame centers
+        roads_by_zone: dict[str, list[dict]] = {}
+        for f in frames:
+            roads_by_zone.setdefault(f["zone"], []).append(f)
+
+        zones_out = []
+        for z in self.repo.zones:
+            zone_frames = sorted(
+                roads_by_zone.get(z.name, []),
+                key=lambda item: item.get("d_base_m", 0),
+            )
+            road_path = [[base.lon, base.lat]] + [f["center"] for f in zone_frames]
+            real_center = zone_frames[2]["center"] if len(zone_frames) >= 3 else [z.center[1], z.center[0]]
+            zones_out.append(
+                {
+                    "name": z.name,
+                    "label": zone_display(z.name),
+                    "center": real_center,
+                    "theoretical_center": [z.center[1], z.center[0]],
+                    "path": road_path,
+                }
+            )
+
         return {
             "base": {"name": base.name, "center": [base.lon, base.lat]},
-            "zones": [
-                {"name": z.name, "label": zone_display(z.name), "center": [z.center[1], z.center[0]]}
-                for z in self.repo.zones
-            ],
+            "zones": zones_out,
             "rings": [
                 {"km": r.near_km, "ring": ring(r.near_km * 1000)},
                 {"km": r.mid_km, "ring": ring(r.mid_km * 1000)},

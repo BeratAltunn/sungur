@@ -85,6 +85,21 @@ def test_map_marker_class_is_the_packets_own(client):
         assert (f["lead_label"] is None) == (not f["label_counts"])
 
 
+def test_map_road_corridors_run_from_base_through_zone_frames(client):
+    """Each zone's corridor starts at the base and visits that zone's frame centres, nearest first."""
+    m = client.get("/api/map").json()
+    by_zone: dict[str, list[dict]] = {}
+    for f in m["frames"]:
+        by_zone.setdefault(f["zone"], []).append(f)
+    assert len(m["zones"]) == 8
+    for z in m["zones"]:
+        frames = sorted(by_zone.get(z["name"], []), key=lambda f: f["d_base_m"])
+        assert z["path"][0] == m["base"]["center"]
+        assert z["path"][1:] == [f["center"] for f in frames]
+        # the label sits on the road (3rd frame) when the zone has enough frames, else at its nominal centre
+        assert z["center"] == (frames[2]["center"] if len(frames) >= 3 else z["theoretical_center"])
+
+
 def test_errors_and_decisions(client):
     assert client.get("/api/frames/yok").status_code == 404
     run_id = client.get("/api/frames/img_000860").json()["result"]["run_id"]
