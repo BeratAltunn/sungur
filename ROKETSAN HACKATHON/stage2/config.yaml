@@ -52,36 +52,41 @@ reports:
   stationary_min_coverage_min: 30
   stationary_max_disp_m: 50
 
-risk:
-  weights:
-    proximity_near: 30              # < near_km
-    proximity_mid: 15               # near_km .. mid_km
-    approaching: 25
-    stop_and_go: 10
-    heavy: 10
-    convoy: 15
-    eta_short: 10                   # ETA < eta_short_min
-    eta_mid: 5                      # ETA < eta_mid_min
-    identity_contradicted: 20
-    identity_confirmed: -20
-    leaving: -15
-    untracked: 5
-  near_km: 2.0
+risk:                               # Yetenek–Fırsat–Niyet (C-O-I) tehdit modeli, bkz. risk/scoring.py
+  # Her kenar 0–100 alt puan + DÜŞÜK/ORTA/YÜKSEK bant. Seviye bantlardan matrisle verilir; alt puanların
+  # geometrik ortalaması (skor) yalnızca aynı seviyedeki araçları/kareleri sıralar.
+  capability:                       # YETENEK = ne (güveni < τ_op olan kutunun sınıfı "bilinmiyor" sayılır)
+    car: 20
+    van: 50
+    unknown: 50                     # sınıf bilinmiyor: ağır araç dışlanamaz
+    truck: 80
+    bus: 80
+    convoy: 80                      # konvoy tek aktör: üyeleri grup olarak en az bu
+    convoy_heavy_bonus: 5           # konvoydaki ağır araç başına
+  capability_bands: {ORTA: 40, YUKSEK: 70}
+  near_km: 2.0                      # FIRSAT = nerede: < near_km YÜKSEK, < mid_km ORTA, üstü DÜŞÜK
   mid_km: 3.5
-  eta_short_min: 5
-  eta_mid_min: 10
-  load_bonus_per_vehicle: 3         # ek yaklaşan araç başına
-  load_bonus_cap: 10
-  levels: {ORTA: 25, YUKSEK: 50, KRITIK: 75}
+  opportunity_zero_km: 7.0          # fırsat sıralama puanı: 0 km → 100, 7 km → 0
+  intent_base: 20                   # NİYET GÖSTERGELERİ = ne yapıyor; gösterge yoksa niyet bilinmiyor (DÜŞÜK)
+  weights:
+    approaching: 25                 # üsse yaklaşma yalnızca niyette sayılır (fırsatta değil)
+    identity_contradicted: 50       # aldatma: kanıtla çelişen dost kimliği iddiası (bu araç)
+    identity_contradicted_frame: 25 # kare çevresinde çelişen kimlik iddiası, belirli bir araca bağlanamadı
+    untracked: 25                   # hareket kaydı olmayan araç
+    leaving: -25
+    identity_confirmed: -50
+  intent_bands: {ORTA: 45, YUKSEK: 70}
   convoy_min_size: 3
   convoy_heading_tol_deg: 30
+  # Tabanlar (risk/floors.py). ACİLİYET (ETA) bir kenar değil: ETA < 10 dk + (teyitli ağır araç ya da niyet
+  # YÜKSEK) → KRİTİK. YÜKSEK: niyet + fırsat YÜKSEK; yetenek + fırsat YÜKSEK (aklayıcı kanıt yoksa); kayıtsız yakın araç
   floor_critical_eta_min: 10
   floor_high_untracked_km: 2.0
-  floor_high_untracked_min_conf: 0.6   # kayıtsız araç tabanı yalnızca emin tespitlerde (model gelince ayarla)
+  floor_high_untracked_min_conf: 0.6   # kayıtsız araç tabanı yalnızca emin tespitlerde
 
 llm:
   provider: openai_compat           # openai_compat (GLM, anahtar yoksa şablon brief) | mock (test)
-  prompt_version: analyst_v3
+  prompt_version: analyst_v4
   temperature: 0.2
   max_tokens: 3000
   reasoning_effort: low             # düşünen modeller (glm-5.3) bütçeyi düşünmeye harcamasın; null = gönderme
@@ -106,16 +111,15 @@ impact:                             # vardiya simülasyonu (#/impact, triage'da 
 
 demo:
   frames:
-    img_000860: KRİTİK              # ana kare: 4 araçlık konvoy, kamyon T0122, ETA ~4,5 dk
-    img_001733: DÜŞÜK               # karşıt kare: üsse 2,7 km, yaklaşan yok; 13:40 "kamyon" raporu tespitle çelişiyor
+    img_000860: KRİTİK              # ana kare: 4 araçlık konvoy (olası kamyon T0122), ETA ~4,5 dk; yetenek/fırsat/niyet YÜKSEK
+    img_001733: DÜŞÜK               # karşıt kare: üsse 2,7 km, otomobil/panelvan, yaklaşan yok; 13:40 "kamyon" raporu DOĞRULANAMAZ
   contradicted:
     img_000860: [R119, R125]        # aha anı: 12:25 "bize bağlı otomobil", 12:35 "hareketleri olağan"
-    img_001733: [R042]              # rapor "yüklü kamyon" diyor, T0206 görüntüde otomobil: rapor tehdidi abartıyor
-  no_contradiction: []
+  no_contradiction: [img_001733]    # R042 "yüklü kamyon": noktada T0122 de var, sınıfı teyitsiz → ne çelişki ne doğrulama
   chat:                             # yalnızca `demo-check --chat` ile (LLM çağırır)
     - question: "Bu karedeki en riskli araç neden riskli?"
       image_id: img_000860
-    - question: "Bu karedeki kamyon neden riskli?"   # demo sorusu: 4 araç 100 puanda eşit, anlatı kamyon üzerine
+    - question: "Bu karedeki kamyon neden riskli?"   # T0122 olası kamyon (güven düşük); cevap bunu söylemeli
       image_id: img_000860
     - question: "T0122 12:35'te neredeydi?"
   chat_max_s: 45

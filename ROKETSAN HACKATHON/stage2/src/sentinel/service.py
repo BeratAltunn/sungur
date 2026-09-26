@@ -233,11 +233,24 @@ class SentinelService:
                     reports_confirmed=sum(r.verdict == Verdict.DOGRULANDI for r in p.reports),
                     min_eta_min=min(etas) if etas else None,
                     n_approaching=sum(bool(v.kinematics and v.kinematics.approaching) for v in p.vehicles),
-                    n_heavy=sum(v.label in HEAVY_LABELS for v in p.vehicles),
+                    n_heavy=sum(v.class_label in HEAVY_LABELS for v in p.vehicles),
                     decision=decisions.get(p.image_id),
                 )
             )
-        return sorted(rows, key=lambda r: (-r.level.rank, -r.score, r.d_base_m))
+        # within a level: the fuller threat triangle first (matrix level before floors), then urgency (shortest
+        # ETA), then the C-O-I ordering score
+        inf = float("inf")
+        matrix = {r.image_id: self.packet(r.image_id).risk.score_level.rank for r in rows}
+        return sorted(
+            rows,
+            key=lambda r: (
+                -r.level.rank,
+                -matrix[r.image_id],
+                r.min_eta_min if r.min_eta_min is not None else inf,
+                -r.score,
+                r.d_base_m,
+            ),
+        )
 
     def shift_summary(self) -> ShiftSummary:
         rows = self.triage()
@@ -457,12 +470,13 @@ class SentinelService:
             return motion["label"]
         if not p.vehicles:
             return None
-        return max(p.vehicles, key=lambda v: (v.score, v.label in HEAVY_LABELS)).label
+        return max(p.vehicles, key=lambda v: (v.level.rank, v.score, v.label in HEAVY_LABELS)).label
 
     @staticmethod
     def _lead_motion(p: EvidencePacket) -> dict | None:
-        """Heading and speed of the frame's lead moving vehicle (approaching first, then highest score, then
-        shortest ETA, then fastest), straight from its kinematics; None when no matched vehicle has a heading."""
+        """Heading and speed of the frame's lead moving vehicle (approaching first, then highest level, then
+        shortest ETA, then ordering score, then fastest), straight from its kinematics; None when no matched
+        vehicle has a heading."""
         moving = [v for v in p.vehicles if v.kinematics and v.kinematics.heading_deg is not None]
         if not moving:
             return None
@@ -471,8 +485,9 @@ class SentinelService:
             k = v.kinematics
             return (
                 k.approaching,
-                v.score,
+                v.level.rank,
                 -(k.eta_min if k.eta_min is not None else float("inf")),
+                v.score,
                 k.speed_now_mps,
             )
 
@@ -493,11 +508,9 @@ class SentinelService:
     def frame_tracks(self, image_id: str, max_report_tracks: int = 8) -> dict:
         """2-hour paths for the frame's vehicles, undetected tracks and the tracks reports point at,
         plus report pins. Raw points only: the UI interpolates positions for the time slider.
-        Vehicle levels use config thresholds (risk.levels), so map/box colours follow calibration."""
-        from sentinel.risk.scoring import level_for
-
+        Vehicle levels are the packet's (capability–opportunity–intent matrix + floors)."""
         p = self.packet(image_id)
-        vehicle_levels = {v.ref: level_for(v.score, self.s.risk).value for v in p.vehicles}
+        vehicle_levels = {v.ref: v.level.value for v in p.vehicles}
         t1 = self.repo.meta[image_id].capture_min
         t0 = t1 - self.s.tracking.window_min
         roles: dict[str, dict] = {}
@@ -560,17 +573,16 @@ class SentinelService:
 
     def vehicles(self) -> dict:
         """Every vehicle of the day for the main map's time bar: each track's full path, with the detected vehicle's
-        class, confidence, score and level (config thresholds) where a frame matched it; detections without a track
+        class, confidence, score and level (from the packet) where a frame matched it; detections without a track
         (e.g. parked) as a single point at capture time; tracks no frame detected with no identity. Raw points only:
         the UI interpolates positions for display."""
-        from sentinel.risk.scoring import level_for
         from sentinel.risk.timeline import score_timeline
 
         def path(track_id: str) -> list[list[float]]:
             return [[pt.t_min, pt.lat, pt.lon] for pt in self.repo.track(track_id).points]
 
-        def steps(pairs) -> list[list]:
-            return [[t, sc, level_for(sc, self.s.risk).value] for t, sc in pairs]
+        def steps(triples) -> list[list]:
+            return [[t, sc, lv.value] for t, sc, lv in triples]
 
         detected: dict[str, dict] = {}  # by track id; a track seen in two frames keeps its highest score
         untracked: list[dict] = []
@@ -585,18 +597,18 @@ class SentinelService:
                     "label": v.label,
                     "conf": round(v.conf, 2),
                     "score": v.score,
-                    "level": level_for(v.score, self.s.risk).value,
+                    "level": v.level.value,
                 }
                 if v.track_id is None:
                     untracked.append(
                         {
                             **item,
                             "points": [[meta.capture_min, v.lat, v.lon]],
-                            "timeline": steps([(meta.capture_min, v.score)]),
+                            "timeline": steps([(meta.capture_min, v.score, v.level)]),
                         }
                     )
-                elif v.track_id not in detected or v.score > detected[v.track_id]["score"]:
-                    # Score along the track with what was known at each moment; capture time = the packet's score.
+                elif v.track_id not in detected or (v.level.rank, v.score) > detected[v.track_id]["_rank"]:
+                    # Threat along the track with what was known at each moment; capture time = the packet's own.
                     line = score_timeline(
                         v,
                         self.repo.track(v.track_id),
@@ -606,8 +618,11 @@ class SentinelService:
                         self.repo.zone_index,
                         self.s,
                     )
-                    detected[v.track_id] = {**item, "timeline": steps(line)}
-        out = [{**item, "points": path(tid)} for tid, item in detected.items()] + untracked
+                    detected[v.track_id] = {**item, "timeline": steps(line), "_rank": (v.level.rank, v.score)}
+        out = [
+            {**{k: x for k, x in item.items() if k != "_rank"}, "points": path(tid)}
+            for tid, item in detected.items()
+        ] + untracked
         out += [
             {
                 "id": tid,

@@ -6,9 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from sentinel.agent.llm import MockLLM
-from sentinel.domain.models import to_min
+from sentinel.domain.models import RiskLevel, to_min
 from sentinel.interfaces import api
-from sentinel.risk.scoring import level_for
 from sentinel.service import SentinelService
 
 
@@ -19,12 +18,12 @@ def test_every_track_and_detection_appears_once_with_backend_identity(service):
     assert sorted(v["track_id"] for v in tracked) == sorted(service.repo.tracks)  # each track exactly once
     for v in tracked:
         assert v["points"] == [[p.t_min, p.lat, p.lon] for p in service.repo.track(v["track_id"]).points]
-    # identity and level are the packet's own, with the config thresholds
+    # identity and level are the packet's own (a track seen in two frames keeps its highest level)
     for meta in service.repo.frames():
         for pv in service.packet(meta.image_id).vehicles:
             key = pv.track_id or f"{meta.image_id}/{pv.ref}"
             v = next(x for x in vs if x["id"] == key)
-            assert v["label"] == pv.label and v["level"] == level_for(v["score"], service.s.risk).value
+            assert v["label"] == pv.label and RiskLevel(v["level"]).rank >= pv.level.rank
             if pv.track_id is None:  # no track: one point at capture time, where the detector put it
                 assert v["points"] == [[meta.capture_min, pv.lat, pv.lon]]
     # tracks no frame detected carry no identity (the map draws them as grey dots)
@@ -73,8 +72,8 @@ def test_threat_timeline_ends_at_the_packet_score_and_is_real_time(service):
             if v["image_id"] != meta.image_id:
                 continue  # a track seen in two frames keeps its higher-scoring detection
             t, score, level = v["timeline"][-1]
-            assert (t, score) == (meta.capture_min, pv.score)
-            assert all(lv == level_for(sc, service.s.risk).value for _, sc, lv in v["timeline"])
+            assert (t, score, level) == (meta.capture_min, pv.score, pv.level.value)
+            assert all(lv in {x.value for x in RiskLevel} for _, _, lv in v["timeline"])
             assert [e[0] for e in v["timeline"]] == sorted(e[0] for e in v["timeline"])
     truck = {t: lv for t, _, lv in vs["T0122"]["timeline"]}
     assert truck[845] != "KRİTİK" and truck[850] == "KRİTİK"  # 14:05 vs 14:10 (capture)
@@ -89,6 +88,6 @@ def test_a_report_counts_only_from_its_own_time(service):
     with_reports = score_timeline(v, args[0], pkt.reports, *args[1:])
     without = score_timeline(v, args[0], [], *args[1:])
     first_report = min(to_min(r.time) for r in pkt.reports)
-    for (t, a), (_, b) in zip(with_reports[:-1], without[:-1], strict=True):
+    for (t, a, la), (_, b, lb) in zip(with_reports[:-1], without[:-1], strict=True):
         if t < first_report:
-            assert a == b, t  # nothing had been reported yet
+            assert (a, la) == (b, lb), t  # nothing had been reported yet

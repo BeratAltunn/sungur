@@ -22,7 +22,10 @@ class FrameContext:
     center: tuple[float, float]
     half_diag_m: float
     matched_tracks: list[str] = field(default_factory=list)
+    # confident classes (≥ τ_op) from this frame and frames captured earlier; absent = class unknown
     labels_by_track: dict[str, str] = field(default_factory=dict)
+    approaching_tracks: set[str] = field(default_factory=set)  # this frame's vehicles, at capture time
+    leaving_tracks: set[str] = field(default_factory=set)
 
 
 @dataclass
