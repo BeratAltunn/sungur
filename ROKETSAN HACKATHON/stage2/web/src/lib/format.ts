@@ -23,11 +23,12 @@ export const LEVEL_CLASS: Record<Level, string> = {
   "YÜKSEK": "lv-high",
   "KRİTİK": "lv-crit",
 };
+/** Astro UXDS status colours (off / caution / serious / critical) for map strokes and image boxes. */
 export const LEVEL_COLOR: Record<Level, string> = {
-  "DÜŞÜK": "#8b95a5",
-  ORTA: "#eab308",
-  "YÜKSEK": "#f97316",
-  "KRİTİK": "#f87171",
+  "DÜŞÜK": "#a4abb6",
+  ORTA: "#fce83a",
+  "YÜKSEK": "#ffb302",
+  "KRİTİK": "#ff3838",
 };
 export const LEVEL_ACTION: Record<Level, string> = {
   "DÜŞÜK": "Sonraki turda bakılır",

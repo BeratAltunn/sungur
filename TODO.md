@@ -29,6 +29,7 @@ Komutlar `ROKETSAN HACKATHON/stage2` içinden çalışır; kurulum için köktek
 - North Star ölçümü: açılış → karar süresi (medyan) ve seviye düşürme oranı nöbet devri kartında
 - Etki görünümü (`#/impact`) ve kuyrukta vardiya oynatma: elle FIFO ↔ NÖBETÇİ risk sırası, karar araçların tahmini varışından önce mi? Kronometre testi yapılınca "varsayım" etiketi kalkar.
 - Erişilebilirlik turu: tüm ekranlarda metin kontrastı ≥ 4,5:1 (otomatik tarama), gövde 16 px / en küçük 12 px, klavyeyle tam kullanım (İçeriğe geç, kuyrukta roving focus, sekmelerde ←/→), `prefers-reduced-motion`, bütçe rozeti, şablon brief için "LLM ile tekrar dene"
+- Profesyonel UI (dal `ui-redesign`): Astro UXDS renk/yazı tokenleri, görsel sessizlik, global durum çubuğu (gizlilik bandı, saat, tehdit durumu, alt sistemler), taktik ekran düzeni (uyarılar · harita · önizleme), haritada tahmini varış vektörleri ve 2525'ten esinlenen semboller, operasyonel hata mesajları, ≥ 6:1 kontrast testi
 
 ## 1. Şimdi — veri ve model gelmeden yapılabilecekler
 

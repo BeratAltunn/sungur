@@ -15,28 +15,72 @@ import type {
   TriageRow,
 } from "./types";
 
+/** Errors in operational terms: what happened, what still works, what to do. The HTTP code stays at the end
+ *  for whoever reads the server log. Validation messages from the service (e.g. "gerekçe zorunlu") pass through. */
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    readonly recovery: string,
+    readonly code: number | null,
+  ) {
+    super(message);
+  }
+}
+
+/** One line for toasts and inline messages: what happened + what to do. */
+export const explain = (e: unknown) =>
+  e instanceof ApiError ? `${e.message} ${e.recovery}` : String((e as Error)?.message ?? e);
+
+const OFFLINE = new ApiError(
+  "Değerlendirme servisine ulaşılamıyor.",
+  "Ekrandaki bilgiler geçerli kalır. Sunucuyu başlatın (make app ya da docker compose up -d), sonra Tekrar dene.",
+  null,
+);
+
+function operational(status: number, detail: string | null): ApiError {
+  if (status === 404) return new ApiError(detail ?? "İstenen kayıt bulunamadı.", "Kare kimliğini kontrol edin ya da kuyruğa dönün.", status);
+  if (status === 422 || status === 400) return new ApiError(detail ?? "Girilen bilgi eksik ya da geçersiz.", "Alanı düzeltip tekrar gönderin.", status);
+  if (status === 503) return new ApiError("Servis başlatılıyor.", "Birkaç saniye sonra Tekrar dene.", status);
+  return new ApiError(
+    "Servis bu isteği tamamlayamadı.",
+    "Diğer ekranlar çalışmaya devam eder. Tekrar dene; sürerse sunucu günlüğüne bakın (docker compose logs).",
+    status,
+  );
+}
+
 async function http<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
-  });
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      ...init,
+      headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    });
+  } catch (e) {
+    if ((e as Error).name === "AbortError") throw e;
+    throw OFFLINE;
+  }
   if (!res.ok) {
-    let msg = `${res.status} ${res.statusText}`;
+    let detail: string | null = null;
     try {
       const body = await res.json();
-      if (body?.detail) msg = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail);
+      if (typeof body?.detail === "string") detail = body.detail;
     } catch {
       /* not JSON */
     }
-    throw new Error(msg);
+    throw operational(res.status, detail);
   }
   return res.json() as Promise<T>;
 }
 
 /** Reads an NDJSON stream line by line; errors thrown by onEvent abort the read. */
 async function ndjson(path: string, init: RequestInit, onEvent: (ev: LiveEvent) => void): Promise<void> {
-  const res = await fetch(path, init);
-  if (!res.ok || !res.body) throw new Error(`${res.status} ${res.statusText}`);
+  let res: Response;
+  try {
+    res = await fetch(path, init);
+  } catch {
+    throw OFFLINE;
+  }
+  if (!res.ok || !res.body) throw operational(res.status, null);
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = "";

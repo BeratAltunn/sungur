@@ -1,8 +1,8 @@
 import { useState } from "react";
-import { api } from "../lib/api";
-import { DECISION_TR, LEVELS, LEVEL_ICON, zoneName } from "../lib/format";
+import { api, explain } from "../lib/api";
+import { DECISION_TR, LEVELS, LEVEL_COLOR, LEVEL_ICON, zoneName } from "../lib/format";
 import type { Decision, EvaluationResult, Level } from "../lib/types";
-import { Kbd, LevelBadge, RefText } from "./ui";
+import { Kbd, LevelBadge, RefText, useSlow } from "./ui";
 
 const SOURCE_TR = { llm: "LLM", llm_cache: "LLM (önbellek)", template: "Kural tabanlı şablon" } as const;
 
@@ -40,7 +40,7 @@ export function BriefPanel({
       <h1 className="headline">
         <RefText text={b.headline} onRef={onRef} active={activeRef} />
       </h1>
-      <div className="action" role="note">
+      <div className="action" role="note" style={{ ["--act" as string]: LEVEL_COLOR[b.risk_level] }}>
         <span className="action-label">Önerilen eylem</span>
         {b.recommended_action}
       </div>
@@ -122,6 +122,7 @@ export function DecisionBar({
   const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const slow = useSlow(busy);
   if (!res) return null;
   const id = res.packet.image_id;
 
@@ -134,7 +135,7 @@ export function DecisionBar({
       setOverriding(false);
       setReason("");
     } catch (e) {
-      setErr(String((e as Error).message));
+      setErr(explain(e));
     } finally {
       setBusy(false);
     }
@@ -209,6 +210,11 @@ export function DecisionBar({
             Kaydet
           </button>
         </form>
+      )}
+      {slow && (
+        <span className="muted small" role="status">
+          <span className="spinner" aria-hidden /> İşleniyor…
+        </span>
       )}
       {err && <span className="err">{err}</span>}
     </div>

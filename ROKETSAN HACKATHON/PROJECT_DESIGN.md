@@ -164,10 +164,10 @@ Seviyelerin eylem karşılığı olmazsa operatör için sadece birer etiket ola
 
 | Seviye | Görsel kodlama | Anlamı | Önerilen eylem |
 |---|---|---|---|
-| ○ DÜŞÜK | Gri, boş daire | Rutin, olağan hareket | Bölgenin bir sonraki turunda bakılır |
-| ● ORTA | Sarı, dolu daire | Dikkat gerektiren ama acil olmayan bir işaret | İzlemeye alınır. Bölgenin sonraki karesinde yeniden değerlendirilir. Saha birimine teyit sorusu gönderilir. |
-| ▲ YÜKSEK | Turuncu, tek üçgen | Yaklaşan veya kanıtla çelişen bir durum | Nöbetçi amirine bildirilir. Bölgeye drone ya da devriye yönlendirmesi önerilir. |
-| ▲▲ KRİTİK | Kırmızı, çift üçgen | Kısa sürede üsse ulaşabilecek, ağırlaştırıcı unsurlu bir tehdit | Anında eskalasyon (ETA ile birlikte). Kapı ve QRF hazırlığı önerilir. |
+| ○ DÜŞÜK | Gri (Astro "off" #A4ABB6), boş daire | Rutin, olağan hareket | Bölgenin bir sonraki turunda bakılır |
+| ● ORTA | Sarı (Astro "caution" #FCE83A), dolu daire | Dikkat gerektiren ama acil olmayan bir işaret | İzlemeye alınır. Bölgenin sonraki karesinde yeniden değerlendirilir. Saha birimine teyit sorusu gönderilir. |
+| ▲ YÜKSEK | Turuncu (Astro "serious" #FFB302), tek üçgen | Yaklaşan veya kanıtla çelişen bir durum | Nöbetçi amirine bildirilir. Bölgeye drone ya da devriye yönlendirmesi önerilir. |
+| ▲▲ KRİTİK | Kırmızı (Astro "critical" #FF3838), çift üçgen | Kısa sürede üsse ulaşabilecek, ağırlaştırıcı unsurlu bir tehdit | Anında eskalasyon (ETA ile birlikte). Kapı ve QRF hazırlığı önerilir. |
 
 ### 2.3 Uçtan uca kullanıcı yolculuğu
 
@@ -285,6 +285,8 @@ Serbest soru sorulabiliyor. Ajanın her araç çağrısı "🔧 tracks_near(…)
 - Harekât odasında gece vardiyası için koyu tema var. Metin en az 16 px ve kontrast en az 4.5:1.
 - Arayüz Türkçe. Birimler tutarlı (km, m/s ve km/sa), saat 24 saat formatında. Koordinatlar raporlardaki formatla aynı yazılıyor (`39.9253N 32.8718E`), böylece operatör gözle karşılaştırabiliyor.
 - Karar içeriği ekranın ilk görünen kısmında: brief, seviye ve eylem butonları kaydırma gerektirmiyor.
+
+**Görsel dil (uygulamada):** Renk ve yazı tipleri Astro UXDS koyu temasından (`@astrouxds/tokens`, MIT) alındı; durum renkleri dolgu ve sembolde, metin için ≥ 6:1 kontrastlı açık tonlar kullanılır (`tests/ui/test_contrast.py`). Ekran "görsel olarak sessiz"dir: yalnızca kararsız KRİTİK kareler dolu renkle öne çıkar, karar verilmiş kareler nötrleşir. Harita sembolleri MIL-STD-2525/APP-6'dan **esinlenir** (uyumluluk iddiası yoktur): şekil kimliği (üs = dost dikdörtgen, araç = kimliği belirsiz dört yaprak), renk risk seviyesini taşır. Triage bir ortak harekât resmi düzenindedir: uyarılar · harita · seçili kare. Üst çubukta gizlilik bandı, saat (yerel + Z), tesis tehdit durumu (bilgi amaçlı; sistem kendiliğinden eylem yapmaz) ve alt sistem durumları vardır.
 
 **Güven: şeffaflık**
 - Brief'teki her sayı ve iddia bir kanıt çipine bağlı (`[T0122]`, `[12:35 raporu]`). Çipe tıklanınca haritada ilgili iz vurgulanıyor ve zaman kaydırıcısı o saate gidiyor.

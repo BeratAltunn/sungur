@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { api } from "../lib/api";
+import { api, explain } from "../lib/api";
 import { dec, smooth, storage } from "../lib/format";
 import type { ChatTurn } from "../lib/types";
 import { RefText } from "./ui";
@@ -115,7 +115,7 @@ export function ChatPanel({ open, onClose, imageId }: { open: boolean; onClose: 
       const turn = await api.chat(q, history, imageId, ctrl.signal);
       setMsgs((m) => [...m, { role: "assistant", content: turn.answer, turn, error: turn.note === "llm_hata" }]);
     } catch (e) {
-      const content = ctrl.signal.aborted ? "Soru iptal edildi." : `İstek başarısız: ${(e as Error).message}`;
+      const content = ctrl.signal.aborted ? "Soru iptal edildi." : `Soru yanıtlanamadı. ${explain(e)}`;
       setMsgs((m) => [...m, { role: "assistant", content, error: true }]);
     } finally {
       abortRef.current = null;
@@ -226,9 +226,15 @@ export function ChatPanel({ open, onClose, imageId }: { open: boolean; onClose: 
               <span className="spinner" aria-hidden /> Kayıtları sorguluyor… {elapsed} sn
             </div>
             {elapsed >= 10 && (
-              <p className="muted small">
-                Yanıtlar 5–45 sn sürebilir. Kanıt ekranda hazır; beklerken karede çalışmaya devam edebilirsiniz.
-              </p>
+              <>
+                {/* > 10 s: a progress bar (indeterminate: the model's remaining time is not knowable, so none is shown) */}
+                <div className="progress" role="progressbar" aria-label="Yanıt bekleniyor" aria-valuetext={`${elapsed} saniye`}>
+                  <span />
+                </div>
+                <p className="muted small">
+                  Yanıtlar genelde 5–45 sn sürer. Kanıt ekranda hazır; beklerken karede çalışmaya devam edebilirsiniz.
+                </p>
+              </>
             )}
             <button className="btn btn-ghost btn-sm" onClick={() => abortRef.current?.abort()}>
               İptal

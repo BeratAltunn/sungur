@@ -39,13 +39,13 @@ function Tile({ title, sys, man, note }: { title: string; sys: string; man: stri
 
 export function ImpactPage({ health }: { health: Health | null }) {
   const [r, setR] = useState<ImpactReport | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const load = () => {
     setError(null);
     api
       .impact()
       .then(setR)
-      .catch((e) => setError(String(e.message ?? e)));
+      .catch((e) => setError(e));
   };
   useEffect(load, []);
   if (error) return <ErrorState error={error} onRetry={load} />;

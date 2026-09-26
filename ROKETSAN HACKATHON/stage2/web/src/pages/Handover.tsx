@@ -62,10 +62,10 @@ function rowText(r: TriageRow) {
 
 export function HandoverPage({ health }: { health: Health | null }) {
   const [h, setH] = useState<ShiftHandover | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const load = () => {
     setError(null);
-    api.handover().then(setH).catch((e) => setError(String(e.message ?? e)));
+    api.handover().then(setH).catch((e) => setError(e));
   };
   useEffect(load, []);
 
@@ -197,12 +197,12 @@ function Section({
 /** One page for the duty officer: the brief, its evidence and the operator's decision, ready to print. */
 export function EscalationCard({ id, health }: { id: string; health: Health | null }) {
   const [f, setF] = useState<FrameResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   useEffect(() => {
     api
       .frame(id)
       .then(setF)
-      .catch((e) => setError(String(e.message ?? e)));
+      .catch((e) => setError(e));
   }, [id]);
   if (error) return <ErrorState error={error} />;
   if (!f) return <Loading label="Kart hazırlanıyor" />;

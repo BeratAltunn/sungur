@@ -22,6 +22,15 @@ def test_triage_queue_and_shift_card(page: Page):
     expect(first).to_contain_text("KRİTİK")
     expect(first).to_contain_text(re.compile(r"ETA ~\d+,\d dk"))  # decimal comma, from min_eta_min
     expect(page.locator(".shift")).to_contain_text("YÜKSEK/KRİTİK karar bekliyor")
+    # Status bar: facility posture (highest level still waiting) and subsystem health, from the backend.
+    expect(page.locator(".posture")).to_contain_text("karar bekliyor")
+    expect(page.locator(".classification")).to_contain_text("TASNİF DIŞI")
+    # COP: one click selects (preview on the right), the preview opens the frame.
+    second = rows.nth(1)
+    second_id = second.locator(".row-sub .mono").first.inner_text()
+    second.click()
+    expect(page.locator(".preview")).to_contain_text(second_id)
+    expect(page).to_have_url(re.compile(r"#/$"))
     # Search jumps straight to the contrast frame (DEMO.md 3:20).
     page.get_by_label("Kare ara").fill(CONTRAST[-4:])
     expect(rows).to_have_count(1)
@@ -129,6 +138,16 @@ def test_keyboard_only_operation(page: Page):
     expect(page.get_by_role("tabpanel")).to_be_visible()
 
 
+def test_errors_are_operational(page: Page):
+    """A failing service shows what happened and what to do, not a raw HTTP status line."""
+    page.route("**/api/handover", lambda route: route.fulfill(status=500, body="boom"))
+    page.goto("/#/handover")
+    alert = page.get_by_role("alert")
+    expect(alert).to_contain_text("Servis bu isteği tamamlayamadı")
+    expect(alert).to_contain_text("Tekrar dene")
+    expect(alert).not_to_contain_text("Internal Server Error")
+
+
 def test_blind_labelling_never_shows_system_level(page: Page):
     page.add_init_script("localStorage.setItem('labeler', JSON.stringify('ui-smoke'))")
     page.goto(f"/#/label/{DEMO}")
@@ -148,8 +167,10 @@ def test_blind_labelling_never_shows_system_level(page: Page):
           const colours = new Set();
           document.querySelectorAll('.box rect').forEach((r) => colours.add(r.getAttribute('stroke')));
           document.querySelectorAll('.mk-veh.mk-vehicle').forEach((m) => colours.add(m.style.getPropertyValue('--c')));
+          document.querySelectorAll('.map-legend .sym-legend path').forEach((p) => colours.add(getComputedStyle(p).fill === 'rgb(56, 189, 248)' ? '#38bdf8' : getComputedStyle(p).fill));
           if (colours.size > 1) out.push('renkler: ' + [...colours].join(','));
           return out;
         }"""
     )
     assert leaks == [], f"kör modda sistem çıktısı sızıyor: {leaks}"
+    expect(page.locator(".posture")).to_have_count(0)  # the status bar posture would reveal levels

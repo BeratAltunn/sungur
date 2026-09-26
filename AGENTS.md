@@ -89,8 +89,8 @@ Arayüz üzerinde çalışırken: bir terminalde `make app` açık kalsın, diğ
 
 | Komut | Beklenen |
 |---|---|
-| `make check` | ruff "All checks passed!", pytest'te hata yok (yazıldığı an 88 test; 8'i arayüz duman testi, Playwright/Chrome yoksa atlanır) |
-| `make ui-test` | arayüzü derler, `tests/ui` 8/8 geçer (demo yolu: kuyruk, 12:35 ✗ kartı, canlı değerlendirme adımları, karar → kuyruk, eskalasyon kartı + vardiya devri, etki + vardiya oynatma, yalnız klavyeyle kullanım; kör modda seviye sızmaz) |
+| `make check` | ruff "All checks passed!", pytest'te hata yok (yazıldığı an 95 test; 15'i tarayıcı testi — duman + her ekranda ≥ 6:1 kontrast —, Playwright/Chrome yoksa atlanır) |
+| `make ui-test` | arayüzü derler, `tests/ui` 15/15 geçer (demo yolu: kuyruk + önizleme, 12:35 ✗ kartı, canlı değerlendirme adımları, karar → kuyruk, eskalasyon kartı + vardiya devri, etki + vardiya oynatma, yalnız klavyeyle kullanım, operasyonel hata mesajı; her ekranda metin kontrastı ≥ 6:1; kör modda seviye ve tehdit durumu sızmaz) |
 | `make validate` | `SONUÇ: temiz`, 40 kare / 226 track / 137 rapor, 20 tuzak track |
 | `curl -s http://127.0.0.1:8000/api/health` | `"detector": "yolo:yolov8n"`, `"detector_fallback": null`, `"llm": {"error": null}` (anahtar varsa), `warmup.done == 40` |
 | `make demo-check` | tüm satırlar ✓, `demo-check YEŞİL (7/7)` (demo kareleri, aha anı raporları, karşıt kare, önbellekteki brief'ler; `config.yaml → demo`) |
@@ -178,6 +178,7 @@ python3 -m sentinel evaluate img_000860      # (PYTHONPATH=src ya da make instal
 - **Dev verisinde görüntü ölçeği köşe koordinatlarıyla uyuşmuyor** (gerçek araç kutuları yerde 10–75 m görünüyor). Bu yüzden metre cinsinden kutu boyutu filtresi kapalı (`detector.plausible_size_m: null`). "Hata" diye düzeltmeye çalışma; resmî veride yeniden ölçülecek.
 - **Kök `.gitignore`** GitHub'ın Python şablonudur ve `lib/` kuralı içerir; `web/src/lib/` için istisna vardır. Yeni bir `lib` klasörü eklersen istisna gerekebilir.
 - **Mac'te MPS, Docker'da CPU:** tespit sonuçları küçük farklar gösterebilir; demo önbellekten gelir.
+- **Arayüz renkleri Astro UXDS tokenleridir** (`web/src/styles.css` başı). Durum rengini metin olarak kullanma; metin için `--tx-critical` gibi açık tonlar var. Yeni bir renk eklersen `make ui-test` içindeki kontrast testi (≥ 6:1) yakalar.
 - **Seviye dağılımı henüz kalibre edilmedi** (40 karenin yarıdan fazlası YÜKSEK/KRİTİK). Kalibrasyon altın setle yapılacak; ağırlıkları tek kareye göre ayarlama.
 
 ## 8. Komut özeti (`stage2/` içinden)

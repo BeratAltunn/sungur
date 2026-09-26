@@ -18,7 +18,7 @@ export function LabelPage({ id, health }: { id: string | null; health: Health | 
   const [nameInput, setNameInput] = useState(labeler);
   const [order, setOrder] = useState<string[]>([]);
   const [done, setDone] = useState<Record<string, Level>>({});
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
 
   const loadProgress = useCallback(() => {
     if (!labeler) return;
@@ -28,7 +28,7 @@ export function LabelPage({ id, health }: { id: string | null; health: Health | 
         setOrder(p.order);
         setDone(p.done);
       })
-      .catch((e) => setError(String(e.message ?? e)));
+      .catch((e) => setError(e));
   }, [labeler]);
   useEffect(loadProgress, [loadProgress]);
 
@@ -42,7 +42,7 @@ export function LabelPage({ id, health }: { id: string | null; health: Health | 
   if (!labeler)
     return (
       <div className="app">
-        <TopBar health={health} />
+        <TopBar health={health} blind />
         <main tabIndex={-1} className="label-intro panel">
           <h1>Kör etiketleme (altın set)</h1>
           <p>
@@ -87,6 +87,7 @@ export function LabelPage({ id, health }: { id: string | null; health: Health | 
   return (
     <div className="app">
       <TopBar
+        blind
         health={health}
         left={
           <span className="pill pill-warn" title="Sistem çıktısı gizli">
@@ -103,7 +104,7 @@ export function LabelPage({ id, health }: { id: string | null; health: Health | 
           </span>
         }
       />
-      {error && <ErrorState error={error} onRetry={loadProgress} />}
+      {error != null && <ErrorState error={error} onRetry={loadProgress} />}
       {id && (
         <LabelFrame
           key={id}
@@ -140,7 +141,7 @@ function LabelFrame({
   const [packet, setPacket] = useState<EvidencePacket | null>(null);
   const [tracks, setTracks] = useState<FrameTracks | null>(null);
   const [mapCtx, setMapCtx] = useState<MapContext | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [focus, setFocus] = useState<Focus>(null);
@@ -157,7 +158,7 @@ function LabelFrame({
         setMapCtx(m);
         setT(tr.window.end);
       })
-      .catch((e) => setError(String(e.message ?? e)));
+      .catch((e) => setError(e));
   }, [id]);
 
   useEffect(() => {
@@ -173,7 +174,7 @@ function LabelFrame({
       await api.gold(id, { labeler, level, note });
       onSaved(id, level);
     } catch (e) {
-      setError(String((e as Error).message));
+      setError(e);
     } finally {
       setSaving(false);
     }

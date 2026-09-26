@@ -42,7 +42,7 @@ make app                               # arayüz + API → http://127.0.0.1:8000
 
 Her çalıştırma `runs/trace.jsonl`'e adım adım iz yazar (`run_id` ile). Operatör kararları `runs/decisions.jsonl`'e, kare açılışları `runs/views.jsonl`'e ek-kayıt olarak gider; ikisinden **açılış → karar süresi** (kare başına işlem süresi) ölçülür ve nöbet devri kartında gösterilir.
 
-Arayüz ekranları: `#/` triage · `#/frame/<id>` kare detayı · `#/handover` vardiya devri (kurala dayalı, yazdırılabilir) · `#/brief/<id>` eskalasyon kartı (amir için, yazdırılabilir) · `#/impact` etki (vardiya simülasyonu: karar, araç varmadan önce mi?) · `#/?replay=1` kuyrukta vardiya oynatma · `#/label` kör etiketleme.
+Arayüz ekranları: `#/` triage (ortak harekât resmi: uyarılar · harita · seçili kare önizlemesi) · `#/frame/<id>` kare detayı · `#/handover` vardiya devri (kurala dayalı, yazdırılabilir) · `#/brief/<id>` eskalasyon kartı (amir için, yazdırılabilir) · `#/impact` etki (vardiya simülasyonu: karar, araç varmadan önce mi?) · `#/?replay=1` kuyrukta vardiya oynatma · `#/label` kör etiketleme.
 
 Vardiya simülasyonu (`src/sentinel/impact.py`) bir operatör zamanı modelidir, kanıt değildir: kare başına süreler `config.yaml → impact` varsayımlarından başlar, kronometre testi (`calibration/stopwatch.csv`) ve üründeki açılış → karar ölçümü yeterli olunca onlarla değişir.
 

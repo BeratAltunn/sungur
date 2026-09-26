@@ -200,6 +200,8 @@ export interface ShiftSummary {
   decision_timed: number;
   high_decided: number;
   high_downgraded: number;
+  posture_level: Level | null;
+  posture_pending: number;
 }
 
 export interface HandoverReport {
@@ -301,6 +303,7 @@ export interface FrameTracks {
   tracks: TrackPath[];
   report_pins: ReportPin[];
   vehicle_levels: Record<string, Level>;
+  projections: { vehicle_ref: string; track_id: string | null; lat: number; lon: number; eta_min: number; level: Level }[];
 }
 
 export interface Health {
@@ -309,6 +312,7 @@ export interface Health {
   llm: { provider: string; model: string; error: string | null };
   budget: { spent_usd: number; stop_usd: number; ratio: number };
   warmup: { done: number; total: number };
+  data: { frames: number; tracks: number; reports: number };
 }
 
 export interface TraceStep {

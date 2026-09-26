@@ -5,7 +5,7 @@ import { type Focus, FrameMap, ReportCallout, TimeSlider } from "../components/F
 import { ImagePanel } from "../components/ImagePanel";
 import { EvidenceTabs, type TabId } from "../components/Tabs";
 import { ErrorState, Kbd, Loading, RefLabels, TopBar } from "../components/ui";
-import { api } from "../lib/api";
+import { api, explain } from "../lib/api";
 import { km, smooth, storage } from "../lib/format";
 import type {
   Decision,
@@ -35,7 +35,7 @@ export function FramePage({ id, health, queue, onChanged }: Props) {
   const [mapCtx, setMapCtx] = useState<MapContext | null>(null);
   const [res, setRes] = useState<EvaluationResult | null>(null);
   const [decision, setDecision] = useState<Decision | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [focus, setFocus] = useState<Focus>(null);
@@ -53,7 +53,7 @@ export function FramePage({ id, health, queue, onChanged }: Props) {
         setMapCtx(m);
         setT(tr.window.end);
       })
-      .catch((e) => setError(String(e.message ?? e)));
+      .catch((e) => setError(e));
     api
       .frame(id)
       .then((f) => {
@@ -62,7 +62,7 @@ export function FramePage({ id, health, queue, onChanged }: Props) {
         setDecision(f.decision);
         onChanged();
       })
-      .catch((e) => setError(String(e.message ?? e)));
+      .catch((e) => setError(e));
   }, [id, onChanged]);
   useEffect(load, [load]);
 
@@ -212,7 +212,7 @@ export function FramePage({ id, health, queue, onChanged }: Props) {
       setToast(`Canlı değerlendirme tamamlandı · ${Math.round(f.result.timings_ms.core + f.result.timings_ms.brief)} ms`);
       onChanged();
     } catch (e) {
-      setToast(`Canlı değerlendirme başarısız: ${(e as Error).message}`);
+      setToast(`Canlı değerlendirme tamamlanamadı; önbellekteki değerlendirme ekranda. ${explain(e)}`);
       if (res) setPacket(res.packet);
     } finally {
       setLive(null);
@@ -232,7 +232,7 @@ export function FramePage({ id, health, queue, onChanged }: Props) {
       onChanged();
     } catch (e) {
       setRes(prev);
-      setToast(`Tekrar deneme başarısız: ${(e as Error).message}`);
+      setToast(`Brief yeniden yazılamadı. ${explain(e)}`);
     }
   };
 
@@ -254,9 +254,9 @@ export function FramePage({ id, health, queue, onChanged }: Props) {
     <RefLabels.Provider value={refLabels}>
     <div className="app">
       <TopBar health={health} />
-      {error && <ErrorState error={error} onRetry={load} />}
+      {error != null && <ErrorState error={error} onRetry={load} />}
       {!packet || !tracks || !mapCtx ? (
-        !error && <Loading label="Kanıt paketi hazırlanıyor" />
+        error == null && <Loading label="Kanıt paketi hazırlanıyor" />
       ) : (
         <>
           <div className="frame-bar">
@@ -286,7 +286,7 @@ export function FramePage({ id, health, queue, onChanged }: Props) {
                 }}
               />
               {decision && nextPending && (
-                <button className="btn btn-primary" onClick={() => go(`/frame/${nextPending.image_id}`)} title="Karar bekleyen sonraki kare (risk sırasıyla)">
+                <button className="btn" onClick={() => go(`/frame/${nextPending.image_id}`)} title="Karar bekleyen sonraki kare (risk sırasıyla)">
                   Sonraki bekleyen → <Kbd>N</Kbd>
                 </button>
               )}

@@ -71,6 +71,10 @@ class ShiftSummary(BaseModel):
     # False-alarm signal (§1.6): YÜKSEK/KRİTİK frames the operator lowered, out of those decided
     high_decided: int = 0
     high_downgraded: int = 0
+    # Facility threat posture for the status bar: the highest level still waiting for a decision (informative
+    # only; the system never changes its own behaviour or takes an action because of it).
+    posture_level: RiskLevel | None = None
+    posture_pending: int = 0
 
 
 class HandoverReport(BaseModel):
@@ -232,6 +236,8 @@ class SentinelService:
         by = {lv.value: sum(r.level == lv for r in rows) for lv in reversed(list(RiskLevel))}
         secs = decision_seconds({r.image_id: r.decision for r in rows if r.decision}, self.views.all())
         high = [r for r in rows if r.decision and r.level in (RiskLevel.YUKSEK, RiskLevel.KRITIK)]
+        open_rows = [r for r in rows if r.decision is None]
+        posture = max((r.level for r in open_rows), key=lambda lv: lv.rank, default=None)
         return ShiftSummary(
             frames=len(rows),
             reports=len(self.repo.reports),
@@ -251,6 +257,8 @@ class SentinelService:
                 and r.decision.level.rank < r.level.rank
                 for r in high
             ),
+            posture_level=posture,
+            posture_pending=sum(r.level == posture for r in open_rows) if posture else 0,
         )
 
     def shift_handover(self) -> ShiftHandover:
@@ -456,6 +464,23 @@ class SentinelService:
             "tracks": tracks,
             "report_pins": pins,
             "vehicle_levels": vehicle_levels,
+            # Projection (Endsley level 3): approaching vehicles at capture time and their ETA to the base,
+            # straight from the packet, soonest first; the map draws a vector from each vehicle to the base.
+            "projections": sorted(
+                [
+                    {
+                        "vehicle_ref": v.ref,
+                        "track_id": v.track_id,
+                        "lat": v.lat,
+                        "lon": v.lon,
+                        "eta_min": v.kinematics.eta_min,
+                        "level": vehicle_levels[v.ref],
+                    }
+                    for v in p.vehicles
+                    if v.kinematics and v.kinematics.approaching and v.kinematics.eta_min is not None
+                ],
+                key=lambda pr: pr["eta_min"],
+            ),
         }
 
     # ================================================================ chat

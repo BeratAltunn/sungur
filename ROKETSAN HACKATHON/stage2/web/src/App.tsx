@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { ChatPanel } from "./components/ChatPanel";
+import { SummaryContext } from "./components/ui";
 import { api } from "./lib/api";
 import { storage } from "./lib/format";
-import type { Health, TriageRow } from "./lib/types";
+import type { Health, ShiftSummary, TriageRow } from "./lib/types";
 import { EscalationCard, HandoverPage } from "./pages/Handover";
 import { FramePage } from "./pages/Frame";
 import { ImpactPage } from "./pages/Impact";
@@ -39,6 +40,7 @@ export default function App() {
   const route = useRoute();
   const [health, setHealth] = useState<Health | null>(null);
   const [queue, setQueue] = useState<TriageRow[] | null>(null);
+  const [summary, setSummary] = useState<ShiftSummary | null>(null);
   const [chatOpen, setChatOpen] = useState<boolean>(() => storage.get("chat_open", false));
   const toggleChat = useCallback((v?: boolean) => {
     setChatOpen((o) => {
@@ -61,8 +63,10 @@ export default function App() {
     return () => window.removeEventListener("keydown", on);
   }, [toggleChat]);
 
+  // Queue and summary (status bar posture, shift card) always refresh together.
   const refreshQueue = useCallback(() => {
     api.triage().then(setQueue).catch(() => undefined);
+    api.summary().then(setSummary).catch(() => undefined);
   }, []);
 
   // Health (model / LLM / warm-up) is polled; the queue refreshes while the warm-up fills in LLM headlines.
@@ -92,6 +96,7 @@ export default function App() {
   if (route.page === "label") return <LabelPage id={route.id} health={health} />;
 
   return (
+    <SummaryContext.Provider value={summary}>
     <div className={`shell ${chatOpen ? "chat-open" : ""}`}>
       {route.page === "frame" ? (
         <FramePage key={route.id} id={route.id} health={health} queue={queue} onChanged={refreshQueue} />
@@ -111,5 +116,6 @@ export default function App() {
       )}
       <ChatPanel open={chatOpen} onClose={() => toggleChat(false)} imageId={route.page === "frame" || route.page === "brief" ? route.id : null} />
     </div>
+    </SummaryContext.Provider>
   );
 }

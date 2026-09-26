@@ -29,9 +29,19 @@ def test_read_endpoints(client):
     # Map/box colours come from config thresholds on the backend, not from constants in the UI.
     pkt = client.get("/api/frames/img_000860/packet").json()
     assert set(tr["vehicle_levels"]) == {v["ref"] for v in pkt["vehicles"]}
+    # Projection vectors carry the packet's own ETA for every approaching vehicle (nothing recomputed).
+    etas = {
+        v["ref"]: v["kinematics"]["eta_min"]
+        for v in pkt["vehicles"]
+        if v["kinematics"] and v["kinematics"]["approaching"]
+    }
+    assert {p["vehicle_ref"]: p["eta_min"] for p in tr["projections"]} == {
+        k: e for k, e in etas.items() if e is not None
+    }
     assert all(
         t["level"] == tr["vehicle_levels"][t["vehicle_ref"]] for t in tr["tracks"] if t["role"] == "vehicle"
     )
+    assert [p["eta_min"] for p in tr["projections"]] == sorted(p["eta_min"] for p in tr["projections"])
     # Queue row carries the decisive numbers straight from the packet.
     row = next(r for r in client.get("/api/triage").json() if r["image_id"] == "img_000860")
     etas = [
@@ -57,7 +67,13 @@ def test_errors_and_decisions(client):
         return next(r for r in client.get("/api/triage").json() if r["image_id"] == "img_000860")
 
     assert row()["decision"]["level"] == "YÜKSEK"
-    assert client.get("/api/summary").json()["decided"] >= 1
+    s = client.get("/api/summary").json()
+    assert s["decided"] >= 1
+    # Posture = highest level still waiting; img_000860 is decided now, the other KRİTİK frames are not.
+    open_crit = sum(
+        r["level"] == "KRİTİK" and r["decision"] is None for r in client.get("/api/triage").json()
+    )
+    assert (s["posture_level"], s["posture_pending"]) == ("KRİTİK", open_crit)
     client.post("/api/frames/img_000860/decisions", json={"run_id": run_id, "action": "undo"})
     assert row()["decision"] is None  # undo is visible in the queue too
 

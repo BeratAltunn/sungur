@@ -46,15 +46,16 @@ export function useReplay() {
     if (state && state.t >= 0) storage.set("replay", { ...state, playing: false });
   }, [state]);
 
+  // One step per second (MIL-STD-1472: dynamic values update at most once a second); `speed` = sim minutes per step.
   useEffect(() => {
     if (!state?.playing || !bounds) return;
     const h = window.setInterval(() => {
       setState((s) => {
         if (!s) return s;
-        const t = Math.min(s.t + s.speed / 10, bounds.end);
+        const t = Math.min(s.t + s.speed, bounds.end);
         return { ...s, t, playing: t < bounds.end };
       });
-    }, 100);
+    }, 1000);
     return () => window.clearInterval(h);
   }, [state?.playing, bounds]);
 
