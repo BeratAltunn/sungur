@@ -89,6 +89,7 @@ def test_triage_map_card_and_shift_card(page: Page):
     expect(page.locator(".topbar")).not_to_contain_text("TASNİF")
     for gone in ("LLM sorgularını kapat", "Bütçe", "D-FINE"):
         expect(page.locator(".topbar")).not_to_contain_text(gone)
+    expect(page.locator(".clock")).to_have_count(0)  # no wall clock anywhere
     # COP: a frame's tick on the time bar pins its card; Esc closes it.
     page.locator(f'.timebar-tick[title^="{CONTRAST}"]').click()
     expect(page.locator(".frame-card-pinned")).to_contain_text(CONTRAST)
@@ -310,6 +311,9 @@ def test_frame_map_shows_zones_grid_and_picked_tracks(page: Page):
     """Frame page map: every zone name and the faint grid as on the main map; the operator picks which tracks show."""
     page.goto(f"/#/frame/{DEMO}")
     fmap = page.locator(".frame-map")
+    # reports tab: just the count, no verdict symbols
+    n_reports = len(page.request.get(f"/api/frames/{DEMO}/packet").json()["reports"])
+    expect(page.get_by_role("tab", name=re.compile("^Raporlar"))).to_have_text(f"Raporlar ({n_reports})")
     n_zones = len(page.request.get("/api/map").json()["zones"])
     expect(fmap.locator(".mk-zone")).to_have_count(n_zones)
     expect(fmap.locator(".mk-zone-active")).to_have_count(1)

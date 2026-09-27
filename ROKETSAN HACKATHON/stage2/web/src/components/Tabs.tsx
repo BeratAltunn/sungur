@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { LABEL_TR, SOURCE_TR, STEP_TR, VERDICT_CLASS, dec, km, zoneName } from "../lib/format";
-import type { EvaluationResult, EvidencePacket, LiveRun, TraceStep, VerdictT } from "../lib/types";
+import type { EvaluationResult, EvidencePacket, LiveRun, TraceStep } from "../lib/types";
 import { RefText, VerdictBadge } from "./ui";
 import { VehicleChip } from "./VehicleChip";
 import { anomalies } from "../lib/vehicles";
@@ -30,10 +30,9 @@ export function EvidenceTabs({
   onPickReport: (id: string) => void;
   onRef: (id: string) => void;
 }) {
-  const n = (v: VerdictT) => packet.reports.filter((r) => r.verdict === v).length;
   const all: [TabId, string][] = [
     ["why", "Neden?"],
-    ["reports", `Raporlar ✓${n("DOĞRULANDI")} ✗${n("ÇELİŞİYOR")} ?${n("DOĞRULANAMAZ")} —${n("İLGİSİZ")}`],
+    ["reports", `Raporlar (${packet.reports.length})`],
     ["vehicles", `Araçlar (${packet.vehicles.length})`],
     ["trace", "Ajan izi"],
   ];

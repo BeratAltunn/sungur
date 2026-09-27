@@ -68,9 +68,6 @@ select, input[type="text"], input[type="search"], input:not([type]) {
 .topbar-right { justify-content: flex-end; gap: 16px; }
 .topbar-center { display: flex; align-items: center; gap: 16px; }
 .brand { font-weight: 700; letter-spacing: .14em; color: var(--text); display: flex; gap: 8px; align-items: center; }
-.clock { display: inline-flex; align-items: baseline; gap: 8px; font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.clock-local { font-size: 18px; font-weight: 600; color: var(--text); }
-.clock-zulu { font-size: 13px; color: var(--muted); }
 .posture { display: inline-flex; align-items: center; gap: 8px; padding: 3px 10px; border: 1px solid var(--line-strong); border-radius: 4px; color: var(--text); font-size: 14px; }
 .posture-label { font-size: 11px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
 .posture-clear { color: var(--text-2); }

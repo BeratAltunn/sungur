@@ -84,26 +84,6 @@ export function useSlow(busy: boolean, ms = 1000) {
 export const SummaryContext = createContext<ShiftSummary | null>(null);
 
 
-/** Local time and Zulu, updated once a second (MIL-STD-1472: dynamic values ≤ 1 Hz). */
-function Clock() {
-  const [now, setNow] = useState(() => new Date());
-  useEffect(() => {
-    const h = window.setInterval(() => setNow(new Date()), 1000);
-    return () => window.clearInterval(h);
-  }, []);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return (
-    <span className="clock" aria-label="Saat">
-      <span className="clock-local">
-        {p(now.getHours())}:{p(now.getMinutes())}:{p(now.getSeconds())}
-      </span>
-      <span className="clock-zulu">
-        {p(now.getUTCHours())}:{p(now.getUTCMinutes())}Z
-      </span>
-    </span>
-  );
-}
-
 /** Facility threat posture: the highest level still waiting for the operator. Informative only. */
 function Posture({ s }: { s: ShiftSummary | null }) {
   if (!s) return null;
@@ -125,7 +105,7 @@ function Posture({ s }: { s: ShiftSummary | null }) {
   );
 }
 
-/** Global status bar: brand, clock + posture. `blind` (gold-set labelling) hides the posture: it would reveal the
+/** Global status bar: brand and posture. `blind` (gold-set labelling) hides the posture: it would reveal the
  *  system's levels. `health` is accepted for callers but no longer shown (subsystem details left the bar). */
 export function TopBar({ left, blind = false }: { health?: Health | null; left?: ReactNode; blind?: boolean }) {
   const summary = useContext(SummaryContext);
@@ -153,10 +133,7 @@ export function TopBar({ left, blind = false }: { health?: Health | null; left?:
           <span className="muted">Merkez Üs</span>
           {left}
         </div>
-        <div className="topbar-center">
-          <Clock />
-          {!blind && <Posture s={summary} />}
-        </div>
+        <div className="topbar-center">{!blind && <Posture s={summary} />}</div>
         <div className="topbar-right" />
       </div>
     </header>
