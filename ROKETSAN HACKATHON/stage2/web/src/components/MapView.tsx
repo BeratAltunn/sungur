@@ -39,7 +39,7 @@ interface Props {
   className?: string;
   /** Called once the style is loaded, and again after the basemap is toggled (style reset). */
   onReady: (map: MLMap) => void;
-  initial: { center: [number, number]; zoom: number };
+  initial: { center: [number, number]; zoom: number; bearing?: number };
   /** Tiltable, rotatable plane (right-drag or Ctrl+drag; compass resets). Off: a flat, north-up map. */
   threeD?: { pitch: number; maxPitch: number };
   /** 3D ground (DEM + texture) when the tiles are installed (scripts/build_terrain.py); the operator can turn it off. */
@@ -56,6 +56,8 @@ export function MapView({ className, onReady, initial, threeD, terrain, controls
   const [basemap, setBasemap] = useState<boolean>(() => storage.get("basemap", false));
   const [dem, setDem] = useState<TerrainManifest | null>(null); // installed tiles; null → no terrain toggle
   const [ground, setGround] = useState<boolean>(() => storage.get("terrain", true));
+  const [bearing, setBearing] = useState(initial.bearing ?? 0);
+  const [pitch, setPitch] = useState(threeD?.pitch ?? 0);
 
   useEffect(() => {
     let map: MLMap | null = null;
@@ -78,10 +80,13 @@ export function MapView({ className, onReady, initial, threeD, terrain, controls
         maxPitch: threeD?.maxPitch ?? 0,
       });
       if (!threeD) map.touchZoomRotate.disableRotation();
-      map.addControl(new maplibregl.NavigationControl({ showCompass: !!threeD, visualizePitch: !!threeD }), "top-right");
+      // Zoom buttons only: the compass is our own HUD rose (bottom-right, off the evidence).
+      map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
       map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
       const m = map;
       m.on("load", () => readyRef.current(m));
+      m.on("rotate", () => setBearing(m.getBearing()));
+      m.on("pitch", () => setPitch(m.getPitch()));
       mapRef.current = m;
     });
     return () => {
@@ -123,7 +128,37 @@ export function MapView({ className, onReady, initial, threeD, terrain, controls
         )}
         {controls}
       </div>
+      {threeD && (
+        <Compass bearing={bearing} pitch={pitch} onReset={() => mapRef.current?.easeTo({ bearing: 0, pitch: 0, duration: 400 })} />
+      )}
     </div>
+  );
+}
+
+/** Compass rose fixed to the map's corner (screen space), so it never covers a vehicle or a track. It turns with the
+ *  map; clicking it puts north back up and lays the map flat (top-down). Letters: K(uzey), D(oğu), G(üney), B(atı). */
+function Compass({ bearing, pitch, onReset }: { bearing: number; pitch: number; onReset: () => void }) {
+  const deg = Math.round(((bearing % 360) + 360) % 360) % 360;
+  const reset = deg !== 0 || Math.round(pitch) !== 0;
+  const where = deg ? `harita ${deg}° dönük` : "kuzey yukarıda";
+  return (
+    <button
+      type="button"
+      className="map-compass"
+      onClick={onReset}
+      title={reset ? `Kuzeyi yukarı al, düz görünüm (${where})` : "Kuzey yukarıda"}
+      aria-label={reset ? `Pusula: ${where}; kuzeyi yukarı al ve düz görünüme dön` : "Pusula: kuzey yukarıda"}
+    >
+      <svg viewBox="-30 -30 60 60" aria-hidden="true" style={{ transform: `rotate(${-bearing}deg)` }}>
+        <circle className="rose-ring" r="27" />
+        <path className="rose-n" d="M0,-21 L5,0 L-5,0 Z" />
+        <path className="rose-s" d="M0,21 L5,0 L-5,0 Z" />
+        <text className="rose-k" y="-15.5" x="0">K</text>
+        <text y="23" x="0">G</text>
+        <text y="3.8" x="19.5">D</text>
+        <text y="3.8" x="-19.5">B</text>
+      </svg>
+    </button>
   );
 }
 

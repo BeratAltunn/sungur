@@ -26,7 +26,7 @@ def marker(page: Page, image_id: str):
 
 def flat(page: Page):
     """Compass: back to north-up and no tilt (the main map opens tilted)."""
-    page.get_by_role("button", name=re.compile("reset north")).click()
+    page.locator(".map-compass").first.click()
     page.wait_for_timeout(900)
 
 
@@ -90,6 +90,12 @@ def test_triage_map_card_and_shift_card(page: Page):
     for gone in ("LLM sorgularını kapat", "Bütçe", "D-FINE"):
         expect(page.locator(".topbar")).not_to_contain_text(gone)
     expect(page.locator(".clock")).to_have_count(0)  # no wall clock anywhere
+    # main map: no zone labels; the compass sits in the corner and puts north back up when clicked
+    expect(page.locator(".mk-zone")).to_have_count(0)
+    compass = page.locator(".map-compass")
+    expect(compass).to_have_count(1)
+    compass.click()
+    expect(compass).to_have_attribute("title", "Kuzey yukarıda")
     # COP: a frame's tick on the time bar pins its card; Esc closes it.
     page.locator(f'.timebar-tick[title^="{CONTRAST}"]').click()
     expect(page.locator(".frame-card-pinned")).to_contain_text(CONTRAST)
@@ -308,20 +314,21 @@ def test_demo_frame_aha_moment(page: Page):
 
 
 def test_frame_map_shows_zones_grid_and_picked_tracks(page: Page):
-    """Frame page map: every zone name and the faint grid as on the main map; the operator picks which tracks show."""
+    """Frame page map: the main map's look (no zone labels, compass in the corner); the operator picks which tracks show."""
     page.goto(f"/#/frame/{DEMO}")
     fmap = page.locator(".frame-map")
     # reports tab: just the count, no verdict symbols
     n_reports = len(page.request.get(f"/api/frames/{DEMO}/packet").json()["reports"])
     expect(page.get_by_role("tab", name=re.compile("^Raporlar"))).to_have_text(f"Raporlar ({n_reports})")
-    n_zones = len(page.request.get("/api/map").json()["zones"])
-    expect(fmap.locator(".mk-zone")).to_have_count(n_zones)
-    expect(fmap.locator(".mk-zone-active")).to_have_count(1)
+    # uncluttered: no zone labels, no legend; a screen-corner compass instead of the zoom control's needle
+    expect(fmap.locator(".mk-zone")).to_have_count(0)
+    expect(fmap.locator(".map-legend")).to_have_count(0)
+    expect(fmap.locator(".map-compass")).to_have_count(1)
     truck = fmap.locator('.mk-veh[title~="T0122"]')
     expect(truck).to_be_visible()
     # same symbols and view as the main map: class silhouette in the level colour, tiltable 3D plane
     expect(truck.locator(".mk-v .veh-sil")).to_have_count(1)
-    expect(fmap.locator(".maplibregl-ctrl-compass")).to_have_count(1)
+    expect(fmap.locator(".maplibregl-ctrl-compass")).to_have_count(0)
     picker = fmap.get_by_role("button", name=re.compile(r"^İzler"))
     total = int(re.search(r"/(\d+)", picker.inner_text()).group(1))
     picker.click()

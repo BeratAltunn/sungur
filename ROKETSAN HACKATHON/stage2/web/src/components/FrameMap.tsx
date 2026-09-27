@@ -52,7 +52,7 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
   const { layers, toggle } = useLayers<FrameLayer>("layers_frame", { others: true, pins: true, projections: true, rings: true });
   const vehicleMarkers = useRef<Record<string, Marker>>({});
   const pinMarkers = useRef<Record<string, Marker>>({});
-  const staticMarkers = useRef<Marker[]>([]); // base + zone labels: rebuilt with the style, never duplicated
+  const staticMarkers = useRef<Marker[]>([]); // the base marker: rebuilt with the style, never duplicated
   const [ready, setReady] = useState(0);
   // Which tracks the operator wants on the map (display only; the evidence is unchanged). All shown by default.
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
@@ -122,11 +122,6 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
     if (!map.getLayer("paths-full")) addEvidenceLayers(map);
 
     staticMarkers.current.push(htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base"));
-    // Every zone name, as on the main map; the frame's own zone stands out.
-    for (const z of ctx.zones)
-      staticMarkers.current.push(
-        htmlMarker(map, z.center, z.label, `mk mk-zone${z.name === frame.zone ? " mk-zone-active" : ""}`),
-      );
     // Vehicles as on the main map: class silhouette in the level colour; the V-number ties it to the brief.
     // Tracks without a detection in this frame (undetected, report-related) are the main map's grey dots.
     for (const tr of data.tracks) {
@@ -285,24 +280,6 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
           {t < data.window.end && <span className="muted"> · çekim anında geçerli</span>}
         </div>
       )}
-      <div className="map-legend" aria-label="Harita işaretleri">
-        <span>
-          <span className="sym-base sym-base-sm" aria-hidden>
-            ÜS
-          </span>{" "}
-          dost (üs)
-        </span>
-        <span>
-          <span className="mk-v level-quiet legend-veh" aria-hidden dangerouslySetInnerHTML={{ __html: classSymbol("car") }} />{" "}
-          araç: sınıf silueti{blind ? "" : ", renk = risk"}
-        </span>
-        <span>
-          <span className="mk-vdot legend-dot" aria-hidden /> karede tespit edilmeyen iz
-        </span>
-        <span>
-          <span className="legend-dash" aria-hidden /> tahmini varış (çekim anı)
-        </span>
-      </div>
       <div className="map-actions">
         <div className="track-picker">
           <button

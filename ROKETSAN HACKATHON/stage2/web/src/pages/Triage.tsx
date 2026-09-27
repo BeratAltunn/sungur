@@ -679,7 +679,6 @@ function OverviewMap({
       map.on("mouseleave", "frame-footprints-fill", () => (map.getCanvas().style.cursor = ""));
     }
     htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base");
-    for (const z of ctx.zones) htmlMarker(map, z.center, z.label, "mk mk-zone");
     // Arrows first (painted on the ground, under the upright icons); same point as the frame, so they tilt and
     // rotate with the plane and always point along the true heading.
     // Only frames whose lead vehicle approaches the base get an arrow: the threat stands out, not every movement.
