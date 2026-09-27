@@ -1,6 +1,6 @@
 # NÖBETÇİ: web arayüzü + API tek imajda.
-# Derleme bağlamı "asama-2/" klasörüdür (stage2 + stage2_dev_data gerekir; .dockerignore'a bak):
-#   docker compose -f stage2/docker-compose.yml up --build
+# Derleme bağlamı "asama-2/" klasörüdür (dizdar/ gerekir; .dockerignore'a bak). Veri paketi imaja girmez, çalışırken bağlanır:
+#   docker compose -f dizdar/docker-compose.yml up --build
 # Resmî veri paketi ve D-FINE ağırlıkları imaja girmez, docker-compose.yml volume ile bağlar.
 # Not: Docker içinde Apple GPU (MPS) yoktur; D-FINE CPU'da çalışır. Tespitler önbellekte olduğu için
 # demo akışı etkilenmez, yalnızca "canlı yeniden değerlendir" birkaç saniye sürer.
@@ -8,9 +8,9 @@
 # ---------------------------------------------------------------- 1) arayüz derlemesi
 FROM node:22-slim AS web
 WORKDIR /web
-COPY stage2/web/package.json stage2/web/package-lock.json ./
+COPY dizdar/web/package.json dizdar/web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
-COPY stage2/web/ ./
+COPY dizdar/web/ ./
 RUN npm run build
 
 # ---------------------------------------------------------------- 2) Python çalışma ortamı
@@ -19,20 +19,20 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PYTHONPATH=/app/stage2/src \
+    PYTHONPATH=/app/dizdar/src \
     YOLO_CONFIG_DIR=/tmp/ultralytics \
-    SENTINEL_DATA_DIR=/app/stage2_dev_data
+    SENTINEL_DATA_DIR=/app/data
 
 # OpenCV (ultralytics bağımlılığı) için gereken sistem kütüphaneleri
 RUN apt-get update \
  && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
  && rm -rf /var/lib/apt/lists/*
 
-WORKDIR /app/stage2
+WORKDIR /app/dizdar
 
 # Bağımlılıklar kod değişikliklerinden ayrı katmanda: CPU'ya özel torch (CUDA'lı sürümden ~2 GB küçük)
 RUN pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
-COPY stage2/pyproject.toml ./
+COPY dizdar/pyproject.toml ./
 RUN python - <<'EOF' > /tmp/requirements.txt
 import tomllib
 p = tomllib.load(open("pyproject.toml", "rb"))["project"]
@@ -47,8 +47,7 @@ RUN mkdir -p models \
  && test -f models/yolov8n.pt
 
 # Uygulama kodu, veri, önbellek ve derlenmiş arayüz
-COPY stage2_dev_data /app/stage2_dev_data
-COPY stage2/ ./
+COPY dizdar/ ./
 COPY --from=web /web/dist ./web/dist
 
 EXPOSE 8000

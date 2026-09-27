@@ -1,0 +1,27 @@
+# Tek komutla:  docker compose -f dizdar/docker-compose.yml up --build     (asama-2/ klasöründen)
+#          ya da:  cd dizdar && docker compose up --build
+# Arayüz: http://127.0.0.1:8000
+services:
+  nobetci:
+    build:
+      context: ..
+      dockerfile: dizdar/Dockerfile
+    image: nobetci:latest
+    ports:
+      - "127.0.0.1:8000:8000"
+    env_file:
+      - path: .env        # LLM anahtarı imaja girmez (.dockerignore); yoksa sistem şablon brief ile çalışır
+        required: false
+    volumes:
+      - ./runs:/app/dizdar/runs     # iz (trace.jsonl) ve operatör kararları kalıcı
+      - ./cache:/app/dizdar/cache   # tespit ve LLM önbelleği host ile paylaşılır
+      - ./calibration:/app/dizdar/calibration   # kör etiketler host'a yazılır (git'e girer)
+      # Resmî veri paketi ve Kaggle ekibinin D-FINE ağırlıkları git'e girmez, imaja da gömülmez.
+      # Veri paketi şarttır: asama-2/data/ (image_meta.json, tracks.csv, field_reports.json, zones.json, images/).
+      # Ağırlık yoksa tespitler depodaki önbellekten gelir.
+      - ../data:/app/data:ro
+      - ./models/dfine_m_kaggle.pth:/app/dizdar/models/dfine_m_kaggle.pth:ro
+    environment:
+      TZ: "<+03>-3"                 # Türkiye saati (sabit UTC+3; imajda tzdata gerekmez)
+      SENTINEL_DATA_DIR: /app/data  # resmî Aşama 2 paketi (yukarıdaki volume)
+    restart: unless-stopped

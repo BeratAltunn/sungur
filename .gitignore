@@ -233,9 +233,8 @@ asama-2/*.pptx
 asama-2/*.pdf
 
 # Python şablonundaki "lib/" kuralı arayüz kodunu da yok sayar; geri aç
-!asama-2/stage2/web/src/lib/
+!asama-2/dizdar/web/src/lib/
 
 # Resmî Aşama 2 paketi, Kaggle kontrol noktaları ve kökteki teslim klasörü: depoya girmez, ekip ayrıca paylaşır
 asama-2/data/
 *.pth
-/stage2/

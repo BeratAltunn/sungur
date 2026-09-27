@@ -1,7 +1,7 @@
 # NÖBETÇİ yapılandırması. Yollar bu dosyanın klasörüne göre çözülür.
 # Sabit kodlanmış eşik yok: tüm eşikler ve ağırlıklar burada.
 
-data_dir: ../data                   # resmî Aşama 2 paketi (git'e girmez); dev verisi: ../stage2_dev_data
+data_dir: ../data                   # resmî Aşama 2 paketi (git'e girmez, ayrıca sağlanır)
 images_subdir: images
 
 detector:

@@ -1,4 +1,4 @@
-# Derleme bağlamı "asama-2/" (stage2/Dockerfile). Gizli ve büyük dosyalar imaja girmez.
+# Derleme bağlamı "asama-2/" (dizdar/Dockerfile). Gizli ve büyük dosyalar imaja girmez.
 **/.env
 **/.env.*
 !**/.env.example
@@ -15,9 +15,9 @@ dataset/
 
 # Resmî veri paketi ve model ağırlıkları volume ile bağlanır (docker-compose.yml)
 data/
-stage2/models/
+dizdar/models/
 
 # Çalışma kayıtları host'tan bağlanır; arayüz imajda yeniden derlenir
-stage2/runs/
-stage2/web/node_modules/
-stage2/web/dist/
+dizdar/runs/
+dizdar/web/node_modules/
+dizdar/web/dist/

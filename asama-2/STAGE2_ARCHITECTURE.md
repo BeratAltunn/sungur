@@ -30,7 +30,7 @@ LLM için takım başına 15 $ GLM API kredisi var; anahtarlar 2. aşamada dağ�
 
 ## 2. Veri: doğrulanmış gerçekler
 
-(`stage2_dev_data/` üzerinde ölçüldü, bkz. oradaki README)
+(geliştirme verisi üzerinde ölçüldü; resmî paketle aynı senaryo, teslim sürümünde depodan kaldırıldı)
 
 | Kaynak | Yapı | Not |
 |---|---|---|
@@ -204,7 +204,7 @@ ETA bir kenar değil aciliyet eksenidir (taban + kuyruk sırası). Kare seviyesi
 ## 6. Klasör yapısı
 
 ```
-stage2/
+dizdar/
   pyproject.toml            # python 3.12, pydantic v2, numpy, pandas, scipy, openai, streamlit, pydeck, pytest, ruff
   .env.example              # GLM_BASE_URL, GLM_API_KEY, GLM_MODEL
   config.yaml               # veri yolları, eşikler, risk ağırlıkları, detector seçimi
@@ -221,7 +221,7 @@ stage2/
     observability/trace.py
     interfaces/{cli,app}.py
   tests/
-  data/                     # resmi paket buraya (dev için ../stage2_dev_data)
+  data/                     # resmî veri paketi buraya (git'e girmez)
 ```
 
 ## 7. Kaggle ekibiyle arayüz sözleşmesi

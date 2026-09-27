@@ -166,7 +166,7 @@ class ObservabilityCfg(BaseModel):
 
 class Settings(BaseModel):
     root: Path = PROJECT_ROOT
-    data_dir: Path = Path("../stage2_dev_data")
+    data_dir: Path = Path("../data")
     images_subdir: str = "images"
     detector: DetectorCfg = Field(default_factory=DetectorCfg)
     tracking: TrackingCfg = Field(default_factory=TrackingCfg)

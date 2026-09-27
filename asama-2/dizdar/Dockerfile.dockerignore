@@ -1,0 +1,14 @@
+# BuildKit uses this file for dizdar/Dockerfile (build context: "asama-2/").
+# Only dizdar/ is sent to the build (the data package is mounted at run time).
+*
+!dizdar/
+
+dizdar/.env
+dizdar/web/node_modules/
+dizdar/web/dist/
+dizdar/runs/
+dizdar/models/
+**/__pycache__/
+**/.pytest_cache/
+**/.ruff_cache/
+**/.DS_Store

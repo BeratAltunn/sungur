@@ -6,7 +6,7 @@ Demo kareleri ve beklentileri `config.yaml → demo` altında; `make demo-check`
 ## Demodan önce (30 dk önce)
 
 ```bash
-cd asama-2/stage2
+cd asama-2/dizdar
 make demo-check                                   # 7/7 YEŞİL olmalı (LLM çağırmaz)
 make demo-check-chat                              # sohbet soruları da (demo akışındaki V7 sorusu dahil); ~1 dk, önbelleğe alır
 make app                                          # ya da Docker: docker compose up -d

@@ -27,7 +27,7 @@ flowchart LR
 Hızlı başlangıç (resmî veri paketi, model ağırlıkları ve `.env` ekipten alınır; ayrıntı Aşama 2 belgesinde):
 
 ```bash
-cd asama-2/stage2
+cd asama-2/dizdar
 cp .env.example .env
 docker compose up --build -d        # arayüz: http://127.0.0.1:8000
 ```
@@ -42,8 +42,7 @@ asama-2/                Aşama 2: DİZDAR
   README.md             Aşama 2 belgesi
   PROJECT_DESIGN.md     ürün ve tasarım gerekçeleri
   STAGE2_ARCHITECTURE.md  modül ayrıntıları
-  stage2/               uygulama (Python + React)
-  stage2_dev_data/      dev verisi (resmî paketle aynı senaryo, küçük görüntüler)
+  dizdar/               uygulama (Python + React)
 ```
 
 Git'e girmeyenler: model ağırlıkları (`*.pth`), resmî veri paketi (`asama-2/data/`), Kaggle verisi, organizatör belgeleri (PDF/PPTX), `.env`.

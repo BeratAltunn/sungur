@@ -5,13 +5,13 @@ from __future__ import annotations
 import csv
 import importlib.util
 
-from sentinel.config import PROJECT_ROOT
+from sentinel.config import PROJECT_ROOT, load_settings
 
 _spec = importlib.util.spec_from_file_location("build_terrain", PROJECT_ROOT / "scripts" / "build_terrain.py")
 bt = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(bt)
 
-DATA = PROJECT_ROOT.parent / "stage2_dev_data"
+DATA = load_settings().data_path  # the data package the system runs on
 BASE = (32.85306, 39.92184)  # Merkez Us (lon, lat)
 
 

@@ -107,7 +107,7 @@ def main() -> int:
     ap.add_argument(
         "--data",
         type=Path,
-        default=Path(os.environ.get("SENTINEL_DATA_DIR", ROOT.parent / "stage2_dev_data")),
+        default=Path(os.environ.get("SENTINEL_DATA_DIR", ROOT.parent / "data")),
     )
     ap.add_argument("--bbox", help="W,S,E,N (derece); verilmezse veri paketinden hesaplanır")
     ap.add_argument("--pad-km", type=float, default=0.1)

@@ -94,7 +94,7 @@ Kuyruk sırası: seviye → tabandan önceki matris seviyesi (üçgeni tam olan 
 - **Veri en aza indirilir:** LLM'e görüntü ve mutlak koordinat gitmez; konumlar üsse mesafe/yön/bölge olarak verilir.
 - **Rapor metni veridir, talimat değildir:** metinler `<rapor>` etiketiyle işaretlenir; prompt injection testi (`tests/security/`) bunu korur.
 - **Sohbet:** LLM salt-okur araçlar çağırır (`list_frames`, `analyze_image`, `get_track`, `find_reports`, `zone_summary`); sayımları araçlar verir, LLM saymaz. Operatör anormal bir aracı sohbete sürükleyebilir; sistem duruma göre soru önerir.
-- **Önbellek ve bütçe:** yanıtlar `stage2/cache/llm/`'de (anahtar: model + prompt sürümü + ayarlar + mesajlar); 40 brief ve demo soruları hazır, demo internetsiz de açılır. Bütçe bekçisi harcamayı sınırlar.
+- **Önbellek ve bütçe:** yanıtlar `dizdar/cache/llm/`'de (anahtar: model + prompt sürümü + ayarlar + mesajlar); 40 brief ve demo soruları hazır, demo internetsiz de açılır. Bütçe bekçisi harcamayı sınırlar.
 
 ---
 
@@ -112,28 +112,28 @@ React + TypeScript + MapLibre; FastAPI ile tek süreçte sunulur (`http://127.0.
 | `#/impact` | Etki simülasyonu: elle incelemeye göre kararlar araçlar üsse varmadan önce mi? (kare başına süreler varsayımdır) |
 | `#/label` | Kör etiketleme aracı (sistemin seviyesi gizli; kalibrasyon için) |
 
-Canlı demo akışı ve B planları: [`stage2/DEMO.md`](stage2/DEMO.md).
+Canlı demo akışı ve B planları: [`dizdar/DEMO.md`](dizdar/DEMO.md).
 
 ---
 
 ## Kurulum
 
-Tüm komutlar `asama-2/stage2` içinden çalışır.
+Tüm komutlar `asama-2/dizdar` içinden çalışır.
 
 **Git'te olmayan, ayrıca sağlanan dosyalar:**
 
 | Dosya | Yeri | Yoksa |
 |---|---|---|
-| Resmî Aşama 2 veri paketi | `asama-2/data/` (`image_meta.json`, `tracks.csv`, `field_reports.json`, `zones.json`, `images/`) | `export SENTINEL_DATA_DIR=../stage2_dev_data` ile depodaki dev verisiyle çalışır |
-| D-FINE-M ağırlıkları | `asama-2/stage2/models/dfine_m_kaggle.pth` (79 MB, yalnızca EMA ağırlıkları) | tespitler depodaki önbellekten gelir; "canlı yeniden değerlendir" çalışmaz |
-| LLM anahtarı | `asama-2/stage2/.env` (`cp .env.example .env`, `GLM_API_KEY=` doldurulur) | brief'ler önbellekten ya da şablondan gelir; sohbet kapalı |
+| Resmî Aşama 2 veri paketi | `asama-2/data/` (`image_meta.json`, `tracks.csv`, `field_reports.json`, `zones.json`, `images/`) | **zorunlu:** veri paketi olmadan sistem açılmaz (başka bir yerdeyse `SENTINEL_DATA_DIR=/yol`) |
+| D-FINE-M ağırlıkları | `asama-2/dizdar/models/dfine_m_kaggle.pth` (79 MB, yalnızca EMA ağırlıkları) | tespitler depodaki önbellekten gelir; "canlı yeniden değerlendir" çalışmaz |
+| LLM anahtarı | `asama-2/dizdar/.env` (`cp .env.example .env`, `GLM_API_KEY=` doldurulur) | brief'ler önbellekten ya da şablondan gelir; sohbet kapalı |
 
 ### Docker (önerilen)
 
 Gereken: Docker Desktop (Compose v2.24+).
 
 ```bash
-cd asama-2/stage2
+cd asama-2/dizdar
 cp .env.example .env
 docker compose up --build -d        # ilk derleme birkaç dakika; arayüz: http://127.0.0.1:8000
 docker compose run --rm --no-deps nobetci python -m pytest -q    # testler imajın içinde
@@ -146,7 +146,7 @@ Veri paketi ve ağırlıklar imaja girmez, salt okunur bağlanır; `.env` de ima
 Gereken: Python 3.12, Node 20+, npm.
 
 ```bash
-cd asama-2/stage2
+cd asama-2/dizdar
 python3 -m venv .venv && source .venv/bin/activate
 make install          # Python paketleri (torch + transformers)
 cp .env.example .env
@@ -186,8 +186,8 @@ asama-2/
   README.md                 bu belge
   PROJECT_DESIGN.md         problem, personalar, kullanıcı yolculuğu, ekranlar, tasarım kararları
   STAGE2_ARCHITECTURE.md    modül ayrıntıları
-  stage2_dev_data/          dev verisi (resmî paketle aynı senaryo, küçük görüntüler)
-  stage2/                   uygulama
+  data/                     resmî veri paketi (git'e girmez, ayrıca sağlanır)
+  dizdar/                   uygulama
     config.yaml             tüm eşikler, ağırlıklar, model ve LLM ayarları
     src/sentinel/
       domain/models.py      pydantic modeller (katmanlar arası sözleşme)
@@ -237,5 +237,5 @@ Model yüklenemezse sistem aynı ayarlarla üretilmiş tespit önbelleğinden de
 
 - [`PROJECT_DESIGN.md`](PROJECT_DESIGN.md): problem, personalar, kullanıcı yolculuğu, ekranlar, demo senaryosu, tasarım kararları
 - [`STAGE2_ARCHITECTURE.md`](STAGE2_ARCHITECTURE.md): modül ayrıntıları
-- [`stage2/DEMO.md`](stage2/DEMO.md): canlı demo akışı ve B planları
+- [`dizdar/DEMO.md`](dizdar/DEMO.md): canlı demo akışı ve B planları
 - [`../AGENTS.md`](../AGENTS.md): geliştirici ve kod asistanı rehberi (kurulum, kesin kurallar, tuzaklar)

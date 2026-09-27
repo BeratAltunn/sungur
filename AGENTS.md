@@ -10,9 +10,9 @@ Bu dosya, bu depoda çalışan LLM agent'ları (Claude Code, Codex, Cursor, Copi
 
 DİZDAR (kod adı NÖBETÇİ; Python paketi `sentinel`, prompt'lar ve CLI bu adı kullanır), bir askerî üssü çevreleyen 8 bölgeden gelen drone karelerini risk sırasına dizen bir ajandır. Her kare için 6 adım çalışır: **(1) araç tespiti (Kaggle ekibinin D-FINE-M modeli) → (2) pikselden koordinata → (3) araçları 2 saatlik hareket izleriyle eşleme + kinematik (hız, yaklaşma, duraklama, ETA) → (4) saha raporlarını raporun *kendi saatindeki* duruma göre doğrulama → (5) Yetenek–Fırsat–Niyet (C-O-I) tehdit değerlendirmesi: her araç için üç kenar bandı → seviye matrisi + taban kuralları (ETA ayrı aciliyet ekseni) → (6) LLM'in her sayısı kanıtla kontrol edilen (grounding) Türkçe brief yazması.** 1–5 deterministik Python'dur; LLM hesap yapmaz, yalnızca yazar. Ayrıca araç çağıran bir sohbet paneli ve operatör için bir web arayüzü (triage kuyruğu + kare detayı + zaman kaydırıcısı) vardır.
 
-**Değerlendirme kriterleri:** Kaggle skoru (Aşama 1 tespit modeli) %20 · teknik kalite ve mimari %15 · problemin önemi ve çözümün sağladığı iş değeri %20 · çalışan ürün ortaya koyabilme %20 · ürün düşüncesi ve kullanıcı deneyimi %20 · sunum ve demo %5. Sistem resmî Aşama 2 veri paketi, Kaggle ekibinin D-FINE-M modeli ve hackathon ağ geçidindeki `glm-5.3-flash` ile çalışır. Dev verisi, yolov8n ve Evren yedek olarak durur.
+**Değerlendirme kriterleri:** Kaggle skoru (Aşama 1 tespit modeli) %20 · teknik kalite ve mimari %15 · problemin önemi ve çözümün sağladığı iş değeri %20 · çalışan ürün ortaya koyabilme %20 · ürün düşüncesi ve kullanıcı deneyimi %20 · sunum ve demo %5. Sistem resmî Aşama 2 veri paketi, Kaggle ekibinin D-FINE-M modeli ve hackathon ağ geçidindeki `glm-5.3-flash` ile çalışır. yolov8n ve Evren yedek olarak durur.
 
-Aşama 2 belgesi (jüri için): `asama-2/README.md` · ürün/tasarım gerekçeleri: `asama-2/PROJECT_DESIGN.md` · modül ayrıntıları: `asama-2/STAGE2_ARCHITECTURE.md` · demo: `asama-2/stage2/DEMO.md`.
+Aşama 2 belgesi (jüri için): `asama-2/README.md` · ürün/tasarım gerekçeleri: `asama-2/PROJECT_DESIGN.md` · modül ayrıntıları: `asama-2/STAGE2_ARCHITECTURE.md` · demo: `asama-2/dizdar/DEMO.md`.
 
 ## 2. Depo haritası
 
@@ -24,10 +24,9 @@ sungur/                                   ← git kökü
     README.md                             ← Aşama 2 belgesi (jüri için: problem, mimari, risk modeli, kurulum, demo)
     PROJECT_DESIGN.md  STAGE2_ARCHITECTURE.md
     data/                                 ← RESMÎ Aşama 2 paketi (40 kare, 226 track, 137 rapor) — GIT'E GİRMEZ, ekip ayrıca paylaşır
-    stage2_dev_data/                      ← dev verisi (aynı senaryo, küçültülmüş görüntüler) — depoda, yedek
     dataset/                              ← Kaggle verisi (1,8 GB) — GIT'E GİRMEZ, gerekmez
     gorev_tanimi.pdf                      ← resmî görev tanımı (GLM kullanım rehberi dahil) — GIT'E GİRMEZ
-    stage2/                               ← UYGULAMA (tüm komutlar buradan çalışır)
+    dizdar/                               ← UYGULAMA (tüm komutlar buradan çalışır)
       config.yaml                         ← tüm eşikler, ağırlıklar, model seçimi
       .env.example → .env                 ← LLM anahtarı (git'e girmez)
       Makefile  Dockerfile  docker-compose.yml  pyproject.toml
@@ -53,10 +52,10 @@ sungur/                                   ← git kökü
 
 ## 3. Ayağa kaldırma
 
-Tüm komutlar `asama-2/stage2` içinden çalışır:
+Tüm komutlar `asama-2/dizdar` içinden çalışır:
 
 ```bash
-cd asama-2/stage2
+cd asama-2/dizdar
 ```
 
 ### Yol A — Docker (önerilen; ekip ve yedek laptop)
@@ -71,7 +70,7 @@ docker compose up --build -d    # ilk derleme birkaç dakika (~2,6 GB imaj)
 Arayüz: http://127.0.0.1:8000 · loglar: `docker compose logs -f` · durdurma: `docker compose down`
 Testler imajın içinde: `docker compose run --rm --no-deps nobetci python -m pytest -q`
 
-Notlar: Resmî veri (`../data`) ve D-FINE ağırlıkları (`models/dfine_m_kaggle.pth`) imaja girmez, volume ile salt okunur bağlanır; `.env` de `.dockerignore` sayesinde imaja girmez. Veri host'ta yoksa `docker-compose.yml`'deki iki `data` satırını yorumla (dev verisiyle açılır). Docker içinde Apple GPU (MPS) yok; D-FINE CPU'da çalışır (tespitler önbellekte olduğu için fark edilmez). `runs/`, `cache/` ve `calibration/` (kör etiketler) host'a bağlıdır. Konteyner `restart: unless-stopped` ile açılır; `make app` ile yerel çalıştırmadan önce `docker compose down` yap (port 8000 çakışır).
+Notlar: Resmî veri (`../data`) ve D-FINE ağırlıkları (`models/dfine_m_kaggle.pth`) imaja girmez, volume ile salt okunur bağlanır; `.env` de `.dockerignore` sayesinde imaja girmez. Veri paketi host'ta `asama-2/data/` altında olmalı. Docker içinde Apple GPU (MPS) yok; D-FINE CPU'da çalışır (tespitler önbellekte olduğu için fark edilmez). `runs/`, `cache/` ve `calibration/` (kör etiketler) host'a bağlıdır. Konteyner `restart: unless-stopped` ile açılır; `make app` ile yerel çalıştırmadan önce `docker compose down` yap (port 8000 çakışır).
 
 ### Yol B — Doğrudan makinede (geliştirme için daha hızlı döngü)
 
@@ -82,7 +81,7 @@ python3 -m venv .venv && source .venv/bin/activate   # isteğe bağlı ama öner
 make install        # pip install -e '.[dev,ui,detector]' (torch + transformers) + models/yolov8n.pt indirir
 cp .env.example .env
 # Ekipten al (git'e girmez): resmî paket → "asama-2/data/", Kaggle modeli → models/dfine_m_kaggle.pth
-# Resmî paket yoksa: export SENTINEL_DATA_DIR=../stage2_dev_data
+# Veri paketi şart: asama-2/data/ (başka yerdeyse export SENTINEL_DATA_DIR=/yol)
 make check          # ruff + tüm testler
 make app            # arayüzü derler, API + arayüzü http://127.0.0.1:8000'de açar
 ```
@@ -107,7 +106,7 @@ Arayüz üzerinde çalışırken: bir terminalde `make app` açık kalsın, diğ
 
 LLM olarak organizatörün ağ geçidindeki **`glm-5.3-flash`** kullanılır (LiteLLM, OpenAI uyumlu, standart `Authorization: Bearer`). Adres, model ve limitler `asama-2/gorev_tanimi.pdf` s. 3–10'da.
 
-> **Anahtar takıma özeldir ve bütçe sıfırlanmaz: toplam 15 USD.** Anahtarı sohbet/issue/commit'e yazma; yalnızca `stage2/.env` içinde tut (git'e ve Docker imajına girmez). Depo özel olsa da anahtar hiçbir dosyaya yazılmaz.
+> **Anahtar takıma özeldir ve bütçe sıfırlanmaz: toplam 15 USD.** Anahtarı sohbet/issue/commit'e yazma; yalnızca `dizdar/.env` içinde tut (git'e ve Docker imajına girmez). Depo özel olsa da anahtar hiçbir dosyaya yazılmaz.
 
 **Adım 1 — `.env` (kullanıcı yapar):** `cp .env.example .env`, sonra yalnızca `GLM_API_KEY=` satırını takımın anahtarıyla doldur. `GLM_AUTH_HEADER` satırı **olmamalı** (Bearer kullanılır).
 
@@ -141,7 +140,7 @@ python3 -m sentinel evaluate img_000860      # (PYTHONPATH=src ya da make instal
 7. **Eşik ve ağırlıklar `config.yaml`'da.** Kodda sabit eşik yazma. `domain/models.py` ekip sözleşmesidir; alan eklemek/değiştirmek ekiple konuşulur.
 8. **Altın sayı testlerini değiştirme.** `tests/unit/test_geo.py`, `test_tracking.py`, `test_reports.py` organizatörün örneğindeki sayıları (756,301 → 39.92531, 32.87183; T0122 < 1 m, 2. aday T0032 ~41 m; 5,5 → 1,6 km; 10,5 km yol; ETA ~4,4 dk; 12:35 raporu ✗) sabitler. Bu testler kırılırsa kod yanlıştır, test değil.
 9. **Prompt'lar sürümlüdür.** Prompt değiştirirken mevcut dosyayı düzenleme; `agent/prompts/analyst_vN.md` (ya da `chat_vN.md`) yeni dosya aç ve `config.yaml → llm.prompt_version`'ı güncelle. LLM önbelleği sürüme bağlıdır; ardından `python3 scripts/precompute.py` ile 40 brief'i yeniden üret (~15 dk).
-10. **Git'e girmeyecekler:** `.env`, `asama-2/dataset/`, organizatör PDF/PPTX'leri, `stage2/runs/`, `models/*.pt`, `asama-2/data/` (resmî paket), `*.pth`, `web/node_modules`, `web/dist`, `web/public/terrain/` (`make terrain` indirir). Commit'ten önce `git status`'a bak.
+10. **Git'e girmeyecekler:** `.env`, `asama-2/dataset/`, organizatör PDF/PPTX'leri, `dizdar/runs/`, `models/*.pt`, `asama-2/data/` (resmî paket), `*.pth`, `web/node_modules`, `web/dist`, `web/public/terrain/` (`make terrain` indirir). Commit'ten önce `git status`'a bak.
 
 ## 6. Nereyi değiştireyim? (görev → dosya)
 
@@ -155,7 +154,7 @@ python3 -m sentinel evaluate img_000860      # (PYTHONPATH=src ya da make instal
 | Yeni sohbet aracı | `agent/tools.py` (`TOOL_SPECS` + handler; koordinat sızdırmadan, sayımları kendisi versin) + `prompts/chat_vN.md` | `tests/contract/test_chat.py` |
 | Yeni API ucu | `service.py` metodu → `interfaces/api.py` ince uç → `web/src/lib/api.ts` + `types.ts` | `tests/integration/test_api.py` |
 | Arayüz ekranı/bileşeni | `web/src/pages/*`, `web/src/components/*`, stil `web/src/styles.css` | `cd web && npm run typecheck && npm run build`, `make ui-test`, tarayıcıda dene |
-| Demo senaryosu | `stage2/DEMO.md`, `config.yaml → demo` | `make demo-check`, `make demo-check-chat` |
+| Demo senaryosu | `dizdar/DEMO.md`, `config.yaml → demo` | `make demo-check`, `make demo-check-chat` |
 | Resmî veri paketi | önce `make validate` (ya da `SENTINEL_DATA_DIR=/yol python3 scripts/validate_data.py`); format farkı yalnızca `data/adapters.py`'de düzeltilir | `make check` |
 
 ## 7. Tuzaklar
@@ -169,7 +168,7 @@ python3 -m sentinel evaluate img_000860      # (PYTHONPATH=src ya da make instal
 - **Arayüz renkleri Astro UXDS tokenleridir** (`web/src/styles.css` başı). Durum rengini metin olarak kullanma; metin için `--tx-critical` gibi açık tonlar var. Yeni bir renk eklersen `make ui-test` içindeki kontrast testi (≥ 6:1) yakalar.
 - **Risk modeli Yetenek–Fırsat–Niyet (C-O-I):** seviye bantlardan matrisle verilir, skor yalnızca sıralar. Altın set / kalibrasyon yapılmıyor (ekip kararı); eşikleri tek kareye göre değil dağılıma ve demo karelerine bakarak ayarla (D-FINE ile şu an DÜŞÜK 16 · ORTA 14 · YÜKSEK 6 · KRİTİK 4). Dur-kalk skora girmez: bu veride neredeyse her araç bekle-ilerle yapıyor. Güveni τ_op altındaki kutunun sınıfı 'bilinmiyor' sayılır; sınıf bilgisi yalnızca bu ve önceki karelerden gelir.
 
-## 8. Komut özeti (`stage2/` içinden)
+## 8. Komut özeti (`dizdar/` içinden)
 
 ```
 make install        Python paketleri + yolov8n (yedek)        make app          arayüz + API (:8000)

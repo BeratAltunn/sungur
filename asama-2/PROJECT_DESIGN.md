@@ -2,7 +2,7 @@
 
 > Level Up AI | ROKETSAN Yapay Zekâ Hackathonu, Aşama 2 · Tasarım v1
 > Modül düzeyindeki teknik ayrıntılar: [STAGE2_ARCHITECTURE.md](STAGE2_ARCHITECTURE.md). Bu doküman ürün, mimari ve plan kararlarını içerir.
-> Bu dokümandaki sayıların hepsi `stage2_dev_data/` üzerinde ölçüldü. Ölçülmeyen her sayının başında **Varsayım** etiketi var.
+> Bu dokümandaki sayıların hepsi geliştirme verisi üzerinde ölçüldü (resmî paketle aynı senaryo, küçültülmüş görüntüler; teslim sürümünde depodan kaldırıldı, sistem resmî paketle çalışır). Ölçülmeyen her sayının başında **Varsayım** etiketi var.
 
 ---
 
@@ -737,7 +737,7 @@ Aşama 1 modeli ya da GLM anahtarı hiç gelmese bile **her an demo yapılabilir
 
 **Repo yapısı** ([STAGE2_ARCHITECTURE.md §6](STAGE2_ARCHITECTURE.md)'ye eklenenlerle):
 ```
-stage2/
+dizdar/
   pyproject.toml · uv.lock · Makefile · config.yaml · .env.example · README.md
   src/sentinel/
     domain/models.py                         # tüm pydantic modeller (ekip sözleşmesi)
