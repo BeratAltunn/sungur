@@ -4,7 +4,9 @@ Measured in the browser on the rendered page: each visible text node's colour ag
 (ancestor backgrounds and opacity blended). Disabled controls are exempt (WCAG). Documented exceptions:
 - dark ink on the Astro critical fill (#ff3838): the highest ratio that fill allows is ~5.9:1, so ≥ 5.5 is required there;
 - the "Aktif uyarılar" rail at rest: a deliberately faded ghost (operator request) that becomes fully readable on hover
-  or keyboard focus; that readable state is tested below (test_alert_rail_is_readable_on_hover).
+  or keyboard focus; that readable state is tested below (test_alert_rail_is_readable_on_hover);
+- zone names on the maps (.mk-zone): faint, box-less orientation labels (operator request: the map must not look
+  crowded); decorative (aria-hidden), the zone is also written in every frame header and card.
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ SCAN = r"""(only) => {
     const el = t.parentElement; if (!el || seen.has(el)) continue; seen.add(el);
     const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
     if (cs.visibility === 'hidden' || cs.display === 'none' || r.width === 0) continue;
-    if (el.closest('.sr-only,.skip,.maplibregl-ctrl-attrib,[disabled],:disabled')) continue;
+    if (el.closest('.sr-only,.skip,.maplibregl-ctrl-attrib,.mk-zone,[disabled],:disabled')) continue;
     const rail = el.closest('.rail'); if (rail && !rail.matches(':hover, :focus-within, :active')) continue;
     if (only && !el.closest(only)) continue;
     let op = 1; for (let e = el; e; e = e.parentElement) op *= Number(getComputedStyle(e).opacity);

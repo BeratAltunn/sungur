@@ -829,3 +829,12 @@ body.dragging-item .chat-fab { outline: 2px dashed var(--accent); outline-offset
 .map-compass .rose-s { fill: var(--text-2); }
 .map-compass text { fill: var(--text-2); font: 700 8px var(--font); text-anchor: middle; }
 .map-compass text.rose-k { fill: var(--text); font-size: 9px; }
+
+/* ---------------------------------------------------------------- zone labels (all maps) */
+/* Faint ground labels, no box: orientation only (operator request: must not crowd the map). Deliberately below the
+   6:1 text target, documented as an exception in tests/ui/test_contrast.py; the zone is also in every header/card. */
+/* Transparency is in the colour, not `opacity`: MapLibre sets an inline opacity on every marker. */
+.mk-zone { z-index: 1; pointer-events: none; white-space: nowrap; color: color-mix(in srgb, var(--text) 42%, transparent);
+  font-size: 11px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  text-shadow: 0 0 3px color-mix(in srgb, var(--bg) 70%, transparent); }
+.mk-zone-active { color: color-mix(in srgb, var(--text) 72%, transparent); }

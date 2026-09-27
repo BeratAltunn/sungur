@@ -90,8 +90,8 @@ def test_triage_map_card_and_shift_card(page: Page):
     for gone in ("LLM sorgularını kapat", "Bütçe", "D-FINE"):
         expect(page.locator(".topbar")).not_to_contain_text(gone)
     expect(page.locator(".clock")).to_have_count(0)  # no wall clock anywhere
-    # main map: no zone labels; the compass sits in the corner and puts north back up when clicked
-    expect(page.locator(".mk-zone")).to_have_count(0)
+    # main map: faint zone labels; the compass sits in the corner and puts north back up when clicked
+    expect(page.locator(".mk-zone")).to_have_count(len(page.request.get("/api/map").json()["zones"]))
     compass = page.locator(".map-compass")
     expect(compass).to_have_count(1)
     compass.click()
@@ -314,14 +314,17 @@ def test_demo_frame_aha_moment(page: Page):
 
 
 def test_frame_map_shows_zones_grid_and_picked_tracks(page: Page):
-    """Frame page map: the main map's look (no zone labels, compass in the corner); the operator picks which tracks show."""
+    """Frame page map: the main map's look (faint zone labels, compass in the corner); the operator picks which tracks show."""
     page.goto(f"/#/frame/{DEMO}")
     fmap = page.locator(".frame-map")
     # reports tab: just the count, no verdict symbols
     n_reports = len(page.request.get(f"/api/frames/{DEMO}/packet").json()["reports"])
     expect(page.get_by_role("tab", name=re.compile("^Raporlar"))).to_have_text(f"Raporlar ({n_reports})")
-    # uncluttered: no zone labels, no legend; a screen-corner compass instead of the zoom control's needle
-    expect(fmap.locator(".mk-zone")).to_have_count(0)
+    # uncluttered: faint zone labels (no box, not clickable), no legend; a screen-corner compass
+    n_zones = len(page.request.get("/api/map").json()["zones"])
+    expect(fmap.locator(".mk-zone")).to_have_count(n_zones)
+    expect(fmap.locator(".mk-zone-active")).to_have_count(1)
+    assert fmap.locator(".mk-zone").first.evaluate("e => getComputedStyle(e).pointerEvents") == "none"
     expect(fmap.locator(".map-legend")).to_have_count(0)
     expect(fmap.locator(".map-compass")).to_have_count(1)
     truck = fmap.locator('.mk-veh[title~="T0122"]')

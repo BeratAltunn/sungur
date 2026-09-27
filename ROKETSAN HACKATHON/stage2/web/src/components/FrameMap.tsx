@@ -52,7 +52,7 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
   const { layers, toggle } = useLayers<FrameLayer>("layers_frame", { others: true, pins: true, projections: true, rings: true });
   const vehicleMarkers = useRef<Record<string, Marker>>({});
   const pinMarkers = useRef<Record<string, Marker>>({});
-  const staticMarkers = useRef<Marker[]>([]); // the base marker: rebuilt with the style, never duplicated
+  const staticMarkers = useRef<Marker[]>([]); // base + zone labels: rebuilt with the style, never duplicated
   const [ready, setReady] = useState(0);
   // Which tracks the operator wants on the map (display only; the evidence is unchanged). All shown by default.
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
@@ -122,6 +122,12 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
     if (!map.getLayer("paths-full")) addEvidenceLayers(map);
 
     staticMarkers.current.push(htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base"));
+    // Zone names as on the main map: faint, box-less; the frame's own zone a little stronger.
+    for (const z of ctx.zones) {
+      const zm = htmlMarker(map, z.center, z.label, `mk mk-zone${z.name === frame.zone ? " mk-zone-active" : ""}`);
+      zm.getElement().setAttribute("aria-hidden", "true");
+      staticMarkers.current.push(zm);
+    }
     // Vehicles as on the main map: class silhouette in the level colour; the V-number ties it to the brief.
     // Tracks without a detection in this frame (undetected, report-related) are the main map's grey dots.
     for (const tr of data.tracks) {
