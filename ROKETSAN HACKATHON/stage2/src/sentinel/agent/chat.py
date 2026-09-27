@@ -16,6 +16,7 @@ from pydantic import BaseModel, Field
 from sentinel.agent import grounding
 from sentinel.agent.budget import BudgetExceeded
 from sentinel.agent.llm import LLMClient, LLMError
+from sentinel.agent.suggest import Suggestion
 from sentinel.agent.tools import TOOL_SPECS, ChatTools, ToolError
 from sentinel.observability.trace import Tracer
 
@@ -43,6 +44,7 @@ class ChatTurn(BaseModel):
     llm_calls: int = 0
     duration_ms: float = 0.0
     note: str | None = None
+    followups: list[Suggestion] = Field(default_factory=list)  # next questions, filled by the service
 
 
 def _summary(out: Any) -> str:
@@ -80,7 +82,11 @@ class ChatAgent:
         history: list[ChatMessage] | None = None,
         image_id: str | None = None,
         tracer: Tracer | None = None,
+        focus: str | None = None,
+        context: str | None = None,
     ) -> ChatTurn:
+        """`focus`: the vehicle the operator dragged into the chat, e.g. "V7 · T0122" (ids only, no numbers).
+        `context`: several items put together, e.g. "V7 · T0122 (img_000860); img_006673"."""
         t0 = time.perf_counter()
         tracer = tracer or Tracer(None, "chat")
         if self.llm is None:
@@ -91,7 +97,13 @@ class ChatAgent:
             )
 
         history = (history or [])[-self.history_limit :]
-        user = question if not image_id else f"[Açık kare: {image_id}]\n{question}"
+        user = question
+        if context:
+            user = f"[Bağlam: {context}]\n{user}"
+        if focus:
+            user = f"[Odak araç: {focus}]\n{user}"
+        if image_id:
+            user = f"[Açık kare: {image_id}]\n{user}"
         messages: list[dict[str, Any]] = [{"role": "system", "content": self.system}]
         messages += [
             {"role": m.role, "content": m.content} for m in history if m.role in ("user", "assistant")

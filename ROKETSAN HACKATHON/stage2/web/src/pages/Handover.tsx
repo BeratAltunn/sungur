@@ -20,7 +20,7 @@ function PrintActions({ text, back }: { text: string; back: { label: string; hre
         {back.label}
       </a>
       <button className="btn btn-sm" onClick={() => window.print()}>
-        🖨 Yazdır
+        Yazdır
       </button>
       <button
         className="btn btn-sm"
@@ -114,7 +114,7 @@ export function HandoverPage({ health }: { health: Health | null }) {
         </header>
         <p className="ho-summary">
           <strong>{s.frames}</strong> kare · <strong>{s.reports}</strong> rapor · {levels} · <strong>{s.decided}</strong> karar
-          verildi · <strong className={h.awaiting.length ? "warn-text" : ""}>{h.awaiting.length} YÜKSEK/KRİTİK karar bekliyor</strong>
+          verildi · <strong className={h.awaiting.length ? "attn-text" : ""}>{h.awaiting.length} YÜKSEK/KRİTİK karar bekliyor</strong>
         </p>
         <p className="ho-summary">
           <DecisionMetrics summary={s} />
@@ -152,7 +152,7 @@ export function HandoverPage({ health }: { health: Health | null }) {
               <span className="mono">
                 {r.time} {r.report_id}
               </span>
-              {r.identity_claim && <span className="pill pill-warn">kimlik iddiası</span>}
+              {r.identity_claim && <span className="pill pill-strong">kimlik iddiası</span>}
               <span className="ho-headline">
                 “{r.text}” <span className="muted">→ {r.reason}</span>
               </span>
@@ -275,7 +275,7 @@ export function EscalationCard({ id, health }: { id: string; health: Health | nu
           </p>
         )}
         <p className="card-meta">
-          <span className={`pill ${g.passed ? "pill-ok" : "pill-warn"}`}>
+          <span className={`pill ${g.passed ? "" : "pill-strong"}`}>
             {g.passed ? `✓ ${g.checked}/${g.checked} sayı kanıtla doğrulandı` : "✗ Kanıt kontrolü başarısız"}
           </span>
           <span className="pill pill-dim">Güven: {b.confidence}</span>

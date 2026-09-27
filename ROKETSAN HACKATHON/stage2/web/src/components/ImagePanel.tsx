@@ -1,7 +1,8 @@
-import { LABEL_TR, LEVEL_COLOR, dec } from "../lib/format";
+import { LABEL_TR, dec } from "../lib/format";
+import { levelColor, token } from "../lib/theme";
+import { endDrag, startDrag, vehicleItem } from "../lib/vehicles";
 import type { EvidencePacket, Level } from "../lib/types";
 
-const NEUTRAL = "#38bdf8";
 const SCALE_CANDIDATES = [5, 10, 15, 20, 25, 30, 40, 50, 75, 100];
 
 /** Drone frame with detection boxes. Boxes are in image_meta pixel space, so the SVG uses that viewBox. */
@@ -22,7 +23,7 @@ export function ImagePanel({
   /** Blind labelling: one neutral colour, so box colours do not reveal the system's scores. */
   blind?: boolean;
 }) {
-  const colorOf = (ref: string) => (blind || !levels?.[ref] ? NEUTRAL : LEVEL_COLOR[levels[ref]]);
+  const colorOf = (ref: string) => (blind || !levels?.[ref] ? token("--text-2") : levelColor(levels[ref]));
   const { width_px: W, height_px: H, width_m: Wm, height_m: Hm } = packet.frame;
   const mpp = W > 0 && Wm > 0 ? Wm / W : 0.16;
 
@@ -66,12 +67,12 @@ export function ImagePanel({
                   width={w}
                   height={h}
                   fill="none"
-                  stroke={focused ? "#fff" : color}
+                  stroke={focused ? token("--text") : color}
                   strokeWidth={focused ? 4 : 2.5}
                   strokeDasharray={v.track_id ? undefined : "6 4"}
                   vectorEffect="non-scaling-stroke"
                 />
-                <text x={x} y={Math.max(12, y - 4)} className="box-label" fill={focused ? "#fff" : color}>
+                <text x={x} y={Math.max(12, y - 4)} className="box-label" fill={focused ? token("--text") : color}>
                   {v.ref}
                 </text>
               </g>
@@ -86,22 +87,22 @@ export function ImagePanel({
               width={barWidthPx + 12}
               height="26"
               rx="4"
-              fill="rgba(8, 12, 17, 0.85)"
-              stroke="rgba(255, 255, 255, 0.25)"
+              fill={token("--overlay")}
+              stroke={token("--line-strong")}
               strokeWidth="1"
             />
             <path
               d={`M ${scaleX},-5 L ${scaleX},2 L ${scaleX + barWidthPx},2 L ${scaleX + barWidthPx},-5`}
               transform={`translate(0, ${scaleY})`}
               fill="none"
-              stroke="#f8fafc"
+              stroke={token("--text")}
               strokeWidth="2.5"
             />
             <text
               x={scaleX + barWidthPx / 2}
               y={scaleY - 6}
               textAnchor="middle"
-              fill="#f8fafc"
+              fill={token("--text")}
               fontSize="12"
               fontFamily="var(--mono)"
               fontWeight="700"
@@ -118,8 +119,13 @@ export function ImagePanel({
             return (
               <li
                 key={v.ref}
-                className={v.track_id && v.track_id === focusTrack ? "active" : ""}
+                className={`${v.track_id && v.track_id === focusTrack ? "active" : ""} ${blind ? "" : "draggable"}`}
                 onMouseEnter={() => onFocusTrack(v.track_id)}
+                // any vehicle can be dragged into the chat (not in blind labelling: no chat there)
+                draggable={!blind}
+                title={blind ? undefined : "Sohbete sürükleyin"}
+                onDragStart={(e) => startDrag(e, vehicleItem(packet.image_id, v))}
+                onDragEnd={endDrag}
               >
                 <span className="swatch" style={{ background: colorOf(v.ref) }} />
                 <b>{v.ref}</b> {LABEL_TR[v.label]} · {v.track_id ?? "hareket kaydı yok"} · boy ~{dec(maxDimM, 1)} m · güven {dec(v.conf, 2)}

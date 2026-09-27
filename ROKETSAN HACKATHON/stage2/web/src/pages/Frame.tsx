@@ -3,6 +3,7 @@ import { go } from "../App";
 import { BriefPanel, DecisionBar, FrameHeader } from "../components/Brief";
 import { type Focus, FrameMap, ReportCallout, TimeSlider } from "../components/FrameMap";
 import { ImagePanel } from "../components/ImagePanel";
+import { AnomalyChips } from "../components/VehicleChip";
 import { EvidenceTabs, type TabId } from "../components/Tabs";
 import { ErrorState, Kbd, Loading, RefLabels, TopBar } from "../components/ui";
 import { api, explain } from "../lib/api";
@@ -274,7 +275,7 @@ export function FramePage({ id, health, queue, onChanged }: Props) {
                 </span>
               )}
               <button className="btn btn-ghost" onClick={runLive} disabled={!!live} title="Tespit önbelleğini atlayıp 6 adımı yeniden çalıştırır">
-                {live ? `Çalışıyor… ${live.done.length}/6` : "↻ Canlı yeniden değerlendir"}
+                {live ? `Çalışıyor… ${live.done.length}/6` : "Canlı yeniden değerlendir"}
               </button>
               <DecisionBar
                 res={res}
@@ -295,6 +296,7 @@ export function FramePage({ id, health, queue, onChanged }: Props) {
           <main tabIndex={-1} className="frame-grid">
             <div className="col-left">
               <BriefPanel res={res} onRef={onRef} activeRef={activeRef} onRetryLLM={retryLLM} />
+              <AnomalyChips imageId={id} vehicles={packet.vehicles} />
               <section className="panel">
                 <div className="panel-head">
                   <h2>Görüntü</h2>

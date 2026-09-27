@@ -415,4 +415,27 @@ export interface ChatTurn {
   duration_ms: number;
   note: string | null;
   run_id: string;
+  followups: Suggestion[];
 }
+
+/** Everything the chat box can complete (GET /api/chat/vocab, loaded once). */
+export interface ChatVocab {
+  frames: { id: string; zone: string; time: string; level: Level | null; vehicles: { ref: string; track: string | null; label: Label }[] }[];
+  tracks: { id: string; frame: string | null; label: Label | null }[];
+  reports: { id: string; time: string; source: "official" | "third_party"; text: string; verdicts: Record<string, VerdictT> }[];
+  zones: string[];
+  times: string[];
+}
+
+/** A question that fits the situation (GET /api/chat/suggestions, or follow-ups of an answer). */
+export interface Suggestion {
+  text: string;
+  reason: string;
+  refs: string[];
+}
+
+/** Something the operator put in the chat's context (dragged or "Sor"): a vehicle of a frame, or a frame.
+ *  Only kind, image_id and ref go to the backend; the rest is for display (tracks are resolved server-side). */
+export type ChatItem =
+  | { kind: "vehicle"; image_id: string; ref: string; track_id: string | null; label: Label }
+  | { kind: "frame"; image_id: string; level: Level; zone: string; capture_time: string };

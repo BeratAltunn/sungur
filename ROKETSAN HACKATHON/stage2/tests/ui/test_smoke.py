@@ -459,13 +459,96 @@ def test_blind_labelling_never_shows_system_level(page: Page):
           for (const sel of ['.brief', '.score', '.why', '.chat', '.chat-fab']) {
             if (document.querySelector(sel)) out.push('öğe: ' + sel);
           }
+          // Compare as computed rgb() so a hex attribute and a CSS variable of the same colour count once.
+          const norm = (c) => { const i = document.createElement('i'); i.style.color = c; document.body.appendChild(i); const v = getComputedStyle(i).color; i.remove(); return v; };
           const colours = new Set();
-          document.querySelectorAll('.box rect').forEach((r) => colours.add(r.getAttribute('stroke')));
-          document.querySelectorAll('.mk-veh.mk-vehicle').forEach((m) => colours.add(m.style.getPropertyValue('--c')));
-          document.querySelectorAll('.map-legend .sym-legend path').forEach((p) => colours.add(getComputedStyle(p).fill === 'rgb(56, 189, 248)' ? '#38bdf8' : getComputedStyle(p).fill));
+          document.querySelectorAll('.box rect').forEach((r) => colours.add(norm(r.getAttribute('stroke'))));
+          document.querySelectorAll('.mk-veh.mk-vehicle').forEach((m) => colours.add(norm(m.style.getPropertyValue('--c'))));
+          document.querySelectorAll('.map-legend .sym-legend path').forEach((p) => colours.add(getComputedStyle(p).fill));
           if (colours.size > 1) out.push('renkler: ' + [...colours].join(','));
           return out;
         }"""
     )
     assert leaks == [], f"kör modda sistem çıktısı sızıyor: {leaks}"
     expect(page.locator(".posture")).to_have_count(0)  # the status bar posture would reveal levels
+
+
+def test_drag_vehicle_into_chat_changes_the_questions(page: Page):
+    page.goto(f"/#/frame/{DEMO}")
+    expect(page.locator(".brief .level")).to_be_visible()
+    page.get_by_role("button", name=re.compile("^Sohbet")).click()
+    quick = page.locator(".quick .suggestion")
+    expect(quick.first).to_be_visible()  # situation questions for the open frame, before any question
+    chip = page.locator(".col-left .vchip").filter(has_text="T0122")
+    ref = chip.locator("b").inner_text()  # V-number of the truck's track in this run
+    chip.drag_to(page.locator(".chat"))
+    expect(page.locator(".chat-context")).to_contain_text("T0122")
+    expect(quick.first).to_contain_text("T0122")  # the questions were refetched for the dragged vehicle
+    for q in quick.all_inner_texts():
+        assert "T0122" in q or ref in q, q  # every question is about that vehicle
+    first = quick.first.locator(".quick-text").inner_text()
+    page.keyboard.press("Alt+1")  # quick question from the keyboard, even with the cursor in the text box
+    expect(page.locator(".msg-user").last).to_contain_text(first)
+    expect(page.locator(".msg-user").last).to_contain_text("T0122")  # the question carried the vehicle
+    expect(page.locator(".msg-bot").last).to_contain_text("Kayıtlara göre")
+    expect(page.get_by_label("Sıradaki sorular")).to_be_visible()  # follow-ups keep the loop going
+    assert first not in page.locator(".quick").inner_text()
+    page.get_by_role("button", name=f"{ref} · T0122 bağlamdan çıkar").click()
+    expect(page.locator(".chat-context")).not_to_contain_text("T0122")
+
+
+def test_two_alert_cards_in_the_chat_ask_to_compare(page: Page):
+    page.goto("/#/")
+    rail = page.locator(".rail")
+    rows = rail.locator(".rail-card")  # the alert rail floating on the map: pending YÜKSEK/KRİTİK frames
+    expect(rows.first).to_be_visible()
+    page.get_by_role("button", name=re.compile("^Sohbet")).click()
+    chat = page.locator(".chat")
+    a = rows.nth(0).locator(".row-sub .mono").first.inner_text()
+    b = rows.nth(1).locator(".row-sub .mono").first.inner_text()
+    # drag by the id line (a button inside the card cannot start a drag)
+    rows.nth(0).locator(".row-sub").drag_to(chat)
+    rows.nth(1).locator(".row-sub").drag_to(chat)
+    ctx = page.locator(".chat-context")
+    expect(ctx).to_contain_text(a)
+    expect(ctx).to_contain_text(b)
+    first = page.locator(".quick .suggestion").first
+    expect(first).to_contain_text(a)  # the questions now connect the two frames
+    expect(first).to_contain_text(b)
+    # the same card again is not added twice; "Sor" on a card is the no-drag way in
+    rows.nth(0).locator(".row-sub").drag_to(chat)
+    expect(ctx.locator(".ctx-pill")).to_have_count(2)
+    page.get_by_role("button", name=f"{b} bağlamdan çıkar").click()
+    expect(ctx).not_to_contain_text(b)
+    rail.get_by_role("button", name=f"{b} karesini sohbete ekle").click()
+    expect(ctx).to_contain_text(b)
+
+
+def test_chat_box_completes_locally_without_requests(page: Page):
+    calls: list[str] = []
+    page.on("request", lambda r: calls.append(r.url) if "/api/chat" in r.url else None)
+    page.goto(f"/#/frame/{DEMO}")
+    expect(page.locator(".brief .level")).to_be_visible()
+    page.get_by_role("button", name=re.compile("^Sohbet")).click()
+    box = page.get_by_role("combobox", name="Soru")
+    expect(page.locator(".quick .suggestion").first).to_be_visible()
+    before = len(calls)
+    box.press_sequentially("T01 ")  # a space closes the word: no list
+    box.fill("")
+    box.press_sequentially("T01")
+    ac = page.locator(".ac")
+    expect(ac.locator(".ac-item").first).to_contain_text("T0122")  # the open frame's track first
+    box.press("Tab")
+    expect(box).to_have_value("T0122 ")
+    box.press_sequentially("dog")
+    expect(ac).to_contain_text("Doğu Yolu")  # zones, diacritics ignored
+    box.press("Tab")
+    expect(box).to_have_value("T0122 Doğu Yolu ")
+    box.press_sequentially("12:3")
+    expect(ac).to_contain_text("12:35")
+    box.press("Escape")  # closes the list, not the chat
+    expect(ac).to_have_count(0)
+    expect(page.locator(".chat")).to_be_visible()
+    # typing asked nothing: no chat request, and the vocabulary was loaded once
+    assert not any(u.endswith("/api/chat") for u in calls[before:]), calls
+    assert sum("/api/chat/vocab" in u for u in calls) == 1, calls

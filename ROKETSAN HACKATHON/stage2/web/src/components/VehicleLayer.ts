@@ -5,7 +5,8 @@ import type { Map as MLMap, Marker } from "maplibre-gl";
 import { useEffect, useRef } from "react";
 import type { Clock } from "../lib/clock";
 import { positionOf, threatAt, trailOf, visibleAt } from "../lib/dayVehicles";
-import { LABEL_TR, LEVEL_CLASS, LEVEL_COLOR, dec } from "../lib/format";
+import { LABEL_TR, LEVEL_CLASS, dec } from "../lib/format";
+import { levelColor } from "../lib/theme";
 import { classSymbol } from "../lib/symbols";
 import type { DayVehicle, Level } from "../lib/types";
 import { fc, htmlMarker, line, setGeo } from "./MapView";
@@ -108,7 +109,7 @@ export function useVehicleLayer({
           el.dataset.threat = key;
           el.title = describe(v, now);
         }
-        if (now && v.track_id) trails.push(line(trailOf(v, t), { color: LEVEL_COLOR[now.level] }));
+        if (now && v.track_id) trails.push(line(trailOf(v, t), { color: levelColor(now.level) }));
       }
       const now = performance.now();
       if (force || now - lastTrail > TRAIL_EVERY_MS) {

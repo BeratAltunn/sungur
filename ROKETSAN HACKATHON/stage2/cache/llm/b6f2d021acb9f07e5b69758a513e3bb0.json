@@ -1,0 +1,1 @@
+{"content":"","tool_calls":[{"id":"call_-7231540786800617020","name":"analyze_image","arguments":"{\"image_id\":\"img_000860\"}"}],"tokens_in":1897,"tokens_out":17,"cost_usd":0.0011756,"model":"glm-5.3-flash","cached":false}

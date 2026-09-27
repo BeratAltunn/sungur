@@ -90,7 +90,7 @@ export function LabelPage({ id, health }: { id: string | null; health: Health | 
         blind
         health={health}
         left={
-          <span className="pill pill-warn" title="Sistem çıktısı gizli">
+          <span className="pill pill-strong" title="Sistem çıktısı gizli">
             Kör etiketleme · {labeler} · {Object.keys(done).length}/{order.length || "…"}
             <button
               className="linklike"

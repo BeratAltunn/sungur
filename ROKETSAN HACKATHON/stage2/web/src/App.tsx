@@ -3,7 +3,9 @@ import { ChatPanel } from "./components/ChatPanel";
 import { SummaryContext } from "./components/ui";
 import { api } from "./lib/api";
 import { storage } from "./lib/format";
-import type { Health, ShiftSummary, TriageRow } from "./lib/types";
+import type { ChatItem, Health, ShiftSummary, TriageRow } from "./lib/types";
+import { CHAT_ICON } from "./lib/symbols";
+import { DRAG_TYPE, MAX_CONTEXT, endDrag, itemKey, readDrag } from "./lib/vehicles";
 import { EscalationCard, HandoverPage } from "./pages/Handover";
 import { FramePage } from "./pages/Frame";
 import { ImpactPage } from "./pages/Impact";
@@ -49,6 +51,25 @@ export default function App() {
       return next;
     });
   }, []);
+  // What the operator put in the chat (dragged in, or "Sor"): vehicles and frames, oldest first, ≤ MAX_CONTEXT.
+  // It survives page changes on purpose: comparing frames means collecting them from different screens.
+  const [chatItems, setChatItems] = useState<ChatItem[]>([]);
+  const [triageSel, setTriageSel] = useState<string | null>(null);
+  const addItem = useCallback(
+    (item: ChatItem) => {
+      setChatItems((xs) => (xs.some((x) => itemKey(x) === itemKey(item)) ? xs : [...xs, item].slice(-MAX_CONTEXT)));
+      toggleChat(true);
+    },
+    [toggleChat],
+  );
+  useEffect(() => {
+    const on = (e: Event) => addItem((e as CustomEvent<ChatItem>).detail);
+    window.addEventListener("sentinel:chat-add", on);
+    return () => window.removeEventListener("sentinel:chat-add", on);
+  }, [addItem]);
+  // The page's frame: the open frame, or the queue's selected one (the chat's context when nothing is added).
+  const routeFrame = route.page === "frame" || route.page === "brief" ? route.id : null;
+  const pageFrame = routeFrame ?? (route.page === "triage" ? triageSel : null);
 
   // "/" opens the chat from anywhere (outside text fields).
   useEffect(() => {
@@ -107,14 +128,35 @@ export default function App() {
       ) : route.page === "impact" ? (
         <ImpactPage health={health} />
       ) : (
-        <TriagePage health={health} queue={queue} />
+        <TriagePage health={health} queue={queue} onSelect={setTriageSel} />
       )}
       {!chatOpen && (
-        <button className="chat-fab btn btn-primary" onClick={() => toggleChat(true)} title="Sohbeti aç (/)">
-          💬 Sohbet <kbd className="kbd">/</kbd>
+        // The chat lives at the side: an icon on the right edge (a drop target too), the panel opens there.
+        <button
+          className="chat-fab"
+          onClick={() => toggleChat(true)}
+          aria-label="Sohbet (/)"
+          title="Sohbeti aç (/) · bir aracı ya da kareyi buraya sürükleyerek de açabilirsiniz"
+          onDragOver={(e) => {
+            if (e.dataTransfer.types.includes(DRAG_TYPE)) e.preventDefault();
+          }}
+          onDrop={(e) => {
+            const item = readDrag(e.dataTransfer);
+            endDrag();
+            if (item) addItem(item);
+          }}
+        >
+          <svg className="chat-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d={CHAT_ICON} />
+          </svg>
         </button>
       )}
-      <ChatPanel open={chatOpen} onClose={() => toggleChat(false)} imageId={route.page === "frame" || route.page === "brief" ? route.id : null} />
+      <ChatPanel open={chatOpen} onClose={() => toggleChat(false)} imageId={pageFrame}
+        items={chatItems}
+        onAdd={addItem}
+        onRemove={(key) => setChatItems((xs) => xs.filter((x) => itemKey(x) !== key))}
+        onClear={() => setChatItems([])}
+      />
     </div>
     </SummaryContext.Provider>
   );

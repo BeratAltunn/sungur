@@ -1,8 +1,9 @@
 import maplibregl, { type Map as MLMap, type StyleSpecification } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
 import type { Feature, FeatureCollection } from "geojson";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { storage } from "../lib/format";
+import { token } from "../lib/theme";
 import { loadTerrain, terrainStyle, type TerrainManifest } from "../lib/terrain";
 
 // No glyphs/sprites: the map works offline. Text is drawn with HTML markers.
@@ -22,7 +23,7 @@ function style(basemap: boolean, terrain: TerrainManifest | null): StyleSpecific
       }),
     },
     layers: [
-      { id: "bg", type: "background", paint: { "background-color": "#0a0f15" } },
+      { id: "bg", type: "background", paint: { "background-color": token("--bg") } },
       ...(t?.layers ?? []),
       ...(basemap ? [{ id: "carto", type: "raster" as const, source: "carto", paint: { "raster-opacity": 0.55 } }] : []),
     ],
@@ -39,9 +40,11 @@ interface Props {
   threeD?: { pitch: number; maxPitch: number };
   /** 3D ground (DEM + texture) when the tiles are installed (scripts/build_terrain.py); the operator can turn it off. */
   terrain?: boolean;
+  /** Extra controls next to the basemap / ground toggles (e.g. the layer menu). */
+  controls?: ReactNode;
 }
 
-export function MapView({ className, onReady, initial, threeD, terrain }: Props) {
+export function MapView({ className, onReady, initial, threeD, terrain, controls }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MLMap | null>(null);
   const readyRef = useRef(onReady);
@@ -114,6 +117,7 @@ export function MapView({ className, onReady, initial, threeD, terrain }: Props)
             {ground ? "Arazi: açık" : "Arazi: kapalı"}
           </button>
         )}
+        {controls}
       </div>
     </div>
   );

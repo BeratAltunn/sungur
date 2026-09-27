@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError, api } from "../lib/api";
-import { DECISION_ICON, DECISION_TR, LEVEL_CLASS, LEVEL_ICON, VERDICT_CLASS, VERDICT_ICON, dec, splitRefs } from "../lib/format";
+import { DECISION_TR, LEVEL_CLASS, LEVEL_ICON, VERDICT_CLASS, VERDICT_ICON, dec, splitRefs } from "../lib/format";
 import type { Decision, Health, Level, ShiftSummary, VerdictT } from "../lib/types";
 
 /** Level is always icon + text + colour (never colour alone). Tone "auto" fills KRİTİK (the one level that
@@ -25,12 +25,12 @@ export function LevelBadge({
   );
 }
 
-/** Operator decision in the queue: icon + text (the level the operator set, for overrides). */
+/** Operator decision in the queue: text only (the level the operator set, for overrides). */
 export function DecisionPill({ decision }: { decision: Decision }) {
   const d = decision;
   return (
     <span className={`pill decision-pill dp-${d.action}`} title={[`${d.at.slice(11, 16)} · ${DECISION_TR[d.action]}`, d.reason].filter(Boolean).join("\n")}>
-      <span aria-hidden>{DECISION_ICON[d.action]}</span> {d.action === "override" && d.level ? `operatör: ${LEVEL_ICON[d.level]} ${d.level}` : DECISION_TR[d.action]}
+      {d.action === "override" && d.level ? `operatör: ${LEVEL_ICON[d.level]} ${d.level}` : DECISION_TR[d.action]}
     </span>
   );
 }
@@ -83,20 +83,20 @@ export function useSlow(busy: boolean, ms = 1000) {
 /** Shift summary shared by the status bar and the queue (App refreshes it with the queue). */
 export const SummaryContext = createContext<ShiftSummary | null>(null);
 
-type St = "normal" | "standby" | "caution" | "serious" | "critical" | "off";
+type St = "ok" | "warn" | "down";
 
-/** Subsystem indicator: status symbol + label + value (never colour alone). */
+/** Subsystem indicator: label + value as text. Only a degraded or failed subsystem draws attention;
+ *  colour is reserved for risk levels, so "normal" is simply quiet text. */
 function Subsystem({ label, value, st, title }: { label: string; value: string; st: St; title?: string }) {
   return (
-    <span className="subsys" title={title}>
-      <span className={`st st-${st}`} aria-hidden />
+    <span className={`subsys subsys-${st}`} title={title}>
       <span className="subsys-label">{label}</span>
       <span className="subsys-value">{value}</span>
-      <span className="sr-only">durum: {ST_TR[st]}</span>
+      {st !== "ok" && <span className="sr-only">durum: {ST_TR[st]}</span>}
     </span>
   );
 }
-const ST_TR: Record<St, string> = { normal: "normal", standby: "hazırlanıyor", caution: "dikkat", serious: "ciddi", critical: "kritik", off: "kapalı" };
+const ST_TR: Record<St, string> = { ok: "normal", warn: "dikkat", down: "arıza" };
 
 /** Local time and Zulu, updated once a second (MIL-STD-1472: dynamic values ≤ 1 Hz). */
 function Clock() {
@@ -125,7 +125,7 @@ function Posture({ s }: { s: ShiftSummary | null }) {
     return (
       <span className="posture posture-clear" title="Karar bekleyen kare yok">
         <span className="posture-label">Tehdit durumu</span>
-        <span className="st st-normal" aria-hidden /> Bekleyen karar yok
+        Bekleyen karar yok
       </span>
     );
   return (
@@ -183,7 +183,7 @@ export function TopBar({ health, left, blind = false }: { health: Health | null;
   return (
     <header className="topbar" ref={ref}>
       <div className="classification" role="note">
-        TASNİF DIŞI · DEMO VERİSİ
+        TASNİF DIŞI
       </div>
       <div className="topbar-row">
         <button className="skip" onClick={() => document.querySelector<HTMLElement>("main")?.focus()}>
@@ -191,9 +191,6 @@ export function TopBar({ health, left, blind = false }: { health: Health | null;
         </button>
         <div className="topbar-left">
           <a className="brand" href="#/">
-            <span className="brand-mark" aria-hidden>
-              ▲
-            </span>
             NÖBETÇİ
           </a>
           <span className="muted">Merkez Üs</span>
@@ -207,26 +204,26 @@ export function TopBar({ health, left, blind = false }: { health: Health | null;
           <Subsystem
             label="Tespit"
             value={health ? `${prettyDetector(health.detector)}${detFallback ? " (önbellek)" : ""}` : "…"}
-            st={!health ? "off" : detFallback ? "serious" : "normal"}
+            st={detFallback ? "warn" : "ok"}
             title={detFallback ?? "Aktif tespit modeli"}
           />
           <Subsystem
             label="LLM"
             value={!health ? "…" : llmOff ? "kapalı · önbellek/şablon" : llmOk ? health.llm.model : "çevrimdışı · şablon brief"}
-            st={!health ? "off" : llmOff ? "standby" : llmOk ? "normal" : "serious"}
+            st={!health || llmOk ? "ok" : "warn"}
             title={health?.llm.error ?? (llmOff ? "LLM sorguları operatör tarafından kapatıldı" : "Brief ve sohbet için dil modeli")}
           />
           {llmOk && <LlmSwitch enabled={health!.llm.enabled !== false} />}
           <Subsystem
             label="Veri"
             value={!health ? "…" : warming ? `hazırlanıyor ${health.warmup.done}/${health.warmup.total}` : `${health.data.frames} kare · ${health.data.reports} rapor`}
-            st={!health ? "off" : warming ? "standby" : "normal"}
+            st="ok"
           />
           {b && (b.spent_usd > 0 || b.ratio >= 0.8) && (
             <Subsystem
               label="Bütçe"
               value={b.ratio >= 1 ? "doldu · şablon brief" : `$${dec(b.spent_usd, 2)} / $${dec(b.stop_usd, 0)}`}
-              st={b.ratio >= 1 ? "critical" : b.ratio >= 0.8 ? "caution" : "normal"}
+              st={b.ratio >= 1 ? "down" : b.ratio >= 0.8 ? "warn" : "ok"}
               title="LLM harcaması / durdurma sınırı. Sınırda LLM çağrıları durur, brief'ler şablondan gelir."
             />
           )}

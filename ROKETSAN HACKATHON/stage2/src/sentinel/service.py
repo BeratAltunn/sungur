@@ -112,6 +112,9 @@ class ShiftHandover(BaseModel):
     contradicted_third_party: int
 
 
+MAX_CHAT_CONTEXT = 4  # items the operator can put in the chat at once
+
+
 class SentinelService:
     def __init__(self, settings: Settings | None = None, llm: LLMClient | None = None, use_llm: bool = True):
         _load_dotenv()
@@ -720,8 +723,18 @@ class SentinelService:
         ]
 
     # ================================================================ chat
-    def chat(self, question: str, history: list | None = None, image_id: str | None = None):
-        """One chat turn (tool-calling loop). history: [{role, content}] of the visible conversation."""
+    def chat(
+        self,
+        question: str,
+        history: list | None = None,
+        image_id: str | None = None,
+        focus_ref: str | None = None,
+        context: list[dict] | None = None,
+    ):
+        """One chat turn (tool-calling loop). history: [{role, content}] of the visible conversation.
+        context: what the operator put in the chat ([{kind: vehicle|frame, image_id, ref?}], ≤ 4); focus_ref is
+        the older single-vehicle form (a vehicle of image_id). Tracks come from the packets, not the client."""
+        from sentinel.agent import suggest
         from sentinel.agent.chat import ChatMessage, ChatTurn
 
         run_id = new_run_id()
@@ -733,8 +746,141 @@ class SentinelService:
         msgs = [m if isinstance(m, ChatMessage) else ChatMessage.model_validate(m) for m in history or []]
         if image_id is not None and image_id not in self.repo.meta:
             image_id = None
-        turn = self.chat_agent.ask(question, msgs, image_id, Tracer(self.runs_dir, run_id, image_id))
+        items = self._context(image_id, focus_ref, context)
+        if image_id is None and items:  # no page frame: the first item's frame is the open one
+            image_id = items[0].packet.image_id
+        focus, ctx_line = None, None
+        if (
+            len(items) == 1
+            and isinstance(items[0], suggest.CtxVehicle)
+            and items[0].packet.image_id == image_id
+        ):
+            v = items[0].v
+            focus = f"{v.ref} · {v.track_id}" if v.track_id else v.ref
+        elif items:
+            ctx_line = "; ".join(self._context_label(i) for i in items)
+        turn = self.chat_agent.ask(
+            question, msgs, image_id, Tracer(self.runs_dir, run_id, image_id), focus=focus, context=ctx_line
+        )
+        asked = [m.content for m in msgs if m.role == "user"] + [question]
+        base = self._suggest(image_id, items, limit=8)
+        refs = [r for i in items if isinstance(i, suggest.CtxVehicle) for r in (i.v.ref,)]
+        turn.followups = suggest.followups(base, turn.answer, asked, refs[0] if len(refs) == 1 else None)
         return turn, run_id
+
+    def chat_suggestions(
+        self,
+        image_id: str | None = None,
+        focus_ref: str | None = None,
+        limit: int = 4,
+        context: list[dict] | None = None,
+    ):
+        """Questions that fit the situation: what is in the chat's context, else the open frame, else the queue."""
+        if image_id is not None and image_id not in self.repo.meta:
+            image_id = None
+        return self._suggest(image_id, self._context(image_id, focus_ref, context), limit)
+
+    def chat_vocab(self) -> dict:
+        """Everything the chat box can complete, in one payload the UI loads once (no LLM, no per-key requests):
+        frames (with their vehicles), tracks, reports (verdicts are per frame: a report can be confirmed near one
+        frame and contradicted near another), zones and times."""
+        from sentinel.geo.zones import zone_display
+
+        levels = {r.image_id: r.level.value for r in self.triage()}
+        frames, track_frame, verdicts = [], {}, {}
+        for m in self.repo.frames():
+            p = self.packet(m.image_id)
+            frames.append(
+                {
+                    "id": m.image_id,
+                    "zone": zone_display(p.frame.zone),
+                    "time": p.frame.capture_time,
+                    "level": levels.get(m.image_id),
+                    "vehicles": [{"ref": v.ref, "track": v.track_id, "label": v.label} for v in p.vehicles],
+                }
+            )
+            for v in p.vehicles:
+                if v.track_id:
+                    track_frame[v.track_id] = (m.image_id, v.label)
+            for r in p.reports:
+                if r.verdict != Verdict.ILGISIZ:
+                    verdicts.setdefault(r.report_id, {})[m.image_id] = r.verdict.value
+        tracks = [
+            {
+                "id": t,
+                "frame": track_frame.get(t, (None, None))[0],
+                "label": track_frame.get(t, (None, None))[1],
+            }
+            for t in sorted(self.repo.tracks)
+        ]
+        reports = [
+            {
+                "id": r.report_id,
+                "time": r.time,
+                "source": r.source,
+                "text": r.text[:70],
+                "verdicts": verdicts.get(r.report_id, {}),
+            }
+            for r in sorted(self.repo.reports, key=lambda r: r.report_id)
+        ]
+        times = sorted({f["time"] for f in frames} | {r.time for r in self.repo.reports})
+        zones = sorted(zone_display(z) for z in self.repo.zone_index.names())
+        return {"frames": frames, "tracks": tracks, "reports": reports, "zones": zones, "times": times}
+
+    def _suggest(self, image_id: str | None, items: list, limit: int):
+        from sentinel.agent import suggest
+
+        if items:
+            return suggest.context_suggestions(items, limit)
+        if image_id is not None:
+            return suggest.frame_suggestions(self.packet(image_id), None, limit)
+        return suggest.general_suggestions(self.triage(), limit)
+
+    def _context(self, image_id: str | None, focus_ref: str | None, context: list[dict] | None) -> list:
+        """Resolve the chat context against the packets; unknown frames/vehicles and duplicates are dropped."""
+        from sentinel.agent.suggest import CtxFrame, CtxVehicle
+
+        raw = list(context or [])
+        if not raw and focus_ref and image_id:
+            raw = [{"kind": "vehicle", "image_id": image_id, "ref": focus_ref}]
+        out: list = []
+        seen: set[tuple] = set()
+        for it in raw:
+            img, kind = it.get("image_id"), it.get("kind")
+            if img not in self.repo.meta:
+                continue
+            if kind == "vehicle":
+                v = self._vehicle(img, it.get("ref"))
+                key = ("vehicle", img, it.get("ref"))
+                item = CtxVehicle(self.packet(img), v) if v else None
+            elif kind == "frame":
+                key = ("frame", img, None)
+                item = CtxFrame(self.packet(img))
+            else:
+                continue
+            if item is not None and key not in seen:
+                seen.add(key)
+                out.append(item)
+        return out[:MAX_CHAT_CONTEXT]
+
+    @staticmethod
+    def _context_label(item) -> str:
+        from sentinel.agent.suggest import CtxVehicle
+
+        if isinstance(item, CtxVehicle):
+            v = item.v
+            return (
+                f"{v.ref} · {v.track_id} ({item.packet.image_id})"
+                if v.track_id
+                else f"{v.ref} ({item.packet.image_id})"
+            )
+        return item.packet.image_id
+
+    def _vehicle(self, image_id: str | None, ref: str | None):
+        """A vehicle of the frame by ref, or None (unknown refs are dropped, like unknown frames)."""
+        if not image_id or not ref or image_id not in self.repo.meta:
+            return None
+        return next((v for v in self.packet(image_id).vehicles if v.ref == ref), None)
 
     # ================================================================ blind gold-set labelling
     def record_gold(self, image_id: str, labeler: str, level: RiskLevel, note: str = "") -> dict:

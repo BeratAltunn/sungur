@@ -12,9 +12,9 @@ import type { HandlingTime, Health, ImpactReport, SimFrame } from "../lib/types"
 // level colours (orange/red) stay reserved for risk levels.
 
 function Source({ h }: { h: HandlingTime }) {
-  if (h.source === "varsayım") return <span className="pill pill-warn">varsayım</span>;
+  if (h.source === "varsayım") return <span className="pill pill-strong">varsayım</span>;
   return (
-    <span className="pill pill-ok">
+    <span className="pill">
       {h.source} · n={h.n}
     </span>
   );
@@ -80,7 +80,7 @@ export function ImpactPage({ health }: { health: Health | null }) {
               ← Kuyruk
             </a>
             <a className="btn btn-primary btn-sm" href="#/?replay=1" title="Kuyrukta vardiyayı zamanla oynat">
-              ▶ Vardiyayı oynat
+              Vardiyayı oynat
             </a>
           </div>
         </header>
