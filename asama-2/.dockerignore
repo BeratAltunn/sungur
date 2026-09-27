@@ -1,0 +1,23 @@
+# Derleme bağlamı "asama-2/" (stage2/Dockerfile). Gizli ve büyük dosyalar imaja girmez.
+**/.env
+**/.env.*
+!**/.env.example
+**/.DS_Store
+**/__pycache__
+**/.pytest_cache
+**/.ruff_cache
+**/.venv
+
+# Kaggle yarışma verisi (1,8 GB) ve organizatör dokümanları
+dataset/
+*.pdf
+*.pptx
+
+# Resmî veri paketi ve model ağırlıkları volume ile bağlanır (docker-compose.yml)
+data/
+stage2/models/
+
+# Çalışma kayıtları host'tan bağlanır; arayüz imajda yeniden derlenir
+stage2/runs/
+stage2/web/node_modules/
+stage2/web/dist/

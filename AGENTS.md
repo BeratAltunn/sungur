@@ -1,4 +1,4 @@
-# AGENTS.md — NÖBETÇİ (ROKETSAN Level Up AI Hackathon, Aşama 2)
+# AGENTS.md — DİZDAR (ROKETSAN Level Up AI Hackathon, Aşama 2)
 
 Bu dosya, bu depoda çalışan LLM agent'ları (Claude Code, Codex, Cursor, Copilot …) ve onları kullanan ekip üyeleri içindir. Amaç: projeyi sıfırdan ayağa kaldırmak, LLM'i (Evren) bağlamak ve mimariyi bozmadan geliştirme yapmak.
 
@@ -8,20 +8,20 @@ Bu dosya, bu depoda çalışan LLM agent'ları (Claude Code, Codex, Cursor, Copi
 
 ## 1. Proje tek paragrafta
 
-NÖBETÇİ, bir askerî üssü çevreleyen 8 bölgeden gelen drone karelerini risk sırasına dizen bir ajandır. Her kare için 6 adım çalışır: **(1) araç tespiti (Kaggle ekibinin D-FINE-M modeli) → (2) pikselden koordinata → (3) araçları 2 saatlik hareket izleriyle eşleme + kinematik (hız, yaklaşma, duraklama, ETA) → (4) saha raporlarını raporun *kendi saatindeki* duruma göre doğrulama → (5) Yetenek–Fırsat–Niyet (C-O-I) tehdit değerlendirmesi: her araç için üç kenar bandı → seviye matrisi + taban kuralları (ETA ayrı aciliyet ekseni) → (6) LLM'in her sayısı kanıtla kontrol edilen (grounding) Türkçe brief yazması.** 1–5 deterministik Python'dur; LLM hesap yapmaz, yalnızca yazar. Ayrıca araç çağıran bir sohbet paneli ve operatör için bir web arayüzü (triage kuyruğu + kare detayı + zaman kaydırıcısı) vardır.
+DİZDAR (kod adı NÖBETÇİ; Python paketi `sentinel`, prompt'lar ve CLI bu adı kullanır), bir askerî üssü çevreleyen 8 bölgeden gelen drone karelerini risk sırasına dizen bir ajandır. Her kare için 6 adım çalışır: **(1) araç tespiti (Kaggle ekibinin D-FINE-M modeli) → (2) pikselden koordinata → (3) araçları 2 saatlik hareket izleriyle eşleme + kinematik (hız, yaklaşma, duraklama, ETA) → (4) saha raporlarını raporun *kendi saatindeki* duruma göre doğrulama → (5) Yetenek–Fırsat–Niyet (C-O-I) tehdit değerlendirmesi: her araç için üç kenar bandı → seviye matrisi + taban kuralları (ETA ayrı aciliyet ekseni) → (6) LLM'in her sayısı kanıtla kontrol edilen (grounding) Türkçe brief yazması.** 1–5 deterministik Python'dur; LLM hesap yapmaz, yalnızca yazar. Ayrıca araç çağıran bir sohbet paneli ve operatör için bir web arayüzü (triage kuyruğu + kare detayı + zaman kaydırıcısı) vardır.
 
 **Değerlendirme kriterleri:** Kaggle skoru (Aşama 1 tespit modeli) %20 · teknik kalite ve mimari %15 · problemin önemi ve çözümün sağladığı iş değeri %20 · çalışan ürün ortaya koyabilme %20 · ürün düşüncesi ve kullanıcı deneyimi %20 · sunum ve demo %5. Sistem resmî Aşama 2 veri paketi, Kaggle ekibinin D-FINE-M modeli ve hackathon ağ geçidindeki `glm-5.3-flash` ile çalışır. Dev verisi, yolov8n ve Evren yedek olarak durur.
 
-Ürün/tasarım gerekçeleri: `ROKETSAN HACKATHON/PROJECT_DESIGN.md` · modül ayrıntıları: `ROKETSAN HACKATHON/STAGE2_ARCHITECTURE.md` · kullanım: `ROKETSAN HACKATHON/stage2/README.md`.
+Aşama 2 belgesi (jüri için): `asama-2/README.md` · ürün/tasarım gerekçeleri: `asama-2/PROJECT_DESIGN.md` · modül ayrıntıları: `asama-2/STAGE2_ARCHITECTURE.md` · demo: `asama-2/stage2/DEMO.md`.
 
 ## 2. Depo haritası
 
-> Klasör adında **boşluk** var: `ROKETSAN HACKATHON`. Kabuk komutlarında yolu her zaman tırnak içine al.
-
 ```
 sungur/                                   ← git kökü
+  README.md                               ← depo özeti (Aşama 1 + Aşama 2)
   AGENTS.md  CLAUDE.md  .gitignore
-  ROKETSAN HACKATHON/
+  asama-2/                                ← AŞAMA 2 (bu belge). Aşama 1 ayrıca asama-1/ olarak eklenecek
+    README.md                             ← Aşama 2 belgesi (jüri için: problem, mimari, risk modeli, kurulum, demo)
     PROJECT_DESIGN.md  STAGE2_ARCHITECTURE.md
     data/                                 ← RESMÎ Aşama 2 paketi (40 kare, 226 track, 137 rapor) — GIT'E GİRMEZ, ekip ayrıca paylaşır
     stage2_dev_data/                      ← dev verisi (aynı senaryo, küçültülmüş görüntüler) — depoda, yedek
@@ -53,10 +53,10 @@ sungur/                                   ← git kökü
 
 ## 3. Ayağa kaldırma
 
-Tüm komutlar `ROKETSAN HACKATHON/stage2` içinden çalışır:
+Tüm komutlar `asama-2/stage2` içinden çalışır:
 
 ```bash
-cd "ROKETSAN HACKATHON/stage2"
+cd asama-2/stage2
 ```
 
 ### Yol A — Docker (önerilen; ekip ve yedek laptop)
@@ -81,7 +81,7 @@ Gereken: Python 3.12, Node 20+ (22/24 test edildi), npm.
 python3 -m venv .venv && source .venv/bin/activate   # isteğe bağlı ama önerilir
 make install        # pip install -e '.[dev,ui,detector]' (torch + transformers) + models/yolov8n.pt indirir
 cp .env.example .env
-# Ekipten al (git'e girmez): resmî paket → "ROKETSAN HACKATHON/data/", Kaggle modeli → models/dfine_m_kaggle.pth
+# Ekipten al (git'e girmez): resmî paket → "asama-2/data/", Kaggle modeli → models/dfine_m_kaggle.pth
 # Resmî paket yoksa: export SENTINEL_DATA_DIR=../stage2_dev_data
 make check          # ruff + tüm testler
 make app            # arayüzü derler, API + arayüzü http://127.0.0.1:8000'de açar
@@ -93,8 +93,8 @@ Arayüz üzerinde çalışırken: bir terminalde `make app` açık kalsın, diğ
 
 | Komut | Beklenen |
 |---|---|
-| `make check` | ruff "All checks passed!", pytest'te hata yok (yazıldığı an 99 test; 15'i tarayıcı testi — duman + her ekranda ≥ 6:1 kontrast —, Playwright/Chrome yoksa atlanır) |
-| `make ui-test` | arayüzü derler, `tests/ui` 15/15 geçer (demo yolu: kuyruk + önizleme, 12:35 ✗ kartı, canlı değerlendirme adımları, karar → kuyruk, eskalasyon kartı + vardiya devri, etki + vardiya oynatma, yalnız klavyeyle kullanım, operasyonel hata mesajı; her ekranda metin kontrastı ≥ 6:1; kör modda seviye ve tehdit durumu sızmaz) |
+| `make check` | ruff "All checks passed!", pytest'te hata yok (yazıldığı an 155 test; 29'u tarayıcı testi — duman + her ekranda ≥ 6:1 kontrast —, Playwright/Chrome yoksa atlanır) |
+| `make ui-test` | arayüzü derler, `tests/ui` 29/29 geçer (arazi karoları yoksa 1'i atlanır) (demo yolu: kuyruk + önizleme, 12:35 ✗ kartı, canlı değerlendirme adımları, karar → kuyruk, eskalasyon kartı + vardiya devri, etki + vardiya oynatma, yalnız klavyeyle kullanım, operasyonel hata mesajı; her ekranda metin kontrastı ≥ 6:1; kör modda seviye ve tehdit durumu sızmaz) |
 | `make validate` | `SONUÇ: temiz`, 40 kare / 226 track / 137 rapor, 20 tuzak track |
 | `curl -s http://127.0.0.1:8000/api/health` | `"detector": "dfine:dfine_m_kaggle"`, `"detector_fallback": null`, `"llm": {"error": null}` (anahtar varsa), `warmup.done == 40` |
 | `make demo-check` | tüm satırlar ✓, `demo-check YEŞİL (7/7)` (img_000860 KRİTİK + R119/R125 ✗, karşıt kare img_001733 DÜŞÜK ve çelişen rapor yok, önbellekteki brief'ler; `config.yaml → demo`) |
@@ -105,7 +105,7 @@ Arayüz üzerinde çalışırken: bir terminalde `make app` açık kalsın, diğ
 
 ## 4. LLM: hackathon GLM ağ geçidi
 
-LLM olarak organizatörün ağ geçidindeki **`glm-5.3-flash`** kullanılır (LiteLLM, OpenAI uyumlu, standart `Authorization: Bearer`). Adres, model ve limitler `ROKETSAN HACKATHON/gorev_tanimi.pdf` s. 3–10'da.
+LLM olarak organizatörün ağ geçidindeki **`glm-5.3-flash`** kullanılır (LiteLLM, OpenAI uyumlu, standart `Authorization: Bearer`). Adres, model ve limitler `asama-2/gorev_tanimi.pdf` s. 3–10'da.
 
 > **Anahtar takıma özeldir ve bütçe sıfırlanmaz: toplam 15 USD.** Anahtarı sohbet/issue/commit'e yazma; yalnızca `stage2/.env` içinde tut (git'e ve Docker imajına girmez). Depo özel olsa da anahtar hiçbir dosyaya yazılmaz.
 
@@ -141,7 +141,7 @@ python3 -m sentinel evaluate img_000860      # (PYTHONPATH=src ya da make instal
 7. **Eşik ve ağırlıklar `config.yaml`'da.** Kodda sabit eşik yazma. `domain/models.py` ekip sözleşmesidir; alan eklemek/değiştirmek ekiple konuşulur.
 8. **Altın sayı testlerini değiştirme.** `tests/unit/test_geo.py`, `test_tracking.py`, `test_reports.py` organizatörün örneğindeki sayıları (756,301 → 39.92531, 32.87183; T0122 < 1 m, 2. aday T0032 ~41 m; 5,5 → 1,6 km; 10,5 km yol; ETA ~4,4 dk; 12:35 raporu ✗) sabitler. Bu testler kırılırsa kod yanlıştır, test değil.
 9. **Prompt'lar sürümlüdür.** Prompt değiştirirken mevcut dosyayı düzenleme; `agent/prompts/analyst_vN.md` (ya da `chat_vN.md`) yeni dosya aç ve `config.yaml → llm.prompt_version`'ı güncelle. LLM önbelleği sürüme bağlıdır; ardından `python3 scripts/precompute.py` ile 40 brief'i yeniden üret (~15 dk).
-10. **Git'e girmeyecekler:** `.env`, `ROKETSAN HACKATHON/dataset/`, organizatör PDF/PPTX'leri, `stage2/runs/`, `models/*.pt`, `ROKETSAN HACKATHON/data/` (resmî paket), `*.pth`, `web/node_modules`, `web/dist`, `web/public/terrain/` (`make terrain` indirir). Commit'ten önce `git status`'a bak.
+10. **Git'e girmeyecekler:** `.env`, `asama-2/dataset/`, organizatör PDF/PPTX'leri, `stage2/runs/`, `models/*.pt`, `asama-2/data/` (resmî paket), `*.pth`, `web/node_modules`, `web/dist`, `web/public/terrain/` (`make terrain` indirir). Commit'ten önce `git status`'a bak.
 
 ## 6. Nereyi değiştireyim? (görev → dosya)
 
@@ -160,7 +160,6 @@ python3 -m sentinel evaluate img_000860      # (PYTHONPATH=src ya da make instal
 
 ## 7. Tuzaklar
 
-- **Klasör adında boşluk:** `"ROKETSAN HACKATHON"` tırnaksız yazılırsa komutlar sessizce yanlış yere gider.
 - **Önbellekler:** Tespit önbelleği `cache/detections/<model>__<parmakizi>/` altında; parmak izi inference ayarlarını ve veri paketinin kimliğini (`image_meta.json` özeti) içerir. Ayar ya da veri paketi değişince eski kutular kullanılmaz (bu kasıtlı: dev ve resmî pakette kare kimlikleri aynı, pikseller farklı). LLM önbelleği model + prompt sürümü + üretim ayarları + mesajlara bağlıdır. Boş LLM yanıtı asla önbelleğe yazılmaz.
 - **Görüntü ölçeği köşe koordinatlarıyla uyuşmuyor** (resmî veride de yeniden ölçüldü: track'le eşleşen gerçek araç kutuları yerde medyan 10 m, en fazla 60 m). Bu yüzden metre cinsinden kutu boyutu filtresi kapalı (`detector.plausible_size_m: null`). "Hata" diye düzeltmeye çalışma.
 - **Rapor kimlikleri dosya sırasıdır:** `field_reports.json`'da kimlik yok; `R{sıra:03d}` resmî dosyadaki 0 tabanlı sıradır (dev dosyası saate göre sıralıydı, resmî dosya değil). Demo raporları: 12:25 → R119, 12:35 → R125.
@@ -193,4 +192,3 @@ python3 -m sentinel reports --zone "Dogu Yolu"    raporların zaman-duyarlı do�
 - `main` her zaman çalışır durumda kalır. İşi kısa ömürlü bir dalda yap, merge'den önce `make check` (arayüze dokunduysan `npm run typecheck && npm run build`) yeşil olsun.
 - Her değişiklik en az bir test ile gelir (altın sayı, sözleşme ya da duman testi). Arayüz değişikliğini tarayıcıda gerçekten dene.
 - Demo yolu kutsaldır: merge'den önce `make demo-check` yeşil kalmalı.
-- Güncel iş sırası ve kimin ne yapacağı: kökteki `TODO.md`.
