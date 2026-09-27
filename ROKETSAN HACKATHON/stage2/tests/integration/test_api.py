@@ -54,6 +54,9 @@ def test_read_endpoints(client):
     ]
     assert row["min_eta_min"] == min(etas) and row["n_approaching"] >= len(etas) >= 1
     assert client.get("/api/frames/img_000860/image").headers["content-type"] == "image/jpeg"
+    ref = pkt["vehicles"][0]["ref"]
+    assert client.get(f"/api/frames/img_000860/vehicles/{ref}/crop").headers["content-type"] == "image/jpeg"
+    assert client.get("/api/frames/img_000860/vehicles/V999/crop").status_code == 404
     steps = [s["step"] for s in client.get(f"/api/runs/{f['result']['run_id']}/trace").json()]
     assert steps[0] == "1_tespit"
 

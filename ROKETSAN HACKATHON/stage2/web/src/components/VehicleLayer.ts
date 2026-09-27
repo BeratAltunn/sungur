@@ -39,8 +39,8 @@ export function useVehicleLayer({
   threshold: number;
   clock: Clock;
   onSelect: (imageId: string) => void;
-  /** Pointer on a vehicle: preview its frame's card next to it (the same fade-in card as the frame view). */
-  onHover: (imageId: string, at: [number, number]) => void;
+  /** Pointer on a vehicle: preview that vehicle's own card next to it (its score, not its frame's). */
+  onHover: (v: DayVehicle, at: [number, number]) => void;
   onHoverOut: () => void;
 }) {
   const markers = useRef<Map<string, Marker>>(new Map());
@@ -77,7 +77,7 @@ export function useVehicleLayer({
       if (v.image_id) {
         el.addEventListener("mouseenter", () => {
           const p = m.getLngLat();
-          cb.current.onHover(v.image_id!, [p.lng, p.lat]);
+          cb.current.onHover(v, [p.lng, p.lat]);
         });
         el.addEventListener("mouseleave", () => cb.current.onHoverOut());
       }

@@ -17,7 +17,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -145,6 +145,18 @@ def frame_image(image_id: str):
     if not path.exists():
         raise HTTPException(404, "görüntü dosyası yok")
     return FileResponse(path)
+
+
+@app.get("/api/frames/{image_id}/vehicles/{vehicle_ref}/crop")
+def vehicle_crop(image_id: str, vehicle_ref: str):
+    """One vehicle cut out of its frame, around its detection box (the map's vehicle card)."""
+    _check_frame(image_id)
+    if not svc().repo.image_path(image_id).exists():
+        raise HTTPException(404, "görüntü dosyası yok")
+    try:
+        return Response(svc().vehicle_crop(image_id, vehicle_ref), media_type="image/jpeg")
+    except KeyError:
+        raise HTTPException(404, f"{image_id} karesinde {vehicle_ref} yok") from None
 
 
 @app.get("/api/runs/{run_id}/trace")

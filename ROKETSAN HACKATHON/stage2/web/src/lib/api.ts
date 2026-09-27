@@ -113,6 +113,8 @@ export const api = {
   tracks: (id: string) => http<FrameTracks>(`/api/frames/${id}/tracks`),
   trace: (runId: string) => http<TraceStep[]>(`/api/runs/${runId}/trace`),
   imageUrl: (id: string) => `/api/frames/${id}/image`,
+  /** One vehicle cut out of its frame around its detection box. */
+  cropUrl: (id: string, ref: string) => `/api/frames/${id}/vehicles/${encodeURIComponent(ref)}/crop`,
   evaluate: (id: string, live: boolean) =>
     http<FrameResponse>(`/api/frames/${id}/evaluate?live=${live}`, { method: "POST" }),
   /** Same run, streamed: step start/end, the packet after step 5, then the result. */

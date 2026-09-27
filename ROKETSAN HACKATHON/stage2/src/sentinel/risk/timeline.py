@@ -25,8 +25,13 @@ def score_timeline(
     geo: LocalFrame,
     zones: ZoneIndex,
     s: Settings,
+    frame_vehicles: list[VehicleEvidence] | None = None,
 ) -> list[tuple[int, int, RiskLevel]]:
-    """[(t_min, ordering score, level)] at every track point before capture, then the packet's own at capture."""
+    """[(t_min, ordering score, level)] at every track point before capture, then the packet's own at capture.
+
+    `frame_vehicles`: the other vehicles of the frame. A contradicted identity claim tied to one of them is that
+    vehicle's evidence, not a "claim near the frame" for this one (the same rule as at capture)."""
+    others = [w for w in frame_vehicles or [] if w.ref != v.ref]
     out: list[tuple[int, int, RiskLevel]] = []
     for p in track.points:
         if p.t_min >= capture_min:
@@ -40,7 +45,7 @@ def score_timeline(
             }
         )
         known = [r for r in reports if to_min(r.time) <= p.t_min]  # a report counts from its own time on
-        assess_vehicle(at, [at], known, {}, loose_identity_reports(known, [at]), s.risk)
+        assess_vehicle(at, [at], known, {}, loose_identity_reports(known, [at, *others]), s.risk)
         out.append((p.t_min, at.score, at.level))
     out.append((capture_min, v.score, v.level))
     return out

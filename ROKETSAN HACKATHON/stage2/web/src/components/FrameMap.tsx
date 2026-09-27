@@ -1,13 +1,21 @@
 import type { Map as MLMap, Marker } from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
-import { LEVEL_COLOR, SOURCE_TR, VERDICT_CLASS, VERDICT_ICON, dec, flyMs, hhmm } from "../lib/format";
+import { LABEL_TR, LEVEL_COLOR, SOURCE_TR, VERDICT_CLASS, VERDICT_ICON, dec, flyMs, hhmm } from "../lib/format";
 import { baseSymbol, vehicleSymbol } from "../lib/symbols";
-import { bounds, circle, fullPath, pathUntil, positionAt } from "../lib/geo";
+import { bounds, circle, fullPath, grid, pathUntil, positionAt } from "../lib/geo";
 import type { FrameInfo, FrameTracks, LngLat, MapContext, ReportVerification, TrackPath } from "../lib/types";
 import { MapView, fc, htmlMarker, line, polygon, setGeo } from "./MapView";
 import { RefText, VerdictBadge } from "./ui";
 
 export type Focus = { kind: "track"; id: string } | { kind: "report"; id: string } | null;
+
+/** Same faint 1 km reference grid as the main map (visual only). */
+const GRID = { halfM: 10_000, stepM: 1_000 };
+const ROLE_GROUPS: { role: TrackPath["role"]; title: string }[] = [
+  { role: "vehicle", title: "Karedeki araçlar" },
+  { role: "undetected", title: "Karede tespit edilmeyen izler" },
+  { role: "report", title: "Raporlarla ilgili izler" },
+];
 
 interface Props {
   ctx: MapContext;
@@ -34,6 +42,19 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
   const vehicleMarkers = useRef<Record<string, Marker>>({});
   const pinMarkers = useRef<Record<string, Marker>>({});
   const [ready, setReady] = useState(0);
+  // Which tracks the operator wants on the map (display only; the evidence is unchanged). All shown by default.
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set());
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const shownTracks = data.tracks.filter((tr) => !hidden.has(tr.track_id));
+  const toggleTrack = (id: string) =>
+    setHidden((h) => {
+      const n = new Set(h);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const showOnly = (keep: (tr: TrackPath) => boolean) =>
+    setHidden(new Set(data.tracks.filter((tr) => !keep(tr)).map((tr) => tr.track_id)));
   const c = frame.corners;
   const frameCorners: LngLat[] = [c.top_left, c.top_right, c.bottom_right, c.bottom_left].map(([la, lo]) => [lo, la]);
 
@@ -43,7 +64,7 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
   const fitAll = () => {
     const map = mapRef.current;
     if (!map) return;
-    const pts: LngLat[] = [...frameCorners, ...data.tracks.flatMap((tr) => fullPath(tr.points))];
+    const pts: LngLat[] = [...frameCorners, ...shownTracks.flatMap((tr) => fullPath(tr.points))];
     map.fitBounds(bounds(pts), { padding: 48, duration: flyMs(600), maxZoom: 16 });
   };
   const fitFrame = () => mapRef.current?.fitBounds(bounds(frameCorners), { padding: 24, duration: flyMs(600) });
@@ -55,6 +76,9 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
     vehicleMarkers.current = {};
     pinMarkers.current = {};
 
+    setGeo(map, "grid", fc(grid(ctx.base.center, GRID.halfM, GRID.stepM).map((l) => line(l))));
+    if (!map.getLayer("grid"))
+      map.addLayer({ id: "grid", type: "line", source: "grid", paint: { "line-color": "#9fbcdb", "line-opacity": 0.14, "line-width": 1 } });
     setGeo(map, "rings", fc(ctx.rings.map((r) => line(r.ring))));
     map.addLayer({ id: "rings", type: "line", source: "rings", paint: { "line-color": "#334155", "line-dasharray": [3, 3] } });
 
@@ -95,10 +119,8 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
     });
 
     htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base");
-    const activeZone = ctx.zones.find((z) => z.name === frame.zone);
-    if (activeZone) {
-      htmlMarker(map, activeZone.center, activeZone.label, "mk mk-zone");
-    }
+    // Every zone name, as on the main map; the frame's own zone stands out.
+    for (const z of ctx.zones) htmlMarker(map, z.center, z.label, `mk mk-zone${z.name === frame.zone ? " mk-zone-active" : ""}`);
     for (const tr of data.tracks) {
       const label = tr.vehicle_ref ? `${tr.vehicle_ref}` : tr.track_id;
       const m = htmlMarker(map, [0, 0], vehicleSymbol(label), `mk mk-veh mk-${tr.role}`, () => onFocusRef.current({ kind: "track", id: tr.track_id }));
@@ -130,13 +152,13 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
     setGeo(
       map,
       "paths-full",
-      fc(data.tracks.map((tr) => line(fullPath(tr.points), { color: trackColor(tr) }))),
+      fc(shownTracks.map((tr) => line(fullPath(tr.points), { color: trackColor(tr) }))),
     );
     setGeo(
       map,
       "paths-sofar",
       fc(
-        data.tracks.map((tr) =>
+        shownTracks.map((tr) =>
           line(pathUntil(tr.points, t), {
             color: tr.track_id === focusedTrack ? "#ffffff" : trackColor(tr),
             width: tr.track_id === focusedTrack ? 4 : tr.role === "vehicle" ? 2.5 : 1.5,
@@ -148,14 +170,14 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
       const m = vehicleMarkers.current[tr.track_id];
       const pos = positionAt(tr.points, t);
       const el = m.getElement();
-      el.style.display = pos ? "" : "none";
+      el.style.display = pos && !hidden.has(tr.track_id) ? "" : "none";
       if (pos) m.setLngLat(pos);
       el.classList.toggle("mk-focus", tr.track_id === focusedTrack || !!pin?.related_tracks.includes(tr.track_id));
     }
     // selected report: its radius and dashed links to the vehicles it is about, at the slider time
     if (pin) {
       setGeo(map, "report-circle", fc([polygon(circle([pin.lon, pin.lat], data.radius_m))]));
-      const links = data.tracks
+      const links = shownTracks
         .filter((tr) => pin.related_tracks.includes(tr.track_id))
         .map((tr) => positionAt(tr.points, t))
         .filter((p): p is LngLat => !!p)
@@ -173,14 +195,16 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
       "projections",
       fc(
         atCapture
-          ? data.projections.map((p) =>
+          ? data.projections
+              .filter((p) => !p.track_id || !hidden.has(p.track_id))
+              .map((p) =>
               line([[p.lon, p.lat], ctx.base.center], { color: blind ? "#d4d8dd" : LEVEL_COLOR[p.level] }),
             )
           : [],
       ),
     );
 
-  }, [t, focusedTrack, pin, data, ready, blind, ctx]);
+  }, [t, focusedTrack, pin, data, ready, blind, ctx, hidden]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Focusing a report frames the pin and its vehicles so the gap is visible at a glance.
   useEffect(() => {
@@ -225,6 +249,48 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
         </span>
       </div>
       <div className="map-actions">
+        <div className="track-picker">
+          <button
+            className="btn btn-ghost btn-sm"
+            aria-expanded={pickerOpen}
+            onClick={() => setPickerOpen((o) => !o)}
+            title="Haritada gösterilecek izleri seç"
+          >
+            İzler {shownTracks.length}/{data.tracks.length} {pickerOpen ? "▴" : "▾"}
+          </button>
+          {pickerOpen && (
+            <div className="track-picker-list" role="group" aria-label="Gösterilecek izler">
+              <div className="track-picker-quick">
+                <button className="btn btn-ghost btn-sm" onClick={() => setHidden(new Set())}>
+                  Tümü
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => showOnly((tr) => tr.role === "vehicle")}>
+                  Yalnız araçlar
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => showOnly(() => false)}>
+                  Hiçbiri
+                </button>
+              </div>
+              {ROLE_GROUPS.map(({ role, title }) => {
+                const group = data.tracks.filter((tr) => tr.role === role);
+                if (!group.length) return null;
+                return (
+                  <fieldset key={role}>
+                    <legend>{title}</legend>
+                    {group.map((tr) => (
+                      <label key={tr.track_id} className="track-picker-item">
+                        <input type="checkbox" checked={!hidden.has(tr.track_id)} onChange={() => toggleTrack(tr.track_id)} />
+                        <span className="track-swatch" style={{ background: trackColor(tr) }} aria-hidden />
+                        <span className="mono">{tr.vehicle_ref ? `${tr.vehicle_ref} · ${tr.track_id}` : tr.track_id}</span>
+                        {tr.label && <span className="muted">{LABEL_TR[tr.label]}</span>}
+                      </label>
+                    ))}
+                  </fieldset>
+                );
+              })}
+            </div>
+          )}
+        </div>
         <button className="btn btn-ghost btn-sm" onClick={fitAll}>
           Tüm izler
         </button>

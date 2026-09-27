@@ -79,7 +79,10 @@ def test_triage_map_card_and_shift_card(page: Page):
     expect(page.locator(f'.mk-arrow-mk[data-arrow="{DEMO}"] .mk-arrow.mk-arrow-in')).to_have_count(1)
     expect(card).to_contain_text("T0122")
     expect(card).to_contain_text("km/sa")
-    expect(page.locator(".shift")).to_contain_text("YÜKSEK/KRİTİK karar bekliyor")
+    # the top of the map is kept clear: no shift strip, no search/filter box; only the view switch
+    expect(page.locator(".shift")).to_have_count(0)
+    expect(page.locator(".hud-tools")).to_have_count(0)
+    expect(page.get_by_role("group", name="Harita görünümü")).to_be_visible()
     # Status bar: facility posture (highest level still waiting) and subsystem health, from the backend.
     expect(page.locator(".posture")).to_contain_text("karar bekliyor")
     expect(page.locator(".classification")).to_contain_text("TASNİF DIŞI")
@@ -92,11 +95,6 @@ def test_triage_map_card_and_shift_card(page: Page):
     expect(page).to_have_url(re.compile(r"#/$"))
     page.keyboard.press("Escape")
     expect(card).to_have_count(0)
-    # Search jumps straight to the contrast frame (DEMO.md 3:20).
-    page.get_by_label("Kare ara").fill(CONTRAST[-4:])
-    expect(page.locator(FRAMES)).to_have_count(1)
-    page.get_by_label("Kare ara").press("Enter")
-    expect(page).to_have_url(re.compile(f"#/frame/{CONTRAST}$"))
 
 
 def test_markers_stay_anchored_when_zooming(page: Page):
@@ -158,15 +156,26 @@ def test_vehicle_view_plays_the_day_and_the_threshold_thins_it(page: Page):
     page.get_by_role("slider", name="Zaman çubuğu saati").fill("845")
     expect(truck).not_to_have_class(re.compile(r"\blv-crit\b"))
     page.get_by_role("slider", name="Zaman çubuğu saati").fill("850")
-    # hovering another frame's vehicle fades in that frame's card, next to the vehicle
+    # hovering another frame's vehicle fades in that vehicle's own card (its score, a cut-out of its box), next to it
     other = page.locator(".mk-v:not(.mk-hidden)").evaluate_all(
-        "els => els.map(e => [e.dataset.vehicle, (e.title.match(/img_\\d+/) || [''])[0]]).find(([, im]) => im && im !== 'img_000860')"
+        "els => els.map(e => [e.dataset.vehicle, (e.title.match(/img_\\d+/) || [''])[0],"
+        " (e.title.match(/şu an skor (\\d+)/) || ['', ''])[1], (e.title.match(/çekiminde (\\d+)/) || ['', ''])[1],"
+        " [...e.classList].find(c => c.startsWith('lv-'))]).find(([, im]) => im && im !== 'img_000860')"
     )
     assert other, "no vehicle from another frame on screen"
     veh = page.locator(f'.mk-v[data-vehicle="{other[0]}"]')
     veh.dispatch_event("mouseenter")
     card = page.locator(".frame-card-wrap")
+    expect(card.locator(".veh-card")).to_be_visible()
     expect(card).to_contain_text(other[1])
+    # the head shows the same moment as the marker's colour (clock time 14:10), capture values below it
+    expect(card.locator(".frame-card-score")).to_have_text(f"14:10 · skor {other[2]}")
+    expect(card.locator(".frame-card-head .level")).to_have_class(re.compile(rf"\b{other[4]}\b"))
+    expect(card.locator(".facts")).to_contain_text(f"skor {other[3]}")
+    crop = card.locator("img.veh-crop")
+    expect(crop).to_have_attribute("src", re.compile(rf"/api/frames/{other[1]}/vehicles/.+/crop$"))
+    page.wait_for_function("document.querySelector('img.veh-crop')?.naturalWidth > 0")
+    expect(card.locator(".veh-crop-box")).to_be_visible()  # the detection box drawn over the crop
     expect(card).to_have_class(re.compile(r"\bcard-in\b"))
     vb, cbox = veh.bounding_box(), card.bounding_box()
     assert min(abs(cbox["x"] - (vb["x"] + vb["width"])), abs(cbox["x"] + cbox["width"] - vb["x"])) < 80
@@ -253,12 +262,10 @@ def test_map_is_the_page_background(page: Page):
     bg = page.locator(".map-bg .map").bounding_box()
     assert bg["x"] <= 0 and bg["y"] <= 0 and bg["width"] >= vw and bg["height"] >= vh  # full window
     assert page.evaluate("document.scrollingElement.scrollHeight") <= vh  # nothing scrolls under the map
-    # Legend and shift details are collapsed by default and open on demand.
+    # The legend is collapsed by default and opens on demand.
     expect(page.locator(".legend-box .legend")).to_have_count(0)
     page.get_by_role("button", name=re.compile("^Lejant")).click()
     expect(page.locator(".legend-box .legend")).to_contain_text("öncü aracın yönü")
-    page.get_by_role("button", name=re.compile("^Ayrıntı")).click()
-    expect(page.locator(".shift-more")).to_contain_text("rapor çelişiyor")
 
 
 def test_marker_silhouettes_follow_backend_class(page: Page):
@@ -310,6 +317,29 @@ def test_demo_frame_aha_moment(page: Page):
     page.locator('button.tick[title^="R119"]').click()
     expect(card).to_contain_text("kimlik iddiası")
     expect(card).to_contain_text("ÇELİŞİYOR")
+
+
+def test_frame_map_shows_zones_grid_and_picked_tracks(page: Page):
+    """Frame page map: every zone name and the faint grid as on the main map; the operator picks which tracks show."""
+    page.goto(f"/#/frame/{DEMO}")
+    fmap = page.locator(".frame-map")
+    n_zones = len(page.request.get("/api/map").json()["zones"])
+    expect(fmap.locator(".mk-zone")).to_have_count(n_zones)
+    expect(fmap.locator(".mk-zone-active")).to_have_count(1)
+    truck = fmap.locator('.mk-veh[title~="T0122"]')
+    expect(truck).to_be_visible()
+    picker = fmap.get_by_role("button", name=re.compile(r"^İzler"))
+    total = int(re.search(r"/(\d+)", picker.inner_text()).group(1))
+    picker.click()
+    box = fmap.get_by_role("group", name="Gösterilecek izler")
+    box.get_by_role("checkbox", name=re.compile(r"T0122")).uncheck()
+    expect(truck).to_be_hidden()
+    expect(picker).to_contain_text(f"{total - 1}/{total}")
+    box.get_by_role("button", name="Hiçbiri").click()
+    expect(fmap.locator(".mk-veh:visible")).to_have_count(0)
+    box.get_by_role("button", name="Tümü").click()
+    expect(truck).to_be_visible()
+    expect(picker).to_contain_text(f"{total}/{total}")
 
 
 def test_live_run_streams_six_steps(page: Page):
@@ -374,7 +404,7 @@ def test_impact_view_and_shift_replay(page: Page):
     expect(page.locator(".replay-alert").filter(has_text=DEMO)).to_contain_text("NÖBETÇİ: karar")
     page.get_by_role("button", name="✕ Kapat").click()
     expect(frames).to_have_count(40)
-    expect(page.locator(".shift")).to_be_visible()
+    expect(page.locator(".replay")).to_have_count(0)
 
 
 def test_keyboard_only_operation(page: Page):

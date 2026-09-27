@@ -12,6 +12,8 @@ record_decision(...)    POST /frames/{id}/decisions
 health()                GET  /health
 map_context()           GET  /map
 frame_tracks(id)        GET  /frames/{id}/tracks
+vehicles()              GET  /vehicles
+vehicle_crop(id, ref)   GET  /frames/{id}/vehicles/{ref}/crop
 chat(question, …)       POST /chat
 """
 
@@ -52,6 +54,11 @@ from sentinel.pipeline import Pipeline
 from sentinel.tracking.kinematics import compute_kinematics
 
 LABEL_ORDER: tuple[str, ...] = get_args(Label)  # map marker class counts, in the contract order
+# Vehicle thumbnail on the map card (presentation only, never evidence): the box's longer side × CROP_CONTEXT,
+# at least CROP_MIN_PX (image_meta pixels), output at most CROP_OUT_PX square.
+CROP_CONTEXT = 2.5
+CROP_MIN_PX = 96
+CROP_OUT_PX = 320
 log = logging.getLogger(__name__)
 
 
@@ -584,11 +591,24 @@ class SentinelService:
         def steps(triples) -> list[list]:
             return [[t, sc, lv.value] for t, sc, lv in triples]
 
+        def threat(v) -> dict | None:
+            t = v.threat
+            if t is None:
+                return None
+            dims = {"capability": t.capability, "opportunity": t.opportunity, "intent": t.intent}
+            return {
+                **{k: {"score": d.score, "band": d.band.value} for k, d in dims.items()},
+                "floor_level": t.floor_level.value if t.floor_level else None,
+                "floor_reasons": t.floor_reasons,
+            }
+
         detected: dict[str, dict] = {}  # by track id; a track seen in two frames keeps its highest score
         untracked: list[dict] = []
         for meta in self.repo.frames():
             pkt = self.packet(meta.image_id)
             for v in pkt.vehicles:
+                k = v.kinematics
+                # The vehicle's own evidence at capture (its card on the map): score and level are per vehicle.
                 item = {
                     "id": v.track_id or f"{meta.image_id}/{v.ref}",
                     "track_id": v.track_id,
@@ -598,6 +618,12 @@ class SentinelService:
                     "conf": round(v.conf, 2),
                     "score": v.score,
                     "level": v.level.value,
+                    "capture_time": meta.capture_time,
+                    "d_base_m": round(v.d_base_m),
+                    "approaching": bool(k and k.approaching),
+                    "eta_min": k.eta_min if k and k.approaching else None,
+                    "threat": threat(v),
+                    "crop_box": self._crop_box(meta.image_id, v),
                 }
                 if v.track_id is None:
                     untracked.append(
@@ -617,6 +643,7 @@ class SentinelService:
                         self.repo.geo,
                         self.repo.zone_index,
                         self.s,
+                        frame_vehicles=pkt.vehicles,
                     )
                     detected[v.track_id] = {**item, "timeline": steps(line), "_rank": (v.level.rank, v.score)}
         out = [
@@ -633,6 +660,12 @@ class SentinelService:
                 "conf": None,
                 "score": None,
                 "level": None,
+                "capture_time": None,
+                "d_base_m": None,
+                "approaching": False,
+                "eta_min": None,
+                "threat": None,
+                "crop_box": None,
                 "points": path(tid),
                 "timeline": [],
             }
@@ -641,6 +674,50 @@ class SentinelService:
         ]
         t0, t1 = self.repo.time_range
         return {"window": {"start": t0, "end": t1}, "vehicles": out}
+
+    def vehicle_crop(self, image_id: str, vehicle_ref: str) -> bytes:
+        """JPEG of one detected vehicle: a square cut around its box with some ground around it (display only)."""
+        import io
+
+        from PIL import Image
+
+        v = next((x for x in self.packet(image_id).vehicles if x.ref == vehicle_ref), None)
+        if v is None:
+            raise KeyError(vehicle_ref)
+        meta = self.repo.meta[image_id]
+        left, top, side = self._crop_window(image_id, v)
+        with Image.open(self.repo.image_path(image_id)) as im:
+            # boxes live in image_meta pixel space; the file may be stored at another size
+            sx, sy = im.width / meta.width_px, im.height / meta.height_px
+            box = (round(left * sx), round(top * sy), round((left + side) * sx), round((top + side) * sy))
+            crop = im.convert("RGB").crop(box)
+        n = min(CROP_OUT_PX, max(crop.size))
+        if crop.size != (n, n):  # square, so the card's box overlay (crop_box fractions) lines up exactly
+            crop = crop.resize((n, n), Image.Resampling.LANCZOS)
+        buf = io.BytesIO()
+        crop.save(buf, "JPEG", quality=85)
+        return buf.getvalue()
+
+    def _crop_window(self, image_id: str, v) -> tuple[float, float, float]:
+        """(left, top, side) of the vehicle's square crop in image_meta pixels, kept inside the frame."""
+        meta = self.repo.meta[image_id]
+        W, H = meta.width_px, meta.height_px
+        x, y, w, h = v.bbox
+        side = min(max(max(w, h) * CROP_CONTEXT, CROP_MIN_PX), W, H)
+        left = min(max(0.0, x + w / 2 - side / 2), W - side)
+        top = min(max(0.0, y + h / 2 - side / 2), H - side)
+        return left, top, side
+
+    def _crop_box(self, image_id: str, v) -> list[float]:
+        """The detection box inside its crop as [x, y, w, h] fractions of the crop's side (the card draws it)."""
+        left, top, side = self._crop_window(image_id, v)
+        x, y, w, h = v.bbox
+        return [
+            round((x - left) / side, 4),
+            round((y - top) / side, 4),
+            round(w / side, 4),
+            round(h / side, 4),
+        ]
 
     # ================================================================ chat
     def chat(self, question: str, history: list | None = None, image_id: str | None = None):

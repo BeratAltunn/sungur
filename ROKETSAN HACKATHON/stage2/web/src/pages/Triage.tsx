@@ -1,5 +1,5 @@
 import type { MapLayerMouseEvent, Map as MLMap, Marker } from "maplibre-gl";
-import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { go } from "../App";
 import { MapView, fc, htmlMarker, line, polygon, setGeo } from "../components/MapView";
 import { grid } from "../lib/geo";
@@ -7,12 +7,12 @@ import { baseSymbol, classSymbol } from "../lib/symbols";
 import { ReplayBar, useReplay } from "../components/Replay";
 import { TimeBar } from "../components/TimeBar";
 import { useVehicleLayer } from "../components/VehicleLayer";
-import { DecisionPill, ErrorState, Kbd, LevelBadge, Loading, SummaryContext, TopBar } from "../components/ui";
+import { DecisionPill, ErrorState, Kbd, LevelBadge, Loading, TopBar } from "../components/ui";
 import { api } from "../lib/api";
 import { createClock, type Clock } from "../lib/clock";
-import { toMin } from "../lib/dayVehicles";
-import { LABEL_TR, LEVELS, reducedMotion, LEVEL_ACTION, LEVEL_CLASS, LEVEL_COLOR, LEVEL_ICON, dec, km, secs, storage, zoneName } from "../lib/format";
-import type { DayVehicle, FrameMotion, Health, Label, Level, LngLat, MapContext, ShiftSummary, TriageRow, VehicleDay } from "../lib/types";
+import { threatAt, toMin } from "../lib/dayVehicles";
+import { LABEL_TR, LEVELS, reducedMotion, LEVEL_ACTION, LEVEL_CLASS, LEVEL_COLOR, LEVEL_ICON, dec, hhmm, km, secs, storage, zoneName } from "../lib/format";
+import type { DayVehicle, FrameMotion, Health, Label, LngLat, MapContext, ShiftSummary, TriageRow, VehicleDay } from "../lib/types";
 
 /** Main map view: moving vehicles over the day (with the time bar) or one marker per frame. */
 type MapMode = "vehicles" | "frames";
@@ -27,16 +27,12 @@ const ARROW_FULL_KMH = 80;
 const CARD_FADE_OUT_MS = 250; // matches the .card-out animation in styles.css
 
 export function TriagePage({ health, queue }: { health: Health | null; queue: TriageRow[] | null }) {
-  const summary = useContext(SummaryContext);
   const [mapCtx, setMapCtx] = useState<MapContext | null>(null);
   const [error, setError] = useState<unknown>(null);
-  const [zone, setZone] = useState<string>("");
-  const [level, setLevel] = useState<Level | "">("");
-  const [status, setStatus] = useState<Status>("");
-  const [search, setSearch] = useState("");
   // undefined: follow the most urgent frame · null: card closed · string: the operator's pick.
   const [pick, setPick] = useState<string | null | undefined>(undefined);
   const [hover, setHover] = useState<string | null>(null);
+  const [hoverVeh, setHoverVeh] = useState<string | null>(null); // vehicle view: the vehicle under the pointer
   const [showTip, setShowTip] = useState(() => !storage.get("tip_seen", false));
   const viewed = useMemo(() => new Set(storage.get<string[]>("viewed", [])), []);
   const replay = useReplay();
@@ -66,22 +62,11 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
   };
   useEffect(load, [queue]);
 
-  // Risk-ordered (backend order), filtered: what the map shows and J/K walks through.
+  // Risk-ordered (backend order): what the map shows and J/K walks through (during a replay, only arrived frames).
   const rows = useMemo(
-    () =>
-      (queue ?? []).filter(
-        (r) =>
-          (!replay.arrived || replay.arrived.has(r.image_id)) &&
-          (!search.trim() || r.image_id.includes(search.trim().toLowerCase())) &&
-          (!zone || r.zone === zone) &&
-          (!level || r.level === level) &&
-          (status !== "unseen" || !viewed.has(r.image_id)) &&
-          (status !== "pending" || !r.decision) &&
-          (status !== "escalated" || r.decision?.action === "escalate"),
-      ),
-    [queue, zone, level, status, viewed, search, replay.arrived],
+    () => (queue ?? []).filter((r) => !replay.arrived || replay.arrived.has(r.image_id)),
+    [queue, replay.arrived],
   );
-  useEffect(() => setPick(undefined), [zone, level, status, search]);
 
   const selected = pick === null ? null : (rows.find((r) => r.image_id === pick) ?? rows[0] ?? null);
   const cursor = selected ? rows.indexOf(selected) : -1;
@@ -106,10 +91,10 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
     return () => window.removeEventListener("keydown", on);
   }, [rows, cursor, selected, replay, mode, vehDay, clock]);
 
-  const zones = useMemo(() => [...new Set((queue ?? []).map((r) => r.zone))].sort(), [queue]);
   const decided = useMemo(() => new Set((queue ?? []).filter((r) => r.decision).map((r) => r.image_id)), [queue]);
   const byId = useMemo(() => new Map((queue ?? []).map((r) => [r.image_id, r])), [queue]);
   const frameInfo = useMemo(() => new Map((mapCtx?.frames ?? []).map((f) => [f.image_id, f])), [mapCtx]);
+  const vehById = useMemo(() => new Map((vehDay?.vehicles ?? []).map((v) => [v.id, v])), [vehDay]);
   // Time bar ticks: every frame at its capture time. The clock opens on the most urgent frame's moment.
   const ticks = useMemo(
     () => (mapCtx?.frames ?? []).map((f) => ({ image_id: f.image_id, t: toMin(f.capture_time), time: f.capture_time })),
@@ -126,16 +111,27 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
   const hoverIn = (id: string) => {
     window.clearTimeout(hoverTimer.current);
     setHover(id);
+    setHoverVeh(null);
   };
+  // A vehicle opens its own card (its score and a cut-out of its box); its frame's footprint lights up behind it.
+  const hoverVehIn = (v: DayVehicle) => {
+    window.clearTimeout(hoverTimer.current);
+    setHover(v.image_id);
+    setHoverVeh(v.id);
+  };
+  const hoverKeep = () => window.clearTimeout(hoverTimer.current);
   const hoverOut = () => {
     window.clearTimeout(hoverTimer.current);
-    hoverTimer.current = window.setTimeout(() => setHover(null), 180);
+    hoverTimer.current = window.setTimeout(() => {
+      setHover(null);
+      setHoverVeh(null);
+    }, 180);
   };
   const shown = (hover && rows.some((r) => r.image_id === hover) ? byId.get(hover) : null) ?? selected;
 
-  // The card on screen trails `shown` by one fade: a changed target first fades the old card out, then the new
-  // one fades in (CSS animations; instant under prefers-reduced-motion).
-  const target = shown?.image_id ?? null;
+  // The card on screen trails its target by one fade: a changed target first fades the old card out, then the new
+  // one fades in (CSS animations; instant under prefers-reduced-motion). A vehicle card's key is "veh:<id>".
+  const target = hoverVeh && vehById.get(hoverVeh)?.image_id ? `veh:${hoverVeh}` : (shown?.image_id ?? null);
   const [cardId, setCardId] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
   useEffect(() => {
@@ -151,8 +147,10 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
     );
     return () => window.clearTimeout(t);
   }, [target, cardId]);
-  const cardRow = cardId ? byId.get(cardId) : undefined;
-  const cardInfo = cardId ? frameInfo.get(cardId) : undefined;
+  const cardVeh = cardId?.startsWith("veh:") ? vehById.get(cardId.slice(4)) : undefined;
+  const cardFrame = cardVeh ? cardVeh.image_id : cardId;
+  const cardRow = cardFrame ? byId.get(cardFrame) : undefined;
+  const cardInfo = cardFrame ? frameInfo.get(cardFrame) : undefined;
 
   // The map is the page background; everything else floats over it. The card and the map controls keep clear of
   // the floating layers, so their real extent is measured.
@@ -184,54 +182,14 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
       <div className="hud hud-top" ref={hudTop}>
         <TopBar health={health} />
         {error != null && <ErrorState error={error} onRetry={load} />}
-        {replay.state ? (
-          <ReplayBar r={replay} />
-        ) : (
-          summary && <ShiftStrip summary={summary} onReplay={replay.start} />
-        )}
-        <div className="hud-tools hud-panel" role="search">
-          <span className="hud-count mono" title="Haritada gösterilen kare sayısı">
-            {rows.length}
-            {replay.arrived ? " geldi" : " kare"}
-          </span>
-          <input
-            className="search"
-            type="search"
-            placeholder="Kare no: 6388"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            aria-label="Kare ara"
-          />
-          <select value={zone} onChange={(e) => setZone(e.target.value)} aria-label="Bölge">
-            <option value="">Tüm bölgeler</option>
-            {zones.map((z) => (
-              <option key={z} value={z}>
-                {zoneName(z)}
-              </option>
-            ))}
-          </select>
-          <select value={level} onChange={(e) => setLevel(e.target.value as Level | "")} aria-label="Seviye">
-            <option value="">Tüm seviyeler</option>
-            {LEVELS.map((l) => (
-              <option key={l} value={l}>
-                {LEVEL_ICON[l]} {l}
-              </option>
-            ))}
-          </select>
-          <select value={status} onChange={(e) => setStatus(e.target.value as Status)} aria-label="Durum">
-            <option value="">Tüm durumlar</option>
-            <option value="pending">Karar bekleyenler</option>
-            <option value="unseen">Bakılmamışlar</option>
-            <option value="escalated">Amire iletilenler</option>
-          </select>
-          <div className="seg" role="group" aria-label="Harita görünümü">
-            <button className={`btn btn-sm ${mode === "vehicles" ? "seg-on" : "btn-ghost"}`} aria-pressed={mode === "vehicles"} onClick={() => switchMode("vehicles")}>
-              Araçlar
-            </button>
-            <button className={`btn btn-sm ${mode === "frames" ? "seg-on" : "btn-ghost"}`} aria-pressed={mode === "frames"} onClick={() => switchMode("frames")}>
-              Kareler
-            </button>
-          </div>
+        {replay.state && <ReplayBar r={replay} />}
+        <div className="seg hud-panel map-mode" role="group" aria-label="Harita görünümü">
+          <button className={`btn btn-sm ${mode === "vehicles" ? "seg-on" : "btn-ghost"}`} aria-pressed={mode === "vehicles"} onClick={() => switchMode("vehicles")}>
+            Araçlar
+          </button>
+          <button className={`btn btn-sm ${mode === "frames" ? "seg-on" : "btn-ghost"}`} aria-pressed={mode === "frames"} onClick={() => switchMode("frames")}>
+            Kareler
+          </button>
         </div>
         {showTip && (
           <div className="tip hud-panel" role="note">
@@ -273,8 +231,12 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
             onSelect={select}
             onHover={hoverIn}
             onHoverOut={hoverOut}
+            onVehicleHover={hoverVehIn}
             insets={insets}
             card={
+              cardVeh ? (
+                <VehicleCard v={cardVeh} clock={clock} onHover={hoverKeep} onHoverOut={hoverOut} />
+              ) : (
               cardRow &&
               cardInfo && (
                 <FrameCard
@@ -290,7 +252,7 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
                   onHover={() => hoverIn(cardRow.image_id)}
                   onHoverOut={hoverOut}
                 />
-              )
+              ))
             }
             cardKey={cardId}
             cardLeaving={leaving}
@@ -302,7 +264,6 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
         ) : (
           <Loading label="Kareler değerlendiriliyor" />
         )}
-        {queue && rows.length === 0 && <div className="map-empty hud-panel">Bu filtreyle eşleşen kare yok.</div>}
       </main>
 
       <div className="hud hud-bottom" ref={hudBottom}>
@@ -324,8 +285,6 @@ export function TriagePage({ health, queue }: { health: Health | null; queue: Tr
 }
 
 
-type Status = "" | "pending" | "unseen" | "escalated";
-
 /** Measured in the product (decision log + frame openings), not assumed: see PROJECT_DESIGN §1.4, §1.6. */
 export function DecisionMetrics({ summary: s }: { summary: ShiftSummary }) {
   return (
@@ -346,49 +305,6 @@ export function DecisionMetrics({ summary: s }: { summary: ShiftSummary }) {
         </span>
       )}
     </span>
-  );
-}
-
-/** Shift strip: counts, measured decision metrics and the duty-officer links (the most urgent frame is the
- *  default selection of the alert list, shown in the preview panel). */
-function ShiftStrip({ summary, onReplay }: { summary: ShiftSummary; onReplay: () => void }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <section className="shift hud-panel" aria-label="Nöbet devri">
-      <div className="shift-stats">
-        <span className="shift-levels">
-          {LEVELS.map((l) => (
-            <span key={l} className={`level ${LEVEL_CLASS[l]} level-sm`} title={`${l}: ${summary.by_level[l] ?? 0} kare`}>
-              {LEVEL_ICON[l]} {summary.by_level[l] ?? 0}
-            </span>
-          ))}
-        </span>
-        <strong className={summary.awaiting_high ? "warn-text" : ""}>{summary.awaiting_high} YÜKSEK/KRİTİK karar bekliyor</strong>
-        <span className="shift-links">
-          <button className="btn btn-ghost btn-sm" onClick={onReplay} title="Günü simüle saatle oynat: kareler çekim saatinde kuyruğa düşer">
-            ▶ Oynat
-          </button>
-          <a className="btn btn-ghost btn-sm" href="#/handover" title="Amir için kurala dayalı vardiya özeti (yazdırılabilir)">
-            Devir →
-          </a>
-          <a className="btn btn-ghost btn-sm" href="#/impact" title="Vardiya simülasyonu: karar, araçlar üsse varmadan önce mi?">
-            Etki →
-          </a>
-          <button className="btn btn-ghost btn-sm" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
-            Ayrıntı {open ? "▴" : "▾"}
-          </button>
-        </span>
-      </div>
-      {open && (
-        <div className="shift-more">
-          <span>
-            <strong>{summary.frames}</strong> kare · <strong>{summary.reports}</strong> rapor · {summary.contradicted_reports} rapor
-            çelişiyor · {summary.decided} karar
-          </span>
-          <DecisionMetrics summary={summary} />
-        </div>
-      )}
-    </section>
   );
 }
 
@@ -495,6 +411,113 @@ function FrameCard({
   );
 }
 
+const THREAT_DIMS = [
+  ["capability", "Yetenek"],
+  ["opportunity", "Fırsat"],
+  ["intent", "Niyet"],
+] as const;
+
+/** The clock's minute, re-rendering only when it changes (the clock ticks every animation frame while playing). */
+function useClockMinute(clock: Clock): number {
+  const [t, setT] = useState(() => Math.floor(clock.get().t));
+  useEffect(() => clock.subscribe(() => setT(Math.floor(clock.get().t))), [clock]);
+  return t;
+}
+
+/** Vehicle view: one vehicle's own card: its level and score (not its frame's), what they rest on, and the vehicle
+ *  cut out of its frame around its detection box. Everything from GET /api/vehicles. */
+function VehicleCard({
+  v,
+  clock,
+  onHover,
+  onHoverOut,
+}: {
+  v: DayVehicle;
+  clock: Clock;
+  onHover: () => void;
+  onHoverOut: () => void;
+}) {
+  const t = useClockMinute(clock);
+  // The head shows the same moment as the marker's colour: the level at the clock time (backend timeline).
+  const now = t >= 0 ? threatAt(v, t) : null;
+  const head = now ?? (v.level && v.score !== null ? { level: v.level, score: v.score } : null);
+  const th = v.threat;
+  return (
+    <aside className="frame-card veh-card" aria-label="Seçili araç" onMouseEnter={onHover} onMouseLeave={onHoverOut}>
+      <div className="frame-card-head">
+        {head && <LevelBadge level={head.level} />}
+        <span
+          className="mono muted small frame-card-score"
+          title={now ? `Bu aracın kendi risk skoru, saat ${hhmm(t)} itibarıyla (haritadaki renk)` : "Bu aracın kendi risk skoru (çekim anında)"}
+        >
+          {now ? `${hhmm(t)} · ` : ""}skor {head?.score ?? "—"}
+        </span>
+      </div>
+      <div className="preview-id">
+        <span className="mono">
+          {v.vehicle_ref} · {v.label ? LABEL_TR[v.label] : "?"}
+        </span>
+        <span className="muted">
+          {v.track_id ?? "hareket kaydı yok"} · {v.image_id} · {v.capture_time} · güven {dec(v.conf ?? 0, 2)}
+        </span>
+      </div>
+      {v.image_id && v.vehicle_ref && (
+        <div className="veh-crop-wrap">
+          <img
+            className="preview-img veh-crop"
+            src={api.cropUrl(v.image_id, v.vehicle_ref)}
+            alt={`${v.vehicle_ref}, ${v.image_id} karesinden kesit`}
+          />
+          {v.crop_box && (
+            <span
+              className="veh-crop-box"
+              aria-hidden
+              style={{
+                left: `${v.crop_box[0] * 100}%`,
+                top: `${v.crop_box[1] * 100}%`,
+                width: `${v.crop_box[2] * 100}%`,
+                height: `${v.crop_box[3] * 100}%`,
+                ["--c" as string]: v.level ? LEVEL_COLOR[v.level] : "var(--accent)",
+              }}
+            />
+          )}
+        </div>
+      )}
+      <p className="muted small veh-card-at">{v.capture_time} çekimindeki kanıt</p>
+      <dl className="facts">
+        <dt>Çekimde</dt>
+        <dd>
+          skor {v.score} · {v.level}
+        </dd>
+        <dt>Üsse</dt>
+        <dd className="mono">{v.d_base_m === null ? "—" : km(v.d_base_m)}</dd>
+        <dt>ETA</dt>
+        <dd className="mono">{v.approaching && v.eta_min !== null ? `~${dec(v.eta_min)} dk` : "yaklaşmıyor"}</dd>
+        {th &&
+          THREAT_DIMS.map(([key, name]) => (
+            <Fragment key={key}>
+              <dt>{name}</dt>
+              <dd>
+                <span className="mono">{th[key].score}</span> · {th[key].band}
+              </dd>
+            </Fragment>
+          ))}
+        {th?.floor_level && (
+          <>
+            <dt>Taban</dt>
+            <dd>
+              {th.floor_level}: {th.floor_reasons.join("; ")}
+            </dd>
+          </>
+        )}
+      </dl>
+      <button className="btn btn-primary preview-open frame-card-open" onClick={() => go(`/frame/${v.image_id}`)}>
+        Kareyi aç →
+      </button>
+    </aside>
+  );
+}
+
 function arrowHtml(m: FrameMotion) {
   const len = Math.round(ARROW_MIN_PX + (Math.min(m.speed_kmh, ARROW_FULL_KMH) / ARROW_FULL_KMH) * (ARROW_MAX_PX - ARROW_MIN_PX));
   return (
@@ -522,6 +545,7 @@ function OverviewMap({
   onSelect,
   onHover,
   onHoverOut,
+  onVehicleHover,
   insets,
   card,
   cardKey,
@@ -541,6 +565,7 @@ function OverviewMap({
   onSelect: (imageId: string) => void;
   onHover: (imageId: string) => void;
   onHoverOut: () => void;
+  onVehicleHover: (v: DayVehicle) => void;
   /** Screen area covered by the floating layers (px from the top / bottom of the map). */
   insets: { top: number; bottom: number };
   card: ReactNode;
@@ -552,8 +577,8 @@ function OverviewMap({
   threshold: number;
   clock: Clock;
 }) {
-  const cb = useRef({ onSelect, onHover, onHoverOut });
-  cb.current = { onSelect, onHover, onHoverOut };
+  const cb = useRef({ onSelect, onHover, onHoverOut, onVehicleHover });
+  cb.current = { onSelect, onHover, onHoverOut, onVehicleHover };
   const markers = useRef<Record<string, Marker>>({});
   const arrows = useRef<Record<string, Marker>>({}); // heading arrows, laid on the map plane
   const mapRef = useRef<MLMap | null>(null);
@@ -561,7 +586,7 @@ function OverviewMap({
   const cardRef = useRef<HTMLDivElement>(null);
   const [ready, setReady] = useState(0); // markers exist only after the map loads
   const [pos, setPos] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
-  // Vehicle view: hovering a vehicle previews its frame's card next to the vehicle (not at the frame).
+  // Vehicle view: hovering a vehicle opens its own card next to the vehicle (not at the frame).
   const [vehAnchor, setVehAnchor] = useState<{ id: string; at: LngLat } | null>(null);
   useVehicleLayer({
     map: ready ? mapRef.current : null,
@@ -571,9 +596,9 @@ function OverviewMap({
     threshold,
     clock,
     onSelect: (id) => cb.current.onSelect(id),
-    onHover: (id, at) => {
-      setVehAnchor({ id, at });
-      cb.current.onHover(id);
+    onHover: (v, at) => {
+      setVehAnchor({ id: `veh:${v.id}`, at });
+      cb.current.onVehicleHover(v);
     },
     onHoverOut: () => cb.current.onHoverOut(),
   });

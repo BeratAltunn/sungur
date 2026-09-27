@@ -34,6 +34,62 @@ def test_every_track_and_detection_appears_once_with_backend_identity(service):
     assert day["window"]["end"] >= max(v["points"][-1][0] for v in vs)
 
 
+def test_each_vehicle_carries_its_own_score_not_its_frames(service):
+    """The map's vehicle card shows the vehicle's own level, score and threat profile, straight from the packet."""
+    vs = {v["id"]: v for v in service.vehicles()["vehicles"]}
+    for meta in service.repo.frames():
+        pkt = service.packet(meta.image_id)
+        for pv in pkt.vehicles:
+            v = vs[pv.track_id or f"{meta.image_id}/{pv.ref}"]
+            if v["image_id"] != meta.image_id:
+                continue  # a track seen in two frames keeps its higher-scoring detection
+            assert (v["score"], v["level"], v["capture_time"]) == (
+                pv.score,
+                pv.level.value,
+                meta.capture_time,
+            )
+            assert v["threat"]["capability"] == {
+                "score": pv.threat.capability.score,
+                "band": pv.threat.capability.band.value,
+            }
+            assert v["threat"]["intent"]["score"] == pv.threat.intent.score
+            k = pv.kinematics
+            assert v["eta_min"] == (k.eta_min if k and k.approaching else None)
+    # vehicles of one frame are scored one by one: the demo frame's vehicles do not all share the frame's score
+    demo = service.packet("img_000860").vehicles
+    assert len({v.score for v in demo}) > 1
+
+
+def test_vehicle_crop_is_a_square_cut_around_the_box(service):
+    import io
+
+    from PIL import Image
+
+    v = service.packet("img_000860").vehicles[0]
+    im = Image.open(io.BytesIO(service.vehicle_crop("img_000860", v.ref)))
+    assert im.format == "JPEG" and im.width == im.height and 0 < im.width <= 320
+    with pytest.raises(KeyError):
+        service.vehicle_crop("img_000860", "V999")
+
+
+def test_crop_box_frames_the_detection_inside_its_crop(service):
+    """The card draws the detection box over the crop: fractions that map back to the packet's own bbox."""
+    vs = {v["id"]: v for v in service.vehicles()["vehicles"]}
+    for meta in service.repo.frames():
+        for pv in service.packet(meta.image_id).vehicles:
+            v = vs[pv.track_id or f"{meta.image_id}/{pv.ref}"]
+            if v["image_id"] != meta.image_id:
+                continue
+            fx, fy, fw, fh = v["crop_box"]
+            tol = 0.01  # detectors may put a box edge a pixel outside the image
+            assert fx >= -tol and fy >= -tol and fx + fw <= 1 + tol and fy + fh <= 1 + tol
+            left, top, side = service._crop_window(meta.image_id, pv)
+            x, y, w, h = pv.bbox
+            assert abs(left + fx * side - x) < 0.5 and abs(top + fy * side - y) < 0.5
+            assert abs(fw * side - w) < 0.5 and abs(fh * side - h) < 0.5
+    assert all(v["crop_box"] is None for v in vs.values() if v["image_id"] is None)
+
+
 @pytest.fixture
 def mock_client(settings, tmp_path):
     # Own runs dir: the app's background warm-up may still write traces after this test, and other tests read theirs.
@@ -77,6 +133,24 @@ def test_threat_timeline_ends_at_the_packet_score_and_is_real_time(service):
             assert [e[0] for e in v["timeline"]] == sorted(e[0] for e in v["timeline"])
     truck = {t: lv for t, _, lv in vs["T0122"]["timeline"]}
     assert truck[845] != "KRİTİK" and truck[850] == "KRİTİK"  # 14:05 vs 14:10 (capture)
+
+
+def test_timeline_does_not_lend_another_vehicles_deception(service):
+    """R119/R125 contradict T0122 (the demo truck). Along its track, the car T0020 of the same frame must not pick
+    them up as a "claim near the frame": its 13:20 approach was ORTA-worthy, not KRİTİK (regression: ekran1)."""
+    vs = {v["id"]: v for v in service.vehicles()["vehicles"]}
+    car = vs["T0020"]
+    assert car["image_id"] == "img_000860"
+    assert all(lv != "KRİTİK" for _, _, lv in car["timeline"]), car["timeline"]
+    from sentinel.risk.timeline import score_timeline
+
+    pkt = service.packet("img_000860")
+    v = next(x for x in pkt.vehicles if x.track_id == "T0020")
+    geo, zones, s = service.repo.geo, service.repo.zone_index, service.s
+    alone = score_timeline(v, service.repo.track("T0020"), pkt.reports, 850, geo, zones, s)
+    assert any(
+        lv == RiskLevel.KRITIK for _, _, lv in alone
+    )  # the old behaviour, without the frame's vehicles
 
 
 def test_a_report_counts_only_from_its_own_time(service):

@@ -269,11 +269,26 @@ export interface DayVehicle {
   vehicle_ref: string | null;
   label: Label | null;
   conf: number | null;
-  score: number | null;
+  score: number | null; // this vehicle's own score at capture (not its frame's)
   level: Level | null;
+  capture_time: string | null;
+  d_base_m: number | null;
+  approaching: boolean;
+  eta_min: number | null;
+  /** Capability–Opportunity–Intent profile behind the vehicle's level (backend); null when never detected. */
+  threat: VehicleThreat | null;
+  /** Detection box inside the vehicle's crop image, [x, y, w, h] as fractions of the crop's side (backend). */
+  crop_box: [number, number, number, number] | null;
   points: [number, number, number][]; // [t_min, lat, lon]
   /** Score and level at each track point, with what was known then (backend); the last entry is the capture score. */
   timeline: [number, number, Level][]; // [t_min, score, level]
+}
+export interface VehicleThreat {
+  capability: { score: number; band: Level };
+  opportunity: { score: number; band: Level };
+  intent: { score: number; band: Level };
+  floor_level: Level | null;
+  floor_reasons: string[];
 }
 export interface VehicleDay {
   window: { start: number; end: number };
