@@ -1,19 +1,21 @@
 """Text contrast on every screen stays ≥ 6:1 (the target we adopted from military HMI guidance).
 
 Measured in the browser on the rendered page: each visible text node's colour against its effective background
-(ancestor backgrounds and opacity blended). Disabled controls are exempt (WCAG). The one documented exception is
-dark ink on the Astro critical fill (#ff3838): the highest ratio that fill allows is ~5.9:1, so ≥ 5.5 is required there.
+(ancestor backgrounds and opacity blended). Disabled controls are exempt (WCAG). Documented exceptions:
+- dark ink on the Astro critical fill (#ff3838): the highest ratio that fill allows is ~5.9:1, so ≥ 5.5 is required there;
+- the "Aktif uyarılar" rail at rest: a deliberately faded ghost (operator request) that becomes fully readable on hover
+  or keyboard focus; that readable state is tested below (test_alert_rail_is_readable_on_hover).
 """
 
 from __future__ import annotations
 
 import pytest
-from playwright.sync_api import Page
+from playwright.sync_api import Page, expect
 
 MIN = 6.0
 MIN_ON_CRITICAL_FILL = 5.5
 
-SCAN = r"""() => {
+SCAN = r"""(only) => {
   const parse = (c) => { const m = c.match(/rgba?\(([^)]+)\)/); if (!m) return null; const p = m[1].split(',').map(Number); return {r:p[0],g:p[1],b:p[2],a:p.length>3?p[3]:1}; };
   const lum = ({r,g,b}) => { const f = (v) => { v/=255; return v<=0.03928? v/12.92 : Math.pow((v+0.055)/1.055,2.4); }; return 0.2126*f(r)+0.7152*f(g)+0.0722*f(b); };
   const blend = (fg, bg) => ({r: fg.r*fg.a + bg.r*(1-fg.a), g: fg.g*fg.a + bg.g*(1-fg.a), b: fg.b*fg.a + bg.b*(1-fg.a), a: 1});
@@ -26,6 +28,8 @@ SCAN = r"""() => {
     const cs = getComputedStyle(el); const r = el.getBoundingClientRect();
     if (cs.visibility === 'hidden' || cs.display === 'none' || r.width === 0) continue;
     if (el.closest('.sr-only,.skip,.maplibregl-ctrl-attrib,[disabled],:disabled')) continue;
+    const rail = el.closest('.rail'); if (rail && !rail.matches(':hover, :focus-within, :active')) continue;
+    if (only && !el.closest(only)) continue;
     let op = 1; for (let e = el; e; e = e.parentElement) op *= Number(getComputedStyle(e).opacity);
     const fg = parse(cs.color); if (!fg) continue;
     const bg = bgOf(el); const f = blend({...fg, a: fg.a*op}, bg);
@@ -47,7 +51,7 @@ PAGES = [
 
 def _failures(page: Page) -> list[dict]:
     page.wait_for_timeout(600)  # map markers are added after the map loads
-    rows = page.evaluate(SCAN)
+    rows = page.evaluate(SCAN, None)
     return [r for r in rows if r["ratio"] < (MIN_ON_CRITICAL_FILL if r["onCritical"] else MIN)]
 
 
@@ -62,7 +66,6 @@ def test_text_contrast(page: Page, path: str, ready: str):
 
 
 def test_text_contrast_vehicle_view(page: Page):
-    page.add_init_script("localStorage.setItem('map_mode', JSON.stringify('vehicles'))")
     page.goto("/#/")
     page.wait_for_selector(".timebar")
     page.wait_for_selector(".frame-card")  # measured once the card has faded in, as on the frame view
@@ -76,3 +79,16 @@ def test_text_contrast_blind_labelling(page: Page):
     page.wait_for_selector(".image-panel")
     bad = _failures(page)
     assert bad == [], f"#/label: {len(bad)} metin {MIN}:1 altında: {bad[:8]}"
+
+
+def test_alert_rail_is_readable_on_hover(page: Page):
+    """The alert rail fades at rest; under the pointer every text in it meets the same ≥ 6:1 target."""
+    page.goto("/#/")
+    rail = page.locator(".rail")
+    expect(rail.locator(".rail-card").first).to_be_visible()
+    rail.hover()
+    page.wait_for_timeout(500)  # the fade-in transition
+    rows = page.evaluate(SCAN, ".rail")  # the rail's own text; the map card may be mid-fade meanwhile
+    assert any("Aktif uyarılar" in r["text"] for r in rows), "rail text was not scanned while hovered"
+    bad = [r for r in rows if r["ratio"] < (MIN_ON_CRITICAL_FILL if r["onCritical"] else MIN)]
+    assert not bad, f"uyarı rayı (üzerindeyken): {len(bad)} metin 6.0:1 altında: {bad[:8]}"

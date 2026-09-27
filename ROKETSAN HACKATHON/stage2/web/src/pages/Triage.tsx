@@ -18,7 +18,6 @@ import type { DayVehicle, EvidencePacket, FrameMotion, Health, Label, LngLat, Ma
 import { addToChat, endDrag, frameItem, startDrag } from "../lib/vehicles";
 
 /** Main map view: moving vehicles over the day (with the time bar) or one marker per frame. */
-type MapMode = "vehicles" | "frames";
 
 type MapFrame = MapContext["frames"][number];
 const LABEL_ORDER: Label[] = ["truck", "bus", "van", "car", "unknown"]; // heavy first, as the risk model weighs them
@@ -49,22 +48,16 @@ export function TriagePage({
   const viewed = useMemo(() => new Set(storage.get<string[]>("viewed", [])), []);
   const replay = useReplay();
   // Frames first: the alert rail, the map card and the decision flow are built on frames; vehicles are one click away.
-  const [mode, setMode] = useState<MapMode>(() => storage.get<MapMode>("map_mode", "frames"));
   const [vehDay, setVehDay] = useState<VehicleDay | null>(null);
   const [threshold, setThreshold] = useState<number>(() => storage.get("veh_threshold", 0));
   const clock = useMemo(() => createClock({ t: -1, playing: false, speed: 2 }), []);
-  const switchMode = (m: MapMode) => {
-    storage.set("map_mode", m);
-    setMode(m);
-    clock.set({ playing: false });
-  };
   const changeThreshold = (v: number) => {
     storage.set("veh_threshold", v);
     setThreshold(v);
   };
   useEffect(() => {
-    if (mode === "vehicles" && !vehDay) api.vehicles().then(setVehDay).catch((e) => setError(e));
-  }, [mode, vehDay]);
+    if (!vehDay) api.vehicles().then(setVehDay).catch((e) => setError(e));
+  }, [vehDay]);
 
   const load = () => {
     setError(null);
@@ -104,14 +97,14 @@ export function TriagePage({
       else if (e.key === "Enter" && selected) go(`/frame/${selected.image_id}`);
       else if (e.key === "Escape" && tag !== "INPUT" && selected) select(null);
       else if (e.key === " " && replay.state && tag !== "INPUT") replay.set({ playing: !replay.state.playing });
-      else if (e.key === " " && mode === "vehicles" && vehDay && tag !== "INPUT" && tag !== "BUTTON")
+      else if (e.key === " " && vehDay && tag !== "INPUT" && tag !== "BUTTON")
         clock.set({ playing: !clock.get().playing });
       else return;
       e.preventDefault();
     };
     window.addEventListener("keydown", on);
     return () => window.removeEventListener("keydown", on);
-  }, [rows, cursor, selected, replay, mode, vehDay, clock]);
+  }, [rows, cursor, selected, replay, vehDay, clock]);
 
   const decided = useMemo(() => new Set((queue ?? []).filter((r) => r.decision).map((r) => r.image_id)), [queue]);
   const byId = useMemo(() => new Map((queue ?? []).map((r) => [r.image_id, r])), [queue]);
@@ -205,27 +198,12 @@ export function TriagePage({
         <TopBar health={health} />
         {error != null && <ErrorState error={error} onRetry={load} />}
         {replay.state && <ReplayBar r={replay} />}
-        <div className="seg hud-panel map-mode" role="group" aria-label="Harita görünümü">
-          <button className={`btn btn-sm ${mode === "vehicles" ? "seg-on" : "btn-ghost"}`} aria-pressed={mode === "vehicles"} onClick={() => switchMode("vehicles")}>
-            Araçlar
-          </button>
-          <button className={`btn btn-sm ${mode === "frames" ? "seg-on" : "btn-ghost"}`} aria-pressed={mode === "frames"} onClick={() => switchMode("frames")}>
-            Kareler
-          </button>
-        </div>
         {showTip && (
           <div className="tip hud-panel" role="note">
-            {mode === "vehicles" ? (
-              <span>
-                Her işaret bir araç: seçili saatteki konumu, rengi tehdit seviyesi. Alttaki çubukla zamanı oynat (<Kbd>Space</Kbd>),
-                eşikle kalabalığı azalt. Araca tıkla: karesinin kartı açılır. <Kbd>J</Kbd>/<Kbd>K</Kbd> kareleri risk sırasıyla gezer.
-              </span>
-            ) : (
-              <span>
-                Her işaret bir kare: üzerine gel ya da tıkla, kartı açılır. <Kbd>J</Kbd>/<Kbd>K</Kbd> risk sırasıyla gezer,{" "}
-                <Kbd>Enter</Kbd> açar. Ok yalnızca üsse yaklaşan karelerde: öncü aracın yönü, uzunluğu hızı.
-              </span>
-            )}
+            <span>
+              Her işaret bir araç: seçili saatteki konumu, rengi tehdit seviyesi. Alttaki çubukla zamanı oynat (<Kbd>Space</Kbd>),
+              eşikle kalabalığı azalt. Araca tıkla: karesinin kartı açılır. <Kbd>J</Kbd>/<Kbd>K</Kbd> kareleri risk sırasıyla gezer.
+            </span>
             <button
               className="btn btn-ghost btn-sm"
               onClick={() => {
@@ -280,7 +258,7 @@ export function TriagePage({
             cardKey={cardId}
             cardLeaving={leaving}
             cardAt={cardInfo?.center ?? null}
-            vehicles={mode === "vehicles" ? (vehDay?.vehicles ?? null) : null}
+            vehicles={vehDay?.vehicles ?? []}
             threshold={threshold}
             clock={clock}
           />
@@ -301,7 +279,7 @@ export function TriagePage({
       />
 
       <div className="hud hud-bottom" ref={hudBottom}>
-        {mode === "vehicles" && vehDay && (
+        {vehDay && (
           <TimeBar
             clock={clock}
             window={vehDay.window}
@@ -950,7 +928,7 @@ function AlertRail({
     <section
       className={`rail hud-panel ${open ? "" : "rail-closed"}`}
       aria-label="Aktif uyarılar"
-      style={{ top: insets.top + 8, bottom: insets.bottom + 8, width: open ? RAIL_W : undefined }}
+      style={{ top: insets.top + 8, maxHeight: `calc(100vh - ${insets.top + insets.bottom + 16}px)`, width: open ? RAIL_W : undefined }}
     >
       <button className="rail-head" aria-expanded={open} onClick={onToggle}>
         <b>Aktif uyarılar</b> <span className="muted small">{alerts.length} karar bekliyor</span>

@@ -820,8 +820,16 @@ body.dragging-item .chat-fab { outline: 2px dashed var(--accent); outline-offset
 .track-picker-item:hover { background: var(--raised); }
 .track-swatch { width: 12px; height: 4px; border-radius: 2px; flex: none; }
 
-/* Main map: the view switch is the only tool left at the top (filters and shift strip removed) */
-.app-map .map-mode { margin: 0 12px; padding: 3px; }
 .veh-card-at { margin: 0 0 -4px; }
 /* frame map: the ETA readout sits below the two stacked map buttons (Altlık, Katmanlar), not under them */
 .frame-map .map-hud { top: 80px; }
+
+/* Aktif uyarılar: a ghost of itself at rest (no panel, one line per alert, faded), fully readable on hover or
+   keyboard focus, and while a card is being pressed/dragged (so the layout cannot shift under a starting drag).
+   The resting state is the contrast test's documented exception; the hover state is tested. */
+.rail { transition: opacity .35s ease, background-color .35s ease, border-color .35s ease, box-shadow .35s ease; }
+.rail:not(:hover):not(:focus-within):not(:active) { opacity: .35; background: transparent; border-color: transparent; box-shadow: none; backdrop-filter: none; }
+.rail:not(:hover):not(:focus-within):not(:active) .rail-card { background: transparent; border-top-color: transparent; border-right-color: transparent; border-bottom-color: transparent; padding-block: 2px; gap: 0; }
+.rail:not(:hover):not(:focus-within):not(:active) .rail-card:not(.rail-card-crit) { border-left-color: transparent; }
+.rail:not(:hover):not(:focus-within):not(:active) :is(.card-headline, .card-foot, .row-sub .muted, .rail-toggle) { display: none; }
+@media (prefers-reduced-motion: reduce) { .rail { transition: none; } }

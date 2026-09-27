@@ -17,6 +17,7 @@ CONTRAST = "img_001733"
 
 
 FRAMES = ".mk-frame:not(.mk-hidden)"
+VEHICLES = ".mk-v:not(.mk-hidden), .mk-vdot:not(.mk-hidden)"
 
 
 def marker(page: Page, image_id: str):
@@ -32,27 +33,27 @@ def flat(page: Page):
 BASE_DISTANCES = """() => {
   const c = (el) => { const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; };
   const [bx, by] = c(document.querySelector('.mk-base'));
-  return [...document.querySelectorAll('.mk-frame')].map((el) => { const [x, y] = c(el); return Math.hypot(x - bx, y - by); });
+  return [...document.querySelectorAll('.mk-v:not(.mk-hidden)')].map((el) => { const [x, y] = c(el); return Math.hypot(x - bx, y - by); });
 }"""
+TRUCK = '.mk-v[data-vehicle="T0122"]'  # the demo truck: on screen at the opening time (14:10)
 
 
 def test_map_is_3d_and_reorients_by_drag_without_moving_points(page: Page):
     page.goto("/#/")
-    expect(page.locator(FRAMES)).to_have_count(40)
+    page.wait_for_function(f"document.querySelectorAll({VEHICLES!r}).length > 20")
     page.keyboard.press("Escape")
 
-    # Opens tilted; heading arrows lie on the map plane (they tilt with it), icons stay upright.
+    # Opens tilted; vehicle icons stay upright (they face the viewer).
     def tilt(loc) -> float:
         m = re.search(r"rotateX\(([-\d.]+)deg\)", loc.evaluate("(el) => el.style.transform") or "")
         return float(m.group(1)) if m else 0.0
 
-    assert tilt(page.locator(f'.mk-arrow-mk[data-arrow="{DEMO}"]')) > 20  # arrow lies on the tilted plane
-    assert tilt(marker(page, DEMO)) == 0  # icon faces the viewer
+    assert tilt(page.locator(TRUCK)) == 0
     # Flat, then rotate the plane with a right-button drag: every point keeps its distance to the base (the plane
     # turns as one piece; nothing is re-placed), while the view has actually changed.
     flat(page)
     before = page.evaluate(BASE_DISTANCES)
-    offsets_before = marker(page, DEMO).bounding_box()
+    offsets_before = page.locator(TRUCK).bounding_box()
     vw, vh = page.viewport_size["width"], page.viewport_size["height"]
     page.mouse.move(vw * 0.8, vh * 0.7)
     page.mouse.down(button="right")
@@ -61,7 +62,7 @@ def test_map_is_3d_and_reorients_by_drag_without_moving_points(page: Page):
     page.mouse.up(button="right")
     page.wait_for_timeout(600)
     after = page.evaluate(BASE_DISTANCES)
-    moved = marker(page, DEMO).bounding_box()
+    moved = page.locator(TRUCK).bounding_box()
     assert abs(moved["x"] - offsets_before["x"]) + abs(moved["y"] - offsets_before["y"]) > 10  # it rotated
     for d0, d1 in zip(before, after, strict=True):
         assert abs(d1 - d0) < 3, (d0, d1)
@@ -69,28 +70,25 @@ def test_map_is_3d_and_reorients_by_drag_without_moving_points(page: Page):
 
 def test_triage_map_card_and_shift_card(page: Page):
     page.goto("/#/")
-    expect(page.locator(FRAMES)).to_have_count(40)
+    expect(page.locator(".timebar-tick")).to_have_count(40)
     # The most urgent frame's card is open by default, next to its marker.
     card = page.locator(".frame-card")
     expect(card).to_contain_text(DEMO)
     expect(card).to_contain_text("KRİTİK")
     expect(card).to_contain_text(re.compile(r"~\d+,\d dk"))  # decimal comma, from min_eta_min
-    # Arrow: the lead vehicle's heading and speed from the backend (T0122, the demo truck).
-    expect(page.locator(f'.mk-arrow-mk[data-arrow="{DEMO}"] .mk-arrow.mk-arrow-in')).to_have_count(1)
+    # Motion: the lead vehicle's heading and speed from the backend (T0122, the demo truck).
     expect(card).to_contain_text("T0122")
     expect(card).to_contain_text("km/sa")
-    # the top of the map is kept clear: no shift strip, no search/filter box; only the view switch
+    # the top of the map is kept clear: no shift strip, no search/filter box, no view switch (vehicles only)
     expect(page.locator(".shift")).to_have_count(0)
     expect(page.locator(".hud-tools")).to_have_count(0)
-    expect(page.get_by_role("group", name="Harita görünümü")).to_be_visible()
+    expect(page.get_by_role("group", name="Harita görünümü")).to_have_count(0)
+    expect(page.locator(".mk-frame:visible")).to_have_count(0)
     # Status bar: facility posture (highest level still waiting) and subsystem health, from the backend.
     expect(page.locator(".posture")).to_contain_text("karar bekliyor")
     expect(page.locator(".classification")).to_contain_text("TASNİF DIŞI")
-    # COP: hovering a marker previews its card; a click pins it; Esc closes it.
-    marker(page, CONTRAST).dispatch_event("mouseenter")
-    expect(card).to_contain_text(CONTRAST)
-    marker(page, CONTRAST).dispatch_event("click")
-    marker(page, CONTRAST).dispatch_event("mouseleave")
+    # COP: a frame's tick on the time bar pins its card; Esc closes it.
+    page.locator(f'.timebar-tick[title^="{CONTRAST}"]').click()
     expect(page.locator(".frame-card-pinned")).to_contain_text(CONTRAST)
     expect(page).to_have_url(re.compile(r"#/$"))
     page.keyboard.press("Escape")
@@ -98,17 +96,17 @@ def test_triage_map_card_and_shift_card(page: Page):
 
 
 def test_markers_stay_anchored_when_zooming(page: Page):
-    """Frame markers keep their geographic place relative to the base: one zoom step doubles every offset."""
+    """Vehicle markers keep their geographic place relative to the base: one zoom step doubles every offset."""
     # ×2 holds only on flat ground; with 3D terrain markers sit at their elevation (test_terrain_* covers that).
     page.add_init_script("localStorage.setItem('terrain', 'false')")
     page.goto("/#/")
-    expect(page.locator(FRAMES)).to_have_count(40)
+    page.wait_for_function(f"document.querySelectorAll({VEHICLES!r}).length > 20")
     page.keyboard.press("Escape")  # card closed: nothing covers the controls
     flat(page)  # zoom scales screen offsets exactly ×2 only on a flat, north-up map
     offsets = """() => {
       const c = (el) => { const r = el.getBoundingClientRect(); return [r.x + r.width / 2, r.y + r.height / 2]; };
       const [bx, by] = c(document.querySelector('.mk-base'));
-      return [...document.querySelectorAll('.mk-frame')].map((el) => { const [x, y] = c(el); return [x - bx, y - by]; });
+      return [...document.querySelectorAll('.mk-v:not(.mk-hidden)')].map((el) => { const [x, y] = c(el); return [x - bx, y - by]; });
     }"""
     before = page.evaluate(offsets)
     page.get_by_role("button", name="Zoom in").click()
@@ -118,13 +116,9 @@ def test_markers_stay_anchored_when_zooming(page: Page):
         assert abs(x1 - 2 * x0) < 3 and abs(y1 - 2 * y0) < 3, (x0, y0, x1, y1)
 
 
-VEHICLES = ".mk-v:not(.mk-hidden), .mk-vdot:not(.mk-hidden)"
-
-
 def test_vehicle_view_plays_the_day_and_the_threshold_thins_it(page: Page):
     """Vehicle view: one marker per vehicle at the clock's time (opening on the most urgent frame's capture time),
-    the time bar moves them, the score threshold hides the lower ones, and the frame view is one click away."""
-    page.add_init_script("localStorage.setItem('map_mode', JSON.stringify('vehicles'))")
+    the time bar moves them and the score threshold hides the lower ones. The map shows vehicles only."""
     page.goto("/#/")
     bar = page.locator(".timebar")
     expect(bar).to_be_visible()
@@ -186,10 +180,8 @@ def test_vehicle_view_plays_the_day_and_the_threshold_thins_it(page: Page):
     thinned = page.locator(VEHICLES).count()
     assert 0 < thinned < all_n
     expect(page.locator(".mk-vdot:not(.mk-hidden)")).to_have_count(0)  # unscored tracks hide above 0
-    # frame view: the 40 frame markers are back, no time bar
-    page.get_by_role("button", name="Kareler").click()
-    expect(page.locator(FRAMES)).to_have_count(40)
-    expect(page.locator(".timebar")).to_have_count(0)
+    # no frame view to switch to: the map is vehicles only
+    expect(page.get_by_role("button", name="Kareler")).to_have_count(0)
 
 
 def test_llm_switch_in_the_status_bar(page: Page):
@@ -231,12 +223,19 @@ def test_terrain_draped_on_main_map_and_can_be_turned_off(page: Page):
 
 def test_hover_grows_marker_in_place_and_card_fits(page: Page):
     page.goto("/#/")
-    expect(page.locator(FRAMES)).to_have_count(40)
-    m = marker(page, CONTRAST)
+    page.wait_for_function(f"document.querySelectorAll({VEHICLES!r}).length > 20")
+    page.keyboard.press("Escape")  # the pinned card could cover a marker
+    vid = page.evaluate(
+        """() => { for (const e of document.querySelectorAll('.mk-v:not(.mk-hidden)')) {
+          const r = e.getBoundingClientRect(); const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+          if (top && e.contains(top) && /^T\\d+$/.test(e.dataset.vehicle) && e.title.includes('img_')) return e.dataset.vehicle;
+        } return null; }"""
+    )
+    assert vid, "no uncovered tracked vehicle on screen"
+    m = page.locator(f'.mk-v[data-vehicle="{vid}"]')
     before = m.bounding_box()
-    m.dispatch_event("mouseenter")
-    expect(m).to_have_class(re.compile(r"\bmk-hover\b"))
-    page.wait_for_timeout(100)
+    m.hover()
+    page.wait_for_timeout(150)
     after = m.bounding_box()
     assert after["width"] > before["width"] + 4  # visibly larger
     cx = lambda b: (b["x"] + b["width"] / 2, b["y"] + b["height"] / 2)  # noqa: E731
@@ -244,7 +243,7 @@ def test_hover_grows_marker_in_place_and_card_fits(page: Page):
     assert abs(x1 - x0) < 1.5 and abs(y1 - y0) < 1.5  # still centred on its point
     # The card is placed from its measured height: fully inside the map, even after the thumbnail loads.
     card = page.locator(".frame-card-wrap")
-    expect(card).to_contain_text(CONTRAST)
+    expect(card).to_contain_text(vid)
     page.locator(".frame-card .preview-img").evaluate("(img) => img.decode().catch(() => {})")
     page.wait_for_timeout(200)
     stage, box = page.locator(".overview-stage").bounding_box(), card.bounding_box()
@@ -409,23 +408,20 @@ def test_impact_view_and_shift_replay(page: Page):
 
 def test_keyboard_only_operation(page: Page):
     page.goto("/#/")
-    expect(page.locator(FRAMES)).to_have_count(40)
+    card = page.locator(".frame-card")
+    expect(card).to_contain_text(DEMO)  # the most urgent frame is selected
     page.keyboard.press("Tab")
     expect(page.get_by_role("button", name="İçeriğe geç")).to_be_focused()
-    # The map is one Tab stop (roving focus, risk order): J moves focus and the card, Enter opens the frame.
-    stop = page.locator('.mk-frame[tabindex="0"]')
-    expect(stop).to_have_count(1)
-    expect(stop).to_have_attribute("data-frame", DEMO)
-    stop.focus()
+    # J/K walk the frames in risk order (the card follows), Enter opens the selected one.
     page.keyboard.press("j")
-    focused = page.locator(".mk-frame:focus")
-    expect(focused).to_have_count(1)
-    nxt = focused.get_attribute("data-frame")
-    assert nxt != DEMO
-    expect(marker(page, DEMO)).to_have_attribute("tabindex", "-1")
-    expect(page.locator(".frame-card")).to_contain_text(nxt)
+    expect(card).not_to_contain_text(DEMO)
+    nxt = card.locator(".preview-id .mono").inner_text()
+    page.keyboard.press("k")
+    expect(card).to_contain_text(DEMO)
+    page.keyboard.press("j")
+    expect(card).to_contain_text(nxt)
     page.keyboard.press("Enter")
-    expect(page).to_have_url(re.compile(r"#/frame/img_\d+$"))
+    expect(page).to_have_url(re.compile(rf"#/frame/{nxt}$"))
     # Evidence tabs follow the WAI-ARIA tabs pattern (←/→).
     page.get_by_role("tab", name="Neden?").focus()
     page.keyboard.press("ArrowRight")
@@ -508,6 +504,7 @@ def test_two_alert_cards_in_the_chat_ask_to_compare(page: Page):
     b = rows.nth(1).locator(".row-sub .mono").first.inner_text()
     # drag by the id line (a button inside the card cannot start a drag)
     rows.nth(0).locator(".row-sub").drag_to(chat)
+    rail.hover()  # the rail fades back when the pointer leaves it; a user hovers it again before the next drag
     rows.nth(1).locator(".row-sub").drag_to(chat)
     ctx = page.locator(".chat-context")
     expect(ctx).to_contain_text(a)
@@ -516,10 +513,12 @@ def test_two_alert_cards_in_the_chat_ask_to_compare(page: Page):
     expect(first).to_contain_text(a)  # the questions now connect the two frames
     expect(first).to_contain_text(b)
     # the same card again is not added twice; "Sor" on a card is the no-drag way in
+    rail.hover()
     rows.nth(0).locator(".row-sub").drag_to(chat)
     expect(ctx.locator(".ctx-pill")).to_have_count(2)
     page.get_by_role("button", name=f"{b} bağlamdan çıkar").click()
     expect(ctx).not_to_contain_text(b)
+    rail.hover()  # at rest the rail is a faded single line per alert; hovering brings its buttons back
     rail.get_by_role("button", name=f"{b} karesini sohbete ekle").click()
     expect(ctx).to_contain_text(b)
 

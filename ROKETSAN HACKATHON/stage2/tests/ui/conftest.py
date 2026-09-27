@@ -94,9 +94,6 @@ def browser():
 def page(browser, base_url):
     ctx = browser.new_context(viewport={"width": 1280, "height": 800}, base_url=base_url)
     pg = ctx.new_page()
-    # The main map opens in vehicle view; these tests cover the frame view unless they switch (a later init
-    # script wins).
-    pg.add_init_script("localStorage.setItem('map_mode', JSON.stringify('frames'))")
     errors: list[str] = []
     pg.on("pageerror", lambda e: errors.append(str(e)))
     pg.errors = errors  # type: ignore[attr-defined]
