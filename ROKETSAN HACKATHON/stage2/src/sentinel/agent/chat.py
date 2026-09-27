@@ -20,7 +20,7 @@ from sentinel.agent.suggest import Suggestion
 from sentinel.agent.tools import TOOL_SPECS, ChatTools, ToolError
 from sentinel.observability.trace import Tracer
 
-PROMPT_FILE = "chat_v2"
+PROMPT_FILE = "chat_v3"
 
 
 class ChatMessage(BaseModel):
