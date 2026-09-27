@@ -261,9 +261,49 @@ export interface ImpactReport {
 
 export type LngLat = [number, number];
 
+/** GET /api/vehicles: every vehicle of the day. Identity fields are null for tracks no frame detected. */
+export interface DayVehicle {
+  id: string;
+  track_id: string | null; // null: detected without a track (e.g. parked), a single point at capture time
+  image_id: string | null;
+  vehicle_ref: string | null;
+  label: Label | null;
+  conf: number | null;
+  score: number | null; // this vehicle's own score at capture (not its frame's)
+  level: Level | null;
+  capture_time: string | null;
+  d_base_m: number | null;
+  approaching: boolean;
+  eta_min: number | null;
+  /** Capability–Opportunity–Intent profile behind the vehicle's level (backend); null when never detected. */
+  threat: VehicleThreat | null;
+  /** Detection box inside the vehicle's crop image, [x, y, w, h] as fractions of the crop's side (backend). */
+  crop_box: [number, number, number, number] | null;
+  points: [number, number, number][]; // [t_min, lat, lon]
+  /** Score and level at each track point, with what was known then (backend); the last entry is the capture score. */
+  timeline: [number, number, Level][]; // [t_min, score, level]
+}
+export interface VehicleThreat {
+  capability: { score: number; band: Level };
+  opportunity: { score: number; band: Level };
+  intent: { score: number; band: Level };
+  floor_level: Level | null;
+  floor_reasons: string[];
+}
+export interface VehicleDay {
+  window: { start: number; end: number };
+  vehicles: DayVehicle[];
+}
+
 export interface MapContext {
   base: { name: string; center: LngLat };
-  zones: { name: string; label: string; center: LngLat }[];
+  zones: {
+    name: string;
+    label: string;
+    center: LngLat;
+    theoretical_center?: LngLat;
+    path?: LngLat[];
+  }[];
   rings: { km: number; ring: LngLat[] }[];
   frames: {
     image_id: string;
@@ -271,9 +311,27 @@ export interface MapContext {
     zone: string;
     level: Level;
     score: number;
+    d_base_m?: number;
     center: LngLat;
     corners: LngLat[];
+    /** Lead moving vehicle's heading/speed from its kinematics (backend); null when nothing moves. */
+    motion: FrameMotion | null;
+    /** Class drawn on the marker: the arrow's vehicle, else the top-scoring one (backend); null without vehicles. */
+    lead_label: Label | null;
+    label_counts: Partial<Record<Label, number>>;
   }[];
+}
+
+export interface FrameMotion {
+  vehicle_ref: string;
+  track_id: string;
+  label: Label;
+  heading_deg: number; // compass, 0 = north, clockwise
+  heading_dir: string | null;
+  speed_kmh: number;
+  approaching: boolean;
+  eta_min: number | null;
+  n_moving: number;
 }
 
 export interface TrackPath {
@@ -309,7 +367,7 @@ export interface FrameTracks {
 export interface Health {
   detector: string;
   detector_fallback: string | null;
-  llm: { provider: string; model: string; error: string | null };
+  llm: { provider: string; model: string; error: string | null; enabled?: boolean };
   budget: { spent_usd: number; stop_usd: number; ratio: number };
   warmup: { done: number; total: number };
   data: { frames: number; tracks: number; reports: number };
@@ -357,4 +415,27 @@ export interface ChatTurn {
   duration_ms: number;
   note: string | null;
   run_id: string;
+  followups: Suggestion[];
 }
+
+/** Everything the chat box can complete (GET /api/chat/vocab, loaded once). */
+export interface ChatVocab {
+  frames: { id: string; zone: string; time: string; level: Level | null; vehicles: { ref: string; track: string | null; label: Label }[] }[];
+  tracks: { id: string; frame: string | null; label: Label | null }[];
+  reports: { id: string; time: string; source: "official" | "third_party"; text: string; verdicts: Record<string, VerdictT> }[];
+  zones: string[];
+  times: string[];
+}
+
+/** A question that fits the situation (GET /api/chat/suggestions, or follow-ups of an answer). */
+export interface Suggestion {
+  text: string;
+  reason: string;
+  refs: string[];
+}
+
+/** Something the operator put in the chat's context (dragged or "Sor"): a vehicle of a frame, or a frame.
+ *  Only kind, image_id and ref go to the backend; the rest is for display (tracks are resolved server-side). */
+export type ChatItem =
+  | { kind: "vehicle"; image_id: string; ref: string; track_id: string | null; label: Label }
+  | { kind: "frame"; image_id: string; level: Level; zone: string; capture_time: string };

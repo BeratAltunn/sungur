@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, explain } from "../lib/api";
-import { DECISION_TR, LEVELS, LEVEL_COLOR, LEVEL_ICON, zoneName } from "../lib/format";
+import { DECISION_TR, LEVELS, zoneName } from "../lib/format";
+import { LEVEL_VAR } from "../lib/theme";
 import type { Decision, EvaluationResult, Level } from "../lib/types";
 import { Kbd, LevelBadge, RefText, useSlow } from "./ui";
 
@@ -40,7 +41,7 @@ export function BriefPanel({
       <h1 className="headline">
         <RefText text={b.headline} onRef={onRef} active={activeRef} />
       </h1>
-      <div className="action" role="note" style={{ ["--act" as string]: LEVEL_COLOR[b.risk_level] }}>
+      <div className="action" role="note" style={{ ["--act" as string]: `var(${LEVEL_VAR[b.risk_level]})` }}>
         <span className="action-label">Önerilen eylem</span>
         {b.recommended_action}
       </div>
@@ -52,18 +53,18 @@ export function BriefPanel({
         ))}
       </ul>
       <div className="brief-meta">
-        <span className={`pill ${g.passed ? "pill-ok" : "pill-warn"}`} title={[...g.failed, ...g.unknown_refs].join("\n")}>
+        <span className={`pill ${g.passed ? "" : "pill-strong"}`} title={[...g.failed, ...g.unknown_refs].join("\n")}>
           {g.passed ? `✓ ${g.checked}/${g.checked} sayı kanıtla doğrulandı` : "✗ Kanıt kontrolü başarısız"}
         </span>
         <span className="pill pill-dim">Güven: {b.confidence}</span>
-        <span className={`pill ${res.brief_source === "template" ? "pill-warn" : "pill-dim"}`} title={res.llm_note ?? ""}>
+        <span className={`pill ${res.brief_source === "template" ? "pill-strong" : "pill-dim"}`} title={res.llm_note ?? ""}>
           Kaynak: {SOURCE_TR[res.brief_source]}
         </span>
       </div>
       {res.llm_note && <p className="muted small">{res.llm_note}</p>}
       {res.brief_source === "template" && onRetryLLM && (
         <button className="btn btn-ghost btn-sm" onClick={onRetryLLM} title="Seviye ve kanıt değişmez; yalnızca brief metni yeniden yazılır">
-          ↻ LLM ile tekrar dene
+          LLM ile tekrar dene
         </button>
       )}
       {b.uncertainties.length > 0 && (
@@ -154,7 +155,7 @@ export function DecisionBar({
     } catch {
       /* clipboard may be blocked; the decision is still recorded */
     }
-    await send("escalate", {}, "Amire iletildi · brief panoya kopyalandı · yazdırılabilir kart: 🖨 Eskalasyon kartı");
+    await send("escalate", {}, "Amire iletildi · brief panoya kopyalandı · yazdırılabilir kart: Eskalasyon kartı");
   };
 
   return (
@@ -181,7 +182,7 @@ export function DecisionBar({
       )}
       {decision?.action === "escalate" && (
         <a className="btn btn-ghost" href={`#/brief/${id}`} title="Amir için yazdırılabilir eskalasyon kartı">
-          🖨 Eskalasyon kartı
+          Eskalasyon kartı
         </a>
       )}
       {overriding && (
@@ -195,7 +196,7 @@ export function DecisionBar({
           <select value={level} onChange={(e) => setLevel(e.target.value as Level)} aria-label="Yeni seviye">
             {LEVELS.map((l) => (
               <option key={l} value={l}>
-                {LEVEL_ICON[l]} {l}
+                {l}
               </option>
             ))}
           </select>

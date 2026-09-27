@@ -16,19 +16,11 @@ export const hhmm = (t: number) => {
 };
 
 export const LEVELS: Level[] = ["KRİTİK", "YÜKSEK", "ORTA", "DÜŞÜK"];
-export const LEVEL_ICON: Record<Level, string> = { "DÜŞÜK": "○", ORTA: "●", "YÜKSEK": "▲", "KRİTİK": "▲▲" };
 export const LEVEL_CLASS: Record<Level, string> = {
   "DÜŞÜK": "lv-low",
   ORTA: "lv-mid",
   "YÜKSEK": "lv-high",
   "KRİTİK": "lv-crit",
-};
-/** Astro UXDS status colours (off / caution / serious / critical) for map strokes and image boxes. */
-export const LEVEL_COLOR: Record<Level, string> = {
-  "DÜŞÜK": "#a4abb6",
-  ORTA: "#fce83a",
-  "YÜKSEK": "#ffb302",
-  "KRİTİK": "#ff3838",
 };
 export const LEVEL_ACTION: Record<Level, string> = {
   "DÜŞÜK": "Sonraki turda bakılır",
@@ -61,7 +53,6 @@ export const LABEL_TR: Record<Label, string> = {
 export const SOURCE_TR = { official: "resmî", third_party: "3. taraf" } as const;
 
 export const DECISION_TR = { approve: "onaylandı", override: "seviye değişti", escalate: "amire iletildi", undo: "geri alındı" } as const;
-export const DECISION_ICON = { approve: "✓", override: "⇄", escalate: "↑", undo: "↺" } as const;
 
 const ZONE_DISPLAY: Record<string, string> = {
   "Kuzey Yolu": "Kuzey Yolu",

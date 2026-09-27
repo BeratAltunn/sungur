@@ -168,7 +168,7 @@ def cmd_demo_check(svc: SentinelService, a: argparse.Namespace) -> int:
     if a.chat:
         for q in demo.chat:
             t0 = time.perf_counter()
-            turn, _ = svc.chat(q.question, [], q.image_id)
+            turn, _ = svc.chat(q.question, [], q.image_id, q.vehicle_ref)
             dt = time.perf_counter() - t0
             check(
                 turn.grounded and bool(turn.tool_calls) and turn.note is None,

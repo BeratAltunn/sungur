@@ -17,7 +17,7 @@ import urllib.request
 
 import pytest
 
-from sentinel.agent.llm import MockLLM
+from sentinel.agent.llm import LLMError, MockLLM, default_mock_responder
 from sentinel.config import PROJECT_ROOT
 from sentinel.interfaces import api
 from sentinel.service import SentinelService
@@ -25,6 +25,14 @@ from sentinel.service import SentinelService
 sync_api = pytest.importorskip(
     "playwright.sync_api", reason="playwright kurulu değil (pip install playwright)"
 )
+
+
+def _responder(messages, json_mode, tools):
+    """Briefs from the packet (default mock); chat turns get a short grounded answer (no numbers)."""
+    try:
+        return default_mock_responder(messages, json_mode, tools)
+    except LLMError:
+        return "Kayıtlara göre bu araç kare içinde izleniyor."
 
 
 def _free_port() -> int:
@@ -42,7 +50,7 @@ def base_url(settings, tmp_path_factory):
     s = settings.model_copy(deep=True)  # own decision log: UI tests record decisions
     s.observability.runs_dir = tmp_path_factory.mktemp("ui-runs")
     s.observability.labels_dir = tmp_path_factory.mktemp("ui-labels")
-    api.service_factory = lambda: SentinelService(s, llm=MockLLM())
+    api.service_factory = lambda: SentinelService(s, llm=MockLLM(_responder))
     port = _free_port()
     server = uvicorn.Server(uvicorn.Config(api.app, host="127.0.0.1", port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)

@@ -9,8 +9,11 @@ from sentinel.service import SentinelService
 
 
 @pytest.fixture(scope="module")
-def client(settings):
-    api.service_factory = lambda: SentinelService(settings, llm=MockLLM())
+def client(settings, tmp_path_factory):
+    # Own runs dir: the app's background warm-up keeps writing traces after this module, and other tests read theirs.
+    s = settings.model_copy(deep=True)
+    s.observability.runs_dir = tmp_path_factory.mktemp("api-runs")
+    api.service_factory = lambda: SentinelService(s, llm=MockLLM())
     with TestClient(api.app) as c:
         yield c
     api.service_factory = SentinelService
@@ -51,8 +54,56 @@ def test_read_endpoints(client):
     ]
     assert row["min_eta_min"] == min(etas) and row["n_approaching"] >= len(etas) >= 1
     assert client.get("/api/frames/img_000860/image").headers["content-type"] == "image/jpeg"
+    ref = pkt["vehicles"][0]["ref"]
+    assert client.get(f"/api/frames/img_000860/vehicles/{ref}/crop").headers["content-type"] == "image/jpeg"
+    assert client.get("/api/frames/img_000860/vehicles/V999/crop").status_code == 404
     steps = [s["step"] for s in client.get(f"/api/runs/{f['result']['run_id']}/trace").json()]
     assert steps[0] == "1_tespit"
+
+
+def test_map_motion_is_the_lead_vehicles_own_kinematics(client):
+    """Overview arrows: heading and speed come from the packet's lead vehicle, never recomputed in the UI."""
+    frames = {f["image_id"]: f for f in client.get("/api/map").json()["frames"]}
+    assert any(f["motion"] for f in frames.values())
+    mo = frames["img_000860"]["motion"]
+    assert mo["track_id"] == "T0122" and mo["approaching"]  # the demo truck leads its frame
+    pkt = client.get("/api/frames/img_000860/packet").json()
+    k = next(v for v in pkt["vehicles"] if v["ref"] == mo["vehicle_ref"])["kinematics"]
+    assert mo["heading_deg"] == round(k["heading_deg"], 1) and mo["heading_dir"] == k["heading_dir"]
+    assert mo["speed_kmh"] == round(k["speed_now_mps"] * 3.6, 1) and mo["eta_min"] == k["eta_min"]
+    for f in frames.values():
+        assert f["motion"] is None or 0 <= f["motion"]["heading_deg"] < 360
+
+
+def test_map_marker_class_is_the_packets_own(client):
+    """Marker silhouettes: the class shown is the arrow's vehicle (else the top-scoring one); counts from the packet."""
+    frames = {f["image_id"]: f for f in client.get("/api/map").json()["frames"]}
+    for image_id in ("img_000860", "img_006388"):
+        f, pkt = frames[image_id], client.get(f"/api/frames/{image_id}/packet").json()
+        labels = {v["ref"]: v["label"] for v in pkt["vehicles"]}
+        counts: dict[str, int] = {}
+        for lb in labels.values():
+            counts[lb] = counts.get(lb, 0) + 1
+        assert f["label_counts"] == counts
+        if f["motion"]:  # the silhouette and the arrow describe the same vehicle
+            assert f["lead_label"] == f["motion"]["label"] == labels[f["motion"]["vehicle_ref"]]
+    for f in frames.values():
+        assert (f["lead_label"] is None) == (not f["label_counts"])
+
+
+def test_map_road_corridors_run_from_base_through_zone_frames(client):
+    """Each zone's corridor starts at the base and visits that zone's frame centres, nearest first."""
+    m = client.get("/api/map").json()
+    by_zone: dict[str, list[dict]] = {}
+    for f in m["frames"]:
+        by_zone.setdefault(f["zone"], []).append(f)
+    assert len(m["zones"]) == 8
+    for z in m["zones"]:
+        frames = sorted(by_zone.get(z["name"], []), key=lambda f: f["d_base_m"])
+        assert z["path"][0] == m["base"]["center"]
+        assert z["path"][1:] == [f["center"] for f in frames]
+        # the label sits on the road (3rd frame) when the zone has enough frames, else at its nominal centre
+        assert z["center"] == (frames[2]["center"] if len(frames) >= 3 else z["theoretical_center"])
 
 
 def test_errors_and_decisions(client):
@@ -83,7 +134,35 @@ def test_chat_endpoint(client):
     r = client.post("/api/chat", json={"question": "Durum?", "image_id": "img_000860", "history": []})
     assert r.status_code == 200
     body = r.json()
-    assert {"answer", "tool_calls", "grounded", "run_id"} <= body.keys()
+    assert {"answer", "tool_calls", "grounded", "run_id", "followups"} <= body.keys()
+
+
+def test_chat_suggestions_endpoint(client):
+    frame = client.get("/api/chat/suggestions", params={"image_id": "img_000860"}).json()["suggestions"]
+    assert frame and {"text", "reason", "refs"} <= frame[0].keys()
+    queue = client.get("/api/chat/suggestions").json()["suggestions"]
+    assert queue and queue != frame
+    two = client.post(
+        "/api/chat/suggestions",
+        json={
+            "context": [
+                {"kind": "frame", "image_id": "img_000860"},
+                {"kind": "frame", "image_id": "img_006673"},
+            ]
+        },
+    ).json()["suggestions"]
+    assert any("img_000860" in x["text"] and "img_006673" in x["text"] for x in two)
+    bad = client.post("/api/chat/suggestions", json={"context": [{"kind": "zone", "image_id": "x"}]})
+    assert bad.status_code == 422
+
+
+def test_chat_vocab_endpoint(client):
+    v = client.get("/api/chat/vocab").json()
+    assert len(v["frames"]) == 40 and len(v["reports"]) == 137 and len(v["zones"]) == 8
+    assert any(t["id"] == "T0122" and t["frame"] == "img_000860" for t in v["tracks"])
+    r119 = next(r for r in v["reports"] if r["id"] == "R119")
+    assert r119["verdicts"]["img_000860"] == "ÇELİŞİYOR"  # verdicts are per frame
+    assert "Doğu Yolu" in v["zones"] and "12:25" in v["times"]
 
 
 def test_blind_labelling_endpoints(client, settings):

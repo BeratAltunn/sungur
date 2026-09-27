@@ -12,9 +12,9 @@ import type { HandlingTime, Health, ImpactReport, SimFrame } from "../lib/types"
 // level colours (orange/red) stay reserved for risk levels.
 
 function Source({ h }: { h: HandlingTime }) {
-  if (h.source === "varsayım") return <span className="pill pill-warn">varsayım</span>;
+  if (h.source === "varsayım") return <span className="pill pill-strong">varsayım</span>;
   return (
-    <span className="pill pill-ok">
+    <span className="pill">
       {h.source} · n={h.n}
     </span>
   );
@@ -26,7 +26,7 @@ function Tile({ title, sys, man, note }: { title: string; sys: string; man: stri
       <div className="tile-title">{title}</div>
       <div className="tile-values">
         <span>
-          <span className="mk-sys" aria-hidden /> NÖBETÇİ <strong>{sys}</strong>
+          <span className="mk-sys" aria-hidden /> DİZDAR <strong>{sys}</strong>
         </span>
         <span>
           <span className="mk-man" aria-hidden /> Elle <strong>{man}</strong>
@@ -71,7 +71,7 @@ export function ImpactPage({ health }: { health: Health | null }) {
             <h1>Karar, araç üsse varmadan önce mi?</h1>
             <p className="muted">
               Vardiya simülasyonu: tek operatör günün karelerini geldikleri saatte işler. Elle: geliş sırasıyla, kare başına{" "}
-              {dec(r.manual.minutes)} dk. NÖBETÇİ ile: risk sırasıyla, kare başına {dec(r.system.minutes)} dk. Karşılaştırma,
+              {dec(r.manual.minutes)} dk. DİZDAR ile: risk sırasıyla, kare başına {dec(r.system.minutes)} dk. Karşılaştırma,
               karedeki en yakın yaklaşan aracın çekim anındaki ETA'sına göre tahmini varışladır.
             </p>
           </div>
@@ -80,7 +80,7 @@ export function ImpactPage({ health }: { health: Health | null }) {
               ← Kuyruk
             </a>
             <a className="btn btn-primary btn-sm" href="#/?replay=1" title="Kuyrukta vardiyayı zamanla oynat">
-              ▶ Vardiyayı oynat
+              Vardiyayı oynat
             </a>
           </div>
         </header>
@@ -104,11 +104,11 @@ export function ImpactPage({ health }: { health: Health | null }) {
         </div>
 
         <p className="params">
-          Kare başına süre · Elle <strong>{dec(r.manual.minutes)} dk</strong> <Source h={r.manual} /> · NÖBETÇİ{" "}
+          Kare başına süre · Elle <strong>{dec(r.manual.minutes)} dk</strong> <Source h={r.manual} /> · DİZDAR{" "}
           <strong>{dec(r.system.minutes)} dk</strong> <Source h={r.system} />
           <span className="muted small">
             {" "}
-            (Elle: kronometre testinde ≥ 3 ölçüm olunca o kullanılır. NÖBETÇİ: ≥ 3 açılış → karar ölçümü olunca o
+            (Elle: kronometre testinde ≥ 3 ölçüm olunca o kullanılır. DİZDAR: ≥ 3 açılış → karar ölçümü olunca o
             kullanılır.)
           </span>
         </p>
@@ -117,7 +117,7 @@ export function ImpactPage({ health }: { health: Health | null }) {
           <h2>Kare başına: çekimden sonra kaç dakikada karar, araç kaçıncı dakikada üste?</h2>
           <div className="legend-row" aria-hidden>
             <span>
-              <span className="mk-sys" /> NÖBETÇİ kararı
+              <span className="mk-sys" /> DİZDAR kararı
             </span>
             <span>
               <span className="mk-man" /> Elle karar
@@ -144,7 +144,7 @@ export function ImpactPage({ health }: { health: Health | null }) {
                 className="tl-row"
                 role="row"
                 onClick={() => go(`/frame/${f.image_id}`)}
-                title={`${f.image_id} · çekim ${f.capture_time} · varış ~${hhmm(f.arrival_min!)} · NÖBETÇİ kararı ${hhmm(f.system_done)} · elle karar ${hhmm(f.manual_done)}`}
+                title={`${f.image_id} · çekim ${f.capture_time} · varış ~${hhmm(f.arrival_min!)} · DİZDAR kararı ${hhmm(f.system_done)} · elle karar ${hhmm(f.manual_done)}`}
               >
                 <span className="tl-label" role="cell">
                   <LevelBadge level={f.level} size="sm" />
@@ -162,7 +162,7 @@ export function ImpactPage({ health }: { health: Health | null }) {
                 </span>
                 <span className="tl-out" role="cell">
                   <span>
-                    NÖBETÇİ {hhmm(f.system_done)} {f.system_before ? "✓ önce" : "✗ sonra"}
+                    DİZDAR {hhmm(f.system_done)} {f.system_before ? "✓ önce" : "✗ sonra"}
                   </span>
                   <span className="muted">
                     Elle {hhmm(f.manual_done)} {f.manual_before ? "✓ önce" : "✗ sonra"} · varış ~{hhmm(f.arrival_min!)}

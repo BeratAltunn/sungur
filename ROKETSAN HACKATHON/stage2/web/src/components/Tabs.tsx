@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import { api } from "../lib/api";
 import { LABEL_TR, SOURCE_TR, STEP_TR, VERDICT_CLASS, dec, km, zoneName } from "../lib/format";
-import type { EvaluationResult, EvidencePacket, LiveRun, TraceStep, VerdictT } from "../lib/types";
+import type { EvaluationResult, EvidencePacket, LiveRun, TraceStep } from "../lib/types";
 import { RefText, VerdictBadge } from "./ui";
+import { VehicleChip } from "./VehicleChip";
+import { anomalies } from "../lib/vehicles";
 
 export type TabId = "why" | "reports" | "vehicles" | "trace";
 
@@ -28,10 +30,9 @@ export function EvidenceTabs({
   onPickReport: (id: string) => void;
   onRef: (id: string) => void;
 }) {
-  const n = (v: VerdictT) => packet.reports.filter((r) => r.verdict === v).length;
   const all: [TabId, string][] = [
     ["why", "Neden?"],
-    ["reports", `Raporlar ✓${n("DOĞRULANDI")} ✗${n("ÇELİŞİYOR")} ?${n("DOĞRULANAMAZ")} —${n("İLGİSİZ")}`],
+    ["reports", `Raporlar (${packet.reports.length})`],
     ["vehicles", `Araçlar (${packet.vehicles.length})`],
     ["trace", "Ajan izi"],
   ];
@@ -180,7 +181,7 @@ function ReportsTab({
               </td>
               <td>
                 <span className={`pill pill-dim ${r.source === "official" ? "" : "pill-3p"}`}>{SOURCE_TR[r.source]}</span>
-                {r.identity_claim && <span className="pill pill-warn">kimlik iddiası</span>}
+                {r.identity_claim && <span className="pill pill-strong">kimlik iddiası</span>}
               </td>
               <td>
                 <div className="report-text">{r.text}</div>
@@ -233,7 +234,7 @@ function VehiclesTab({ packet, onRef }: { packet: EvidencePacket; onRef: (id: st
           return (
             <tr key={v.ref}>
               <td>
-                <RefText text={`${v.ref} ${v.track_id ?? ""}`} onRef={onRef} />
+                {anomalies(v).length ? <VehicleChip imageId={packet.image_id} v={v} /> : <RefText text={`${v.ref} ${v.track_id ?? ""}`} onRef={onRef} />}
               </td>
               <td>
                 {LABEL_TR[v.label]} · {dec(v.conf, 2)}

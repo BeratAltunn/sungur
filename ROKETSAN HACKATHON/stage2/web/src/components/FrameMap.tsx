@@ -1,13 +1,30 @@
 import type { Map as MLMap, Marker } from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
-import { LEVEL_COLOR, SOURCE_TR, VERDICT_CLASS, VERDICT_ICON, dec, flyMs, hhmm } from "../lib/format";
-import { baseSymbol, vehicleSymbol } from "../lib/symbols";
-import { bounds, circle, fullPath, pathUntil, positionAt } from "../lib/geo";
+import { LABEL_TR, LEVEL_CLASS, SOURCE_TR, VERDICT_CLASS, VERDICT_ICON, dec, flyMs, hhmm } from "../lib/format";
+import { baseSymbol, classSymbol } from "../lib/symbols";
+import { levelColor, token } from "../lib/theme";
+import { bounds, circle, fullPath, grid, pathUntil, positionAt } from "../lib/geo";
 import type { FrameInfo, FrameTracks, LngLat, MapContext, ReportVerification, TrackPath } from "../lib/types";
-import { MapView, fc, htmlMarker, line, polygon, setGeo } from "./MapView";
+import { LayerMenu, useLayers } from "./LayerMenu";
+import { MAP_3D, MapView, fc, htmlMarker, line, polygon, setGeo } from "./MapView";
 import { RefText, VerdictBadge } from "./ui";
 
 export type Focus = { kind: "track"; id: string } | { kind: "report"; id: string } | null;
+
+/** Same faint 1 km reference grid as the main map (visual only). */
+const GRID = { halfM: 10_000, stepM: 1_000 };
+const ROLE_GROUPS: { role: TrackPath["role"]; title: string }[] = [
+  { role: "vehicle", title: "Karedeki araçlar" },
+  { role: "undetected", title: "Karede tespit edilmeyen izler" },
+  { role: "report", title: "Raporlarla ilgili izler" },
+];
+type FrameLayer = "others" | "pins" | "projections" | "rings";
+const FRAME_LAYERS: { key: FrameLayer; label: string }[] = [
+  { key: "others", label: "Diğer izler (raporla ilgili, tespitsiz)" },
+  { key: "pins", label: "Rapor işaretleri" },
+  { key: "projections", label: "Tahmini varış çizgileri" },
+  { key: "rings", label: "Mesafe halkaları" },
+];
 
 interface Props {
   ctx: MapContext;
@@ -22,28 +39,48 @@ interface Props {
 }
 
 export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind = false }: Props) {
+  // Level colour only for the frame's own vehicles; every other path is a neutral (blind mode: one neutral).
   const trackColor = (tr: TrackPath) =>
     tr.role === "vehicle"
-      ? blind
-        ? "#38bdf8"
-        : (tr.level ? LEVEL_COLOR[tr.level] : "#64748b")
+      ? blind || !tr.level
+        ? token("--text-2")
+        : levelColor(tr.level)
       : tr.role === "undetected"
-        ? "#94a3b8"
-        : "#475569"; // report-related tracks: white label on this slate is 7.6:1
+        ? token("--muted")
+        : token("--line-strong");
   const mapRef = useRef<MLMap | null>(null);
+  const { layers, toggle } = useLayers<FrameLayer>("layers_frame", { others: true, pins: true, projections: true, rings: true });
   const vehicleMarkers = useRef<Record<string, Marker>>({});
   const pinMarkers = useRef<Record<string, Marker>>({});
+  const staticMarkers = useRef<Marker[]>([]); // base + zone labels: rebuilt with the style, never duplicated
   const [ready, setReady] = useState(0);
+  // Which tracks the operator wants on the map (display only; the evidence is unchanged). All shown by default.
+  const [hidden, setHidden] = useState<Set<string>>(() => new Set());
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const toggleTrack = (id: string) =>
+    setHidden((h) => {
+      const n = new Set(h);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const showOnly = (keep: (tr: TrackPath) => boolean) =>
+    setHidden(new Set(data.tracks.filter((tr) => !keep(tr)).map((tr) => tr.track_id)));
   const c = frame.corners;
   const frameCorners: LngLat[] = [c.top_left, c.top_right, c.bottom_right, c.bottom_left].map(([la, lo]) => [lo, la]);
 
   const focusedTrack = focus?.kind === "track" ? focus.id : null;
   const pin = focus?.kind === "report" ? data.report_pins.find((p) => p.report_id === focus.id) ?? null : null;
+  // Layer "others" hides tracks that are not this frame's vehicles; a focused track or report's tracks always show.
+  const trackShown = (tr: TrackPath) =>
+    layers.others || tr.role === "vehicle" || tr.track_id === focusedTrack || !!pin?.related_tracks.includes(tr.track_id);
+  const drawn = (tr: TrackPath) => trackShown(tr) && !hidden.has(tr.track_id);
+  const shownTracks = data.tracks.filter(drawn);
 
   const fitAll = () => {
     const map = mapRef.current;
     if (!map) return;
-    const pts: LngLat[] = [...frameCorners, ...data.tracks.flatMap((tr) => fullPath(tr.points))];
+    const pts: LngLat[] = [...frameCorners, ...shownTracks.flatMap((tr) => fullPath(tr.points))];
     map.fitBounds(bounds(pts), { padding: 48, duration: flyMs(600), maxZoom: 16 });
   };
   const fitFrame = () => mapRef.current?.fitBounds(bounds(frameCorners), { padding: 24, duration: flyMs(600) });
@@ -52,53 +89,56 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
     mapRef.current = map;
     Object.values(vehicleMarkers.current).forEach((m) => m.remove());
     Object.values(pinMarkers.current).forEach((m) => m.remove());
+    staticMarkers.current.forEach((m) => m.remove());
     vehicleMarkers.current = {};
     pinMarkers.current = {};
+    staticMarkers.current = [];
 
-    setGeo(map, "rings", fc(ctx.rings.map((r) => line(r.ring))));
-    map.addLayer({ id: "rings", type: "line", source: "rings", paint: { "line-color": "#334155", "line-dasharray": [3, 3] } });
-    map.addSource("frame-img", { type: "image", url: imageUrl, coordinates: frameCorners as never });
-    map.addLayer({ id: "frame-img", type: "raster", source: "frame-img", paint: { "raster-opacity": 0.95 } });
+    setGeo(map, "grid", fc(grid(ctx.base.center, GRID.halfM, GRID.stepM).map((l) => line(l))));
+    // Grid and distance rings styled exactly as on the main map (readable on the terrain texture too).
+    if (!map.getLayer("grid"))
+      map.addLayer({
+        id: "grid",
+        type: "line",
+        source: "grid",
+        paint: { "line-color": token("--muted"), "line-opacity": map.getTerrain() ? 0.3 : 0.14, "line-width": 1 },
+      });
+    setGeo(map, "rings", fc(ctx.rings.map((r) => line(r.ring, { km: r.km }))));
+    if (!map.getLayer("rings"))
+      map.addLayer({
+        id: "rings",
+        type: "line",
+        source: "rings",
+        paint: { "line-color": token("--muted"), "line-width": 1.25, "line-dasharray": [3, 3], "line-opacity": 0.7 },
+      });
+    if (!map.getSource("frame-img")) map.addSource("frame-img", { type: "image", url: imageUrl, coordinates: frameCorners as never });
+    if (!map.getLayer("frame-img"))
+      map.addLayer({ id: "frame-img", type: "raster", source: "frame-img", paint: { "raster-opacity": 0.95 } });
     setGeo(map, "frame-outline", fc([line([...frameCorners, frameCorners[0]])]));
-    map.addLayer({ id: "frame-outline", type: "line", source: "frame-outline", paint: { "line-color": "#e2e8f0", "line-width": 1.5 } });
+    if (!map.getLayer("frame-outline"))
+      map.addLayer({ id: "frame-outline", type: "line", source: "frame-outline", paint: { "line-color": token("--text-2"), "line-width": 1.5 } });
 
-    for (const id of ["paths-full", "paths-sofar", "report-circle", "links"]) setGeo(map, id, fc([]));
-    map.addLayer({
-      id: "paths-full",
-      type: "line",
-      source: "paths-full",
-      paint: { "line-color": ["get", "color"], "line-width": 1.5, "line-opacity": 0.35 },
-    });
-    map.addLayer({
-      id: "paths-sofar",
-      type: "line",
-      source: "paths-sofar",
-      paint: { "line-color": ["get", "color"], "line-width": ["get", "width"], "line-opacity": 0.95 },
-    });
-    map.addLayer({ id: "report-circle-fill", type: "fill", source: "report-circle", paint: { "fill-color": "#f8fafc", "fill-opacity": 0.08 } });
-    map.addLayer({ id: "report-circle", type: "line", source: "report-circle", paint: { "line-color": "#f8fafc", "line-width": 1.5 } });
-    map.addLayer({
-      id: "links",
-      type: "line",
-      source: "links",
-      paint: { "line-color": "#f8fafc", "line-width": 1, "line-dasharray": [2, 2], "line-opacity": 0.8 },
-    });
+    for (const id of ["paths-full", "paths-sofar", "report-circle", "links", "projections"]) setGeo(map, id, fc([]));
+    if (!map.getLayer("paths-full")) addEvidenceLayers(map);
 
-    // Projection vectors (vehicle at capture → base), drawn under the markers.
-    setGeo(map, "projections", fc([]));
-    map.addLayer({
-      id: "projections",
-      type: "line",
-      source: "projections",
-      paint: { "line-color": ["get", "color"], "line-width": 2, "line-dasharray": [1.5, 1.5], "line-opacity": 0.9 },
-    });
-
-    htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base");
+    staticMarkers.current.push(htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base"));
+    // Zone names as on the main map: faint, box-less; the frame's own zone a little stronger.
+    for (const z of ctx.zones) {
+      const zm = htmlMarker(map, z.center, z.label, `mk mk-zone${z.name === frame.zone ? " mk-zone-active" : ""}`);
+      zm.getElement().setAttribute("aria-hidden", "true");
+      staticMarkers.current.push(zm);
+    }
+    // Vehicles as on the main map: class silhouette in the level colour; the V-number ties it to the brief.
+    // Tracks without a detection in this frame (undetected, report-related) are the main map's grey dots.
     for (const tr of data.tracks) {
-      const label = tr.vehicle_ref ? `${tr.vehicle_ref}` : tr.track_id;
-      const m = htmlMarker(map, [0, 0], vehicleSymbol(label), `mk mk-veh mk-${tr.role}`, () => onFocusRef.current({ kind: "track", id: tr.track_id }));
+      const mark =
+        tr.role === "vehicle"
+          ? `<span class="mk-v ${blind || !tr.level ? "level-quiet" : LEVEL_CLASS[tr.level]}">${classSymbol(tr.label ?? "unknown")}</span>` +
+            `<span class="mk-lbl">${tr.vehicle_ref ?? tr.track_id}</span>`
+          : `<span class="mk-vdot"></span>`;
+      const m = htmlMarker(map, [0, 0], mark, `mk mk-veh mk-${tr.role}`, () => onFocusRef.current({ kind: "track", id: tr.track_id }));
       m.getElement().style.setProperty("--c", trackColor(tr));
-      m.getElement().title = `${tr.vehicle_ref ?? ""} ${tr.track_id}`.trim();
+      m.getElement().title = `${tr.vehicle_ref ?? ""} ${tr.track_id}${tr.label ? ` ${LABEL_TR[tr.label]}` : ""}`.trim();
       vehicleMarkers.current[tr.track_id] = m;
     }
     for (const p of data.report_pins) {
@@ -118,6 +158,37 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
   const onFocusRef = useRef(onFocus);
   onFocusRef.current = onFocus;
 
+  function addEvidenceLayers(map: MLMap) {
+    map.addLayer({
+      id: "paths-full",
+      type: "line",
+      source: "paths-full",
+      paint: { "line-color": ["get", "color"], "line-width": 1.5, "line-opacity": 0.35 },
+    });
+    map.addLayer({
+      id: "paths-sofar",
+      type: "line",
+      source: "paths-sofar",
+      paint: { "line-color": ["get", "color"], "line-width": ["get", "width"], "line-opacity": 0.95 },
+    });
+    map.addLayer({ id: "report-circle-fill", type: "fill", source: "report-circle", paint: { "fill-color": token("--text"), "fill-opacity": 0.08 } });
+    map.addLayer({ id: "report-circle", type: "line", source: "report-circle", paint: { "line-color": token("--text"), "line-width": 1.5 } });
+    map.addLayer({
+      id: "links",
+      type: "line",
+      source: "links",
+      paint: { "line-color": token("--text"), "line-width": 1, "line-dasharray": [2, 2], "line-opacity": 0.8 },
+    });
+
+    // Projection vectors (vehicle at capture → base), drawn under the markers.
+    map.addLayer({
+      id: "projections",
+      type: "line",
+      source: "projections",
+      paint: { "line-color": ["get", "color"], "line-width": 2, "line-dasharray": [1.5, 1.5], "line-opacity": 0.9 },
+    });
+  }
+
   // Time slider: move vehicles, extend the "so far" paths. Pure display; runs every tick.
   useEffect(() => {
     const map = mapRef.current;
@@ -125,15 +196,15 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
     setGeo(
       map,
       "paths-full",
-      fc(data.tracks.map((tr) => line(fullPath(tr.points), { color: trackColor(tr) }))),
+      fc(shownTracks.map((tr) => line(fullPath(tr.points), { color: trackColor(tr) }))),
     );
     setGeo(
       map,
       "paths-sofar",
       fc(
-        data.tracks.map((tr) =>
+        shownTracks.map((tr) =>
           line(pathUntil(tr.points, t), {
-            color: tr.track_id === focusedTrack ? "#ffffff" : trackColor(tr),
+            color: tr.track_id === focusedTrack ? token("--text") : trackColor(tr),
             width: tr.track_id === focusedTrack ? 4 : tr.role === "vehicle" ? 2.5 : 1.5,
           }),
         ),
@@ -143,14 +214,14 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
       const m = vehicleMarkers.current[tr.track_id];
       const pos = positionAt(tr.points, t);
       const el = m.getElement();
-      el.style.display = pos ? "" : "none";
+      el.style.display = pos && drawn(tr) ? "" : "none";
       if (pos) m.setLngLat(pos);
       el.classList.toggle("mk-focus", tr.track_id === focusedTrack || !!pin?.related_tracks.includes(tr.track_id));
     }
     // selected report: its radius and dashed links to the vehicles it is about, at the slider time
     if (pin) {
       setGeo(map, "report-circle", fc([polygon(circle([pin.lon, pin.lat], data.radius_m))]));
-      const links = data.tracks
+      const links = shownTracks
         .filter((tr) => pin.related_tracks.includes(tr.track_id))
         .map((tr) => positionAt(tr.points, t))
         .filter((p): p is LngLat => !!p)
@@ -160,22 +231,29 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
       setGeo(map, "report-circle", fc([]));
       setGeo(map, "links", fc([]));
     }
-    for (const [id, m] of Object.entries(pinMarkers.current)) m.getElement().classList.toggle("mk-focus", id === pin?.report_id);
+    for (const [id, m] of Object.entries(pinMarkers.current)) {
+      m.getElement().classList.toggle("mk-focus", id === pin?.report_id);
+      m.getElement().style.display = layers.pins || id === pin?.report_id ? "" : "none";
+    }
+    if (map.getLayer("rings")) map.setLayoutProperty("rings", "visibility", layers.rings ? "visible" : "none");
     // Projection is from the capture moment: shown only when the slider is there.
     const atCapture = t >= data.window.end;
     setGeo(
       map,
       "projections",
       fc(
-        atCapture
-          ? data.projections.map((p) =>
-              line([[p.lon, p.lat], ctx.base.center], { color: blind ? "#d4d8dd" : LEVEL_COLOR[p.level] }),
+        atCapture && layers.projections
+          ? data.projections
+              .filter((p) => !p.track_id || !hidden.has(p.track_id))
+              .map((p) =>
+              line([[p.lon, p.lat], ctx.base.center], { color: blind ? token("--text-2") : levelColor(p.level) }),
             )
           : [],
       ),
     );
 
-  }, [t, focusedTrack, pin, data, ready, blind, ctx]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [t, focusedTrack, pin, data, ready, blind, ctx, layers, hidden]);
 
   // Focusing a report frames the pin and its vehicles so the gap is visible at a glance.
   useEffect(() => {
@@ -192,7 +270,13 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
 
   return (
     <div className="frame-map">
-      <MapView onReady={onReady} initial={{ center: [frame.center_lon, frame.center_lat], zoom: 13 }} />
+      <MapView
+        onReady={onReady}
+        initial={{ center: [frame.center_lon, frame.center_lat], zoom: 13 }}
+        threeD={MAP_3D}
+        terrain
+        controls={<LayerMenu defs={FRAME_LAYERS} layers={layers} onToggle={toggle} />}
+      />
       {/* Projection readout (HUD): the soonest arrival, first in the backend's order; vectors are on the map. */}
       {data.projections.length > 0 && (
         <div className={`map-hud ${t >= data.window.end ? "" : "map-hud-off"}`} role="status">
@@ -202,24 +286,49 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
           {t < data.window.end && <span className="muted"> · çekim anında geçerli</span>}
         </div>
       )}
-      <div className={`map-legend ${blind ? "map-legend-blind" : ""}`} aria-label="Harita işaretleri">
-        <span>
-          <span className="sym-base sym-base-sm" aria-hidden>
-            ÜS
-          </span>{" "}
-          dost (üs)
-        </span>
-        <span>
-          <svg className="sym sym-legend" viewBox="-1 -1 22 22" aria-hidden>
-            <path d="M6,6 A4.3,4.3 0 1 1 14,6 A4.3,4.3 0 1 1 14,14 A4.3,4.3 0 1 1 6,14 A4.3,4.3 0 1 1 6,6 Z" />
-          </svg>{" "}
-          araç: kimliği belirsiz{blind ? "" : ", renk = risk"}
-        </span>
-        <span>
-          <span className="legend-dash" aria-hidden /> tahmini varış (çekim anı)
-        </span>
-      </div>
       <div className="map-actions">
+        <div className="track-picker">
+          <button
+            className="btn btn-ghost btn-sm"
+            aria-expanded={pickerOpen}
+            onClick={() => setPickerOpen((o) => !o)}
+            title="Haritada gösterilecek izleri seç"
+          >
+            İzler {shownTracks.length}/{data.tracks.length} {pickerOpen ? "▴" : "▾"}
+          </button>
+          {pickerOpen && (
+            <div className="track-picker-list" role="group" aria-label="Gösterilecek izler">
+              <div className="track-picker-quick">
+                <button className="btn btn-ghost btn-sm" onClick={() => setHidden(new Set())}>
+                  Tümü
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => showOnly((tr) => tr.role === "vehicle")}>
+                  Yalnız araçlar
+                </button>
+                <button className="btn btn-ghost btn-sm" onClick={() => showOnly(() => false)}>
+                  Hiçbiri
+                </button>
+              </div>
+              {ROLE_GROUPS.map(({ role, title }) => {
+                const group = data.tracks.filter((tr) => tr.role === role);
+                if (!group.length) return null;
+                return (
+                  <fieldset key={role}>
+                    <legend>{title}</legend>
+                    {group.map((tr) => (
+                      <label key={tr.track_id} className="track-picker-item">
+                        <input type="checkbox" checked={!hidden.has(tr.track_id)} onChange={() => toggleTrack(tr.track_id)} />
+                        <span className="track-swatch" style={{ background: trackColor(tr) }} aria-hidden />
+                        <span className="mono">{tr.vehicle_ref ? `${tr.vehicle_ref} · ${tr.track_id}` : tr.track_id}</span>
+                        {tr.label && <span className="muted">{LABEL_TR[tr.label]}</span>}
+                      </label>
+                    ))}
+                  </fieldset>
+                );
+              })}
+            </div>
+          )}
+        </div>
         <button className="btn btn-ghost btn-sm" onClick={fitAll}>
           Tüm izler
         </button>
@@ -254,7 +363,7 @@ export function ReportCallout({
           {report.report_id} · {report.time}
         </span>
         <span className={`pill pill-dim ${report.source === "official" ? "" : "pill-3p"}`}>{SOURCE_TR[report.source]}</span>
-        {report.identity_claim && <span className="pill pill-warn">kimlik iddiası</span>}
+        {report.identity_claim && <span className="pill pill-strong">kimlik iddiası</span>}
         <button className="btn btn-ghost btn-sm callout-close" onClick={onClose} aria-label="Raporu kapat">
           ✕
         </button>
@@ -265,7 +374,7 @@ export function ReportCallout({
       </p>
       {!atReportTime && (
         <button className="btn btn-ghost btn-sm" onClick={onSeek}>
-          ⟲ Rapor saatine git ({report.time})
+          Rapor saatine git ({report.time})
         </button>
       )}
     </div>
@@ -289,7 +398,7 @@ export function TimeSlider({ data, t, onChange, playing, onPlay, focusReport, on
   return (
     <div className="slider" aria-label="Zaman kaydırıcısı">
       <button className="btn btn-ghost btn-sm" onClick={onPlay} aria-label={playing ? "Durdur" : "Oynat"}>
-        {playing ? "❚❚ Durdur" : "▶ Oynat"}
+        {playing ? "Durdur" : "Oynat"}
       </button>
       <div className="slider-track">
         <input
@@ -322,7 +431,7 @@ export function TimeSlider({ data, t, onChange, playing, onPlay, focusReport, on
         <span className="muted">{before > 0 ? `çekimden ${before} dk önce` : "çekim anı"}</span>
       </div>
       <button className="btn btn-ghost btn-sm" onClick={() => onChange(end)} disabled={t === end}>
-        ⟲ Çekim anına dön
+        Çekim anına dön
       </button>
     </div>
   );

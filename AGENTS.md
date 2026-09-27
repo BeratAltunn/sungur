@@ -8,7 +8,7 @@ Bu dosya, bu depoda çalışan LLM agent'ları (Claude Code, Codex, Cursor, Copi
 
 ## 1. Proje tek paragrafta
 
-NÖBETÇİ, bir askerî üssü çevreleyen 8 bölgeden gelen drone karelerini risk sırasına dizen bir ajandır. Her kare için 6 adım çalışır: **(1) araç tespiti (Kaggle ekibinin D-FINE-M modeli) → (2) pikselden koordinata → (3) araçları 2 saatlik hareket izleriyle eşleme + kinematik (hız, yaklaşma, duraklama, ETA) → (4) saha raporlarını raporun *kendi saatindeki* duruma göre doğrulama → (5) açıklanabilir kural tabanlı risk skoru + taban kuralları → (6) LLM'in her sayısı kanıtla kontrol edilen (grounding) Türkçe brief yazması.** 1–5 deterministik Python'dur; LLM hesap yapmaz, yalnızca yazar. Ayrıca araç çağıran bir sohbet paneli ve operatör için bir web arayüzü (triage kuyruğu + kare detayı + zaman kaydırıcısı) vardır.
+NÖBETÇİ, bir askerî üssü çevreleyen 8 bölgeden gelen drone karelerini risk sırasına dizen bir ajandır. Her kare için 6 adım çalışır: **(1) araç tespiti (Kaggle ekibinin D-FINE-M modeli) → (2) pikselden koordinata → (3) araçları 2 saatlik hareket izleriyle eşleme + kinematik (hız, yaklaşma, duraklama, ETA) → (4) saha raporlarını raporun *kendi saatindeki* duruma göre doğrulama → (5) Yetenek–Fırsat–Niyet (C-O-I) tehdit değerlendirmesi: her araç için üç kenar bandı → seviye matrisi + taban kuralları (ETA ayrı aciliyet ekseni) → (6) LLM'in her sayısı kanıtla kontrol edilen (grounding) Türkçe brief yazması.** 1–5 deterministik Python'dur; LLM hesap yapmaz, yalnızca yazar. Ayrıca araç çağıran bir sohbet paneli ve operatör için bir web arayüzü (triage kuyruğu + kare detayı + zaman kaydırıcısı) vardır.
 
 **Değerlendirme kriterleri:** Kaggle skoru (Aşama 1 tespit modeli) %20 · teknik kalite ve mimari %15 · problemin önemi ve çözümün sağladığı iş değeri %20 · çalışan ürün ortaya koyabilme %20 · ürün düşüncesi ve kullanıcı deneyimi %20 · sunum ve demo %5. Sistem resmî Aşama 2 veri paketi, Kaggle ekibinin D-FINE-M modeli ve hackathon ağ geçidindeki `glm-5.3-flash` ile çalışır. Dev verisi, yolov8n ve Evren yedek olarak durur.
 
@@ -97,8 +97,8 @@ Arayüz üzerinde çalışırken: bir terminalde `make app` açık kalsın, diğ
 | `make ui-test` | arayüzü derler, `tests/ui` 15/15 geçer (demo yolu: kuyruk + önizleme, 12:35 ✗ kartı, canlı değerlendirme adımları, karar → kuyruk, eskalasyon kartı + vardiya devri, etki + vardiya oynatma, yalnız klavyeyle kullanım, operasyonel hata mesajı; her ekranda metin kontrastı ≥ 6:1; kör modda seviye ve tehdit durumu sızmaz) |
 | `make validate` | `SONUÇ: temiz`, 40 kare / 226 track / 137 rapor, 20 tuzak track |
 | `curl -s http://127.0.0.1:8000/api/health` | `"detector": "dfine:dfine_m_kaggle"`, `"detector_fallback": null`, `"llm": {"error": null}` (anahtar varsa), `warmup.done == 40` |
-| `make demo-check` | tüm satırlar ✓, `demo-check YEŞİL (7/7)` (img_000860 KRİTİK + R119/R125 ✗, karşıt kare img_001733 DÜŞÜK + R042 ✗, önbellekteki brief'ler; `config.yaml → demo`) |
-| `make demo` | img_000860 için KRİTİK brief, T0122 kamyon, 12:25/12:35 raporları ✗ ÇELİŞİYOR |
+| `make demo-check` | tüm satırlar ✓, `demo-check YEŞİL (7/7)` (img_000860 KRİTİK + R119/R125 ✗, karşıt kare img_001733 DÜŞÜK ve çelişen rapor yok, önbellekteki brief'ler; `config.yaml → demo`) |
+| `make demo` | img_000860 için KRİTİK brief, T0122 olası kamyon (sınıf teyitsiz), 12:25/12:35 raporları ✗ ÇELİŞİYOR |
 | `cd web && npm run typecheck` | hata yok |
 
 `detector_fallback` doluysa ağırlık dosyası ya da `transformers` yok demektir: `models/dfine_m_kaggle.pth`'yi ekipten al, `make install`. Tespitler o sırada önbellekten gelir. `llm.error` "GLM_API_KEY tanımlı değil" diyorsa `.env` eksik; sistem yine çalışır ama brief'ler şablondan gelir.
@@ -141,21 +141,20 @@ python3 -m sentinel evaluate img_000860      # (PYTHONPATH=src ya da make instal
 7. **Eşik ve ağırlıklar `config.yaml`'da.** Kodda sabit eşik yazma. `domain/models.py` ekip sözleşmesidir; alan eklemek/değiştirmek ekiple konuşulur.
 8. **Altın sayı testlerini değiştirme.** `tests/unit/test_geo.py`, `test_tracking.py`, `test_reports.py` organizatörün örneğindeki sayıları (756,301 → 39.92531, 32.87183; T0122 < 1 m, 2. aday T0032 ~41 m; 5,5 → 1,6 km; 10,5 km yol; ETA ~4,4 dk; 12:35 raporu ✗) sabitler. Bu testler kırılırsa kod yanlıştır, test değil.
 9. **Prompt'lar sürümlüdür.** Prompt değiştirirken mevcut dosyayı düzenleme; `agent/prompts/analyst_vN.md` (ya da `chat_vN.md`) yeni dosya aç ve `config.yaml → llm.prompt_version`'ı güncelle. LLM önbelleği sürüme bağlıdır; ardından `python3 scripts/precompute.py` ile 40 brief'i yeniden üret (~15 dk).
-10. **Git'e girmeyecekler:** `.env`, `ROKETSAN HACKATHON/dataset/`, organizatör PDF/PPTX'leri, `stage2/runs/`, `models/*.pt`, `ROKETSAN HACKATHON/data/` (resmî paket), `*.pth`, `web/node_modules`, `web/dist`. Commit'ten önce `git status`'a bak.
+10. **Git'e girmeyecekler:** `.env`, `ROKETSAN HACKATHON/dataset/`, organizatör PDF/PPTX'leri, `stage2/runs/`, `models/*.pt`, `ROKETSAN HACKATHON/data/` (resmî paket), `*.pth`, `web/node_modules`, `web/dist`, `web/public/terrain/` (`make terrain` indirir). Commit'ten önce `git status`'a bak.
 
 ## 6. Nereyi değiştireyim? (görev → dosya)
 
 | Görev | Nereye dokunulur | Sonra çalıştır |
 |---|---|---|
 | **Kaggle ekibinin modeli (D-FINE-M)** | `config.yaml → detector.dfine` (`weights`, `input_size` [800, 1408], `class_names` indeks sırası [car, truck, van, bus]); yükleyici `perception/dfine.py` (orijinal D-FINE anahtarları → transformers, strict). Yeni bir kontrol noktası gelirse aynı yol; ultralytics `.pt` için `kind: ultralytics` | `python3 scripts/compare_detectors.py --kind dfine` → recall, eşleme mesafeleri, track'siz tespitler, değişen seviyeler; `tests/unit/test_dfine.py`; sonra `τ_op`, `gate_m`, `floor_high_untracked_min_conf` ayarı (kalibrasyonla) |
-| Risk ağırlığı / eşik | `config.yaml → risk` | `make check`, `make batch` (seviye dağılımı), `make demo-check` |
-| Yeni risk faktörü | `risk/features.py` (+ gerekirse `floors.py`), ağırlığı `config.py`+`config.yaml` | birim testi ekle |
+| Risk kenarları / bantlar / tabanlar | `config.yaml → risk` (yetenek sınıf puanları, niyet göstergesi puanları, bant eşikleri, mesafe bantları); matris `risk/scoring.py`, tabanlar `risk/floors.py` | `make check`, `make batch` (seviye dağılımı), `make demo-check` |
+| Yeni risk faktörü | `risk/features.py` (hangi kenara yazıldığını `dimension` ile belirt; yaklaşma yalnızca niyette, ETA kenar değil), puanı `config.py`+`config.yaml` | birim testi ekle |
 | Rapor ayrıştırma / doğrulama | `reports/parser.py`, `reports/verifier.py` | `tests/unit/test_reports.py` |
 | Brief dili | yeni `agent/prompts/analyst_vN.md` + `llm.prompt_version` | `scripts/precompute.py` |
 | Yeni sohbet aracı | `agent/tools.py` (`TOOL_SPECS` + handler; koordinat sızdırmadan, sayımları kendisi versin) + `prompts/chat_vN.md` | `tests/contract/test_chat.py` |
 | Yeni API ucu | `service.py` metodu → `interfaces/api.py` ince uç → `web/src/lib/api.ts` + `types.ts` | `tests/integration/test_api.py` |
 | Arayüz ekranı/bileşeni | `web/src/pages/*`, `web/src/components/*`, stil `web/src/styles.css` | `cd web && npm run typecheck && npm run build`, `make ui-test`, tarayıcıda dene |
-| Risk kalibrasyonu | Ekip `#/label` ile kör etiketler → `make calibrate` → `runs/calibration.md`'ye göre `config.yaml → risk` | recall %100 ve yanlış alarm ≤ %20 hedefi; seviye değişirse `config.yaml → demo` ve `DEMO.md` |
 | Demo senaryosu | `stage2/DEMO.md`, `config.yaml → demo` | `make demo-check`, `make demo-check-chat` |
 | Resmî veri paketi | önce `make validate` (ya da `SENTINEL_DATA_DIR=/yol python3 scripts/validate_data.py`); format farkı yalnızca `data/adapters.py`'de düzeltilir | `make check` |
 
@@ -169,7 +168,7 @@ python3 -m sentinel evaluate img_000860      # (PYTHONPATH=src ya da make instal
 - **Kök `.gitignore`** GitHub'ın Python şablonudur ve `lib/` kuralı içerir; `web/src/lib/` için istisna vardır. Yeni bir `lib` klasörü eklersen istisna gerekebilir.
 - **Mac'te MPS, Docker'da CPU:** tespit sonuçları küçük farklar gösterebilir; demo önbellekten gelir.
 - **Arayüz renkleri Astro UXDS tokenleridir** (`web/src/styles.css` başı). Durum rengini metin olarak kullanma; metin için `--tx-critical` gibi açık tonlar var. Yeni bir renk eklersen `make ui-test` içindeki kontrast testi (≥ 6:1) yakalar.
-- **Seviye dağılımı henüz kalibre edilmedi** (D-FINE ile 40 karenin 25'i YÜKSEK/KRİTİK; track'siz gerçek araçlar artık görünüyor). Kalibrasyon altın setle yapılacak; ağırlıkları tek kareye göre ayarlama.
+- **Risk modeli Yetenek–Fırsat–Niyet (C-O-I):** seviye bantlardan matrisle verilir, skor yalnızca sıralar. Altın set / kalibrasyon yapılmıyor (ekip kararı); eşikleri tek kareye göre değil dağılıma ve demo karelerine bakarak ayarla (D-FINE ile şu an DÜŞÜK 16 · ORTA 14 · YÜKSEK 6 · KRİTİK 4). Dur-kalk skora girmez: bu veride neredeyse her araç bekle-ilerle yapıyor. Güveni τ_op altındaki kutunun sınıfı 'bilinmiyor' sayılır; sınıf bilgisi yalnızca bu ve önceki karelerden gelir.
 
 ## 8. Komut özeti (`stage2/` içinden)
 
@@ -185,6 +184,7 @@ make calibrate      altın set ↔ sistem + ağırlık duyarlılığı   make de
 make stopwatch      kronometre testi özeti
 python3 scripts/precompute.py            40 kare için tespit + LLM brief önbelleği
 python3 scripts/compare_detectors.py     yeni detektör kabul raporu
+make terrain                             ana harita 3B arazi karoları (DEM + doku) → web/public/terrain; yalnızca görsel
 python3 -m sentinel reports --zone "Dogu Yolu"    raporların zaman-duyarlı doğrulaması
 ```
 

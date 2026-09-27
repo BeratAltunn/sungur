@@ -1,4 +1,6 @@
 import type {
+  ChatItem,
+  ChatVocab,
   ChatTurn,
   Decision,
   EvidencePacket,
@@ -11,8 +13,10 @@ import type {
   MapContext,
   ShiftHandover,
   ShiftSummary,
+  Suggestion,
   TraceStep,
   TriageRow,
+  VehicleDay,
 } from "./types";
 
 /** Errors in operational terms: what happened, what still works, what to do. The HTTP code stays at the end
@@ -97,6 +101,9 @@ async function ndjson(path: string, init: RequestInit, onEvent: (ev: LiveEvent) 
   }
 }
 
+/** What the backend needs of a chat item (it resolves tracks and levels itself). */
+const wire = (c: ChatItem) => (c.kind === "vehicle" ? { kind: c.kind, image_id: c.image_id, ref: c.ref } : { kind: c.kind, image_id: c.image_id });
+
 export const api = {
   health: () => http<Health>("/api/health"),
   summary: () => http<ShiftSummary>("/api/summary"),
@@ -104,22 +111,43 @@ export const api = {
   impact: () => http<ImpactReport>("/api/impact"),
   triage: () => http<TriageRow[]>("/api/triage"),
   map: () => http<MapContext>("/api/map"),
+  vehicles: () => http<VehicleDay>("/api/vehicles"),
+  /** Operator switch for LLM queries (brief + chat); off → nothing is sent to the model. */
+  setLlm: (enabled: boolean) => http<{ enabled: boolean }>("/api/llm", { method: "POST", body: JSON.stringify({ enabled }) }),
   frame: (id: string) => http<FrameResponse>(`/api/frames/${id}`),
   packet: (id: string) => http<EvidencePacket>(`/api/frames/${id}/packet`),
   tracks: (id: string) => http<FrameTracks>(`/api/frames/${id}/tracks`),
   trace: (runId: string) => http<TraceStep[]>(`/api/runs/${runId}/trace`),
   imageUrl: (id: string) => `/api/frames/${id}/image`,
+  /** One vehicle cut out of its frame around its detection box. */
+  cropUrl: (id: string, ref: string) => `/api/frames/${id}/vehicles/${encodeURIComponent(ref)}/crop`,
   evaluate: (id: string, live: boolean) =>
     http<FrameResponse>(`/api/frames/${id}/evaluate?live=${live}`, { method: "POST" }),
   /** Same run, streamed: step start/end, the packet after step 5, then the result. */
   evaluateStream: (id: string, live: boolean, onEvent: (ev: LiveEvent) => void) =>
     ndjson(`/api/frames/${id}/evaluate/stream?live=${live}`, { method: "POST" }, onEvent),
-  chat: (question: string, history: { role: string; content: string }[], imageId: string | null, signal?: AbortSignal) =>
+  chat: (
+    question: string,
+    history: { role: string; content: string }[],
+    imageId: string | null,
+    context: ChatItem[],
+    signal?: AbortSignal,
+  ) =>
     http<ChatTurn>("/api/chat", {
       method: "POST",
-      body: JSON.stringify({ question, history, image_id: imageId }),
+      body: JSON.stringify({ question, history, image_id: imageId, context: context.map(wire) }),
       signal,
     }),
+  /** Completion vocabulary for the chat box (one request per page load; matching happens in the browser). */
+  vocab: () => http<ChatVocab>("/api/chat/vocab"),
+  /** Questions for the situation: what is in the chat's context, else the frame, else the queue. */
+  suggestions: (imageId: string | null, context: ChatItem[]) =>
+    context.length
+      ? http<{ suggestions: Suggestion[] }>("/api/chat/suggestions", {
+          method: "POST",
+          body: JSON.stringify({ image_id: imageId, context: context.map(wire) }),
+        })
+      : http<{ suggestions: Suggestion[] }>(`/api/chat/suggestions${imageId ? `?image_id=${imageId}` : ""}`),
   goldProgress: (labeler: string) =>
     http<{ labeler: string; done: Record<string, Level>; order: string[]; total: number }>(
       `/api/gold/${encodeURIComponent(labeler)}`,

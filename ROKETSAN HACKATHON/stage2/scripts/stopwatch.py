@@ -41,17 +41,26 @@ QUESTIONS = """Kare için şu 5 soruyu cevaplayın (cevapları aşağıda kayded
   4. Son 2 saatteki ilgili raporlardan hangileri kanıtla çelişiyor? (sayı)
   5. Bu kare için risk seviyesi: DÜŞÜK / ORTA / YÜKSEK / KRİTİK"""
 
-MANUAL_KIT = """ELLE ANALİZ: sistemi (arayüz, CLI) KULLANMAYIN. Yalnızca ham dosyalar:
-  - görüntü:  stage2_dev_data/images/{img}.jpg
-  - köşe koordinatları ve çekim saati: stage2_dev_data/image_meta.json  → "{img}"
-  - hareket kayıtları: stage2_dev_data/tracks.csv  (track_id,time,lat,lon; 5 dk aralıklı)
-  - saha raporları: stage2_dev_data/field_reports.json
-  - üs ve bölgeler: stage2_dev_data/zones.json
+MANUAL_KIT = """ELLE ANALİZ: sistemi (arayüz, CLI, sohbet) ve yapay zekâ araçlarını KULLANMAYIN. Yalnızca ham dosyalar
+({data}):
+  - görüntü:  images/{img}.jpg
+  - köşe koordinatları ve çekim saati: image_meta.json  → "{img}"
+  - hareket kayıtları: tracks.csv  (track_id,time,lat,lon; 5 dk aralıklı)
+  - saha raporları: field_reports.json
+  - üs ve bölgeler: zones.json
   Hesap makinesi, tablo programı ve harita (ör. Google Maps'te koordinat arama) serbest."""
 
 SYSTEM_KIT = (
     """SİSTEMLE ANALİZ: http://127.0.0.1:8000/#/frame/{img} adresini açın ve cevapları ekrandan okuyun."""
 )
+
+
+def _data_dir() -> Path:
+    """The package the system runs on (config.yaml → data_dir / SENTINEL_DATA_DIR), so both modes see the same data."""
+    sys.path.insert(0, str(ROOT / "src"))
+    from sentinel.config import load_settings
+
+    return load_settings().data_path.resolve()
 
 
 _LEVELS = {"dusuk": "DÜŞÜK", "orta": "ORTA", "yuksek": "YÜKSEK", "kritik": "KRİTİK"}
@@ -71,7 +80,7 @@ def ask(prompt: str) -> str:
 
 
 def run(mode: str, img: str, who: str) -> None:
-    print("\n" + (MANUAL_KIT if mode == "manual" else SYSTEM_KIT).format(img=img))
+    print("\n" + (MANUAL_KIT if mode == "manual" else SYSTEM_KIT).format(img=img, data=_data_dir()))
     print("\n" + QUESTIONS)
     ask("\nHazır olunca Enter'a basın; süre başlar… ")
     t0 = time.monotonic()

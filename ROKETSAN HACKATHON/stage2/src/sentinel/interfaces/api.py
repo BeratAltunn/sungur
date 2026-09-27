@@ -14,10 +14,11 @@ import threading
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.encoders import jsonable_encoder
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -111,6 +112,12 @@ def map_context() -> dict:
     return svc().map_context()
 
 
+@app.get("/api/vehicles")
+def vehicles() -> dict:
+    """Every vehicle's path over the day, with its detected class and level where a frame matched it."""
+    return svc().vehicles()
+
+
 @app.get("/api/frames/{image_id}")
 def frame(image_id: str):
     _check_frame(image_id)
@@ -139,6 +146,18 @@ def frame_image(image_id: str):
     if not path.exists():
         raise HTTPException(404, "görüntü dosyası yok")
     return FileResponse(path)
+
+
+@app.get("/api/frames/{image_id}/vehicles/{vehicle_ref}/crop")
+def vehicle_crop(image_id: str, vehicle_ref: str):
+    """One vehicle cut out of its frame, around its detection box (the map's vehicle card)."""
+    _check_frame(image_id)
+    if not svc().repo.image_path(image_id).exists():
+        raise HTTPException(404, "görüntü dosyası yok")
+    try:
+        return Response(svc().vehicle_crop(image_id, vehicle_ref), media_type="image/jpeg")
+    except KeyError:
+        raise HTTPException(404, f"{image_id} karesinde {vehicle_ref} yok") from None
 
 
 @app.get("/api/runs/{run_id}/trace")
@@ -187,10 +206,18 @@ def evaluate_stream(image_id: str, live: bool = False):
     return StreamingResponse(lines(), media_type="application/x-ndjson")
 
 
+class ContextIn(BaseModel):
+    kind: Literal["vehicle", "frame"]
+    image_id: str
+    ref: str | None = None  # vehicle ref within image_id (V7)
+
+
 class ChatIn(BaseModel):
     question: str
     history: list[dict] = []
     image_id: str | None = None
+    vehicle_ref: str | None = None  # older single-vehicle form: a vehicle of image_id
+    context: list[ContextIn] = []  # what the operator put in the chat (≤ 4, extra items dropped)
 
 
 @app.post("/api/chat")
@@ -199,8 +226,43 @@ def chat(body: ChatIn) -> dict:
     q = body.question.strip()
     if not q:
         raise HTTPException(422, "soru boş")
-    turn, run_id = svc().chat(q[:2000], body.history[-8:], body.image_id)
+    ctx = [c.model_dump() for c in body.context]
+    turn, run_id = svc().chat(q[:2000], body.history[-8:], body.image_id, body.vehicle_ref, ctx)
     return {**turn.model_dump(), "run_id": run_id}
+
+
+@app.get("/api/chat/suggestions")
+def chat_suggestions(image_id: str | None = None, vehicle_ref: str | None = None) -> dict:
+    """Questions for the current situation (rule-based, no LLM call)."""
+    return {"suggestions": [s.model_dump() for s in svc().chat_suggestions(image_id, vehicle_ref)]}
+
+
+@app.get("/api/chat/vocab")
+def chat_vocab() -> dict:
+    """What the chat box can complete (ids, zones, times); loaded once by the UI, never per key press."""
+    return svc().chat_vocab()
+
+
+class SuggestIn(BaseModel):
+    image_id: str | None = None
+    context: list[ContextIn] = []
+
+
+@app.post("/api/chat/suggestions")
+def chat_suggestions_for(body: SuggestIn) -> dict:
+    """Questions for what the operator put together in the chat (several vehicles and frames)."""
+    ctx = [c.model_dump() for c in body.context]
+    return {"suggestions": [s.model_dump() for s in svc().chat_suggestions(body.image_id, context=ctx)]}
+
+
+class LlmSwitchIn(BaseModel):
+    enabled: bool
+
+
+@app.post("/api/llm")
+def llm_switch(body: LlmSwitchIn) -> dict:
+    """Operator switch: off → no LLM request is sent (briefs from the LLM cache or the template, chat says off)."""
+    return {"enabled": svc().set_llm_enabled(body.enabled)}
 
 
 class GoldIn(BaseModel):
