@@ -1,0 +1,22 @@
+print_freq: 50
+
+# If false, skips per-video COCO eval (no "VIDEO ID ..." / per-video mAP); faster HP tuning.
+# Full-dataset COCO bbox AP (Running per image evaluation...) still runs.
+eval_per_video_map: true
+
+output_dir: './logs'
+checkpoint_freq: 12
+
+sync_bn: True
+find_unused_parameters: False
+
+use_amp: False
+scaler:
+  type: GradScaler
+  enabled: True
+
+use_ema: False
+ema:
+  type: ModelEMA
+  decay: 0.9999
+  warmups: 1000

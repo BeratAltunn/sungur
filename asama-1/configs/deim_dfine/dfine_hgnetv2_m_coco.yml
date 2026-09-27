@@ -1,0 +1,132 @@
+__include__: [
+  '../dataset/coco_detection.yml',
+  '../runtime.yml',
+  '../base/dataloader.yml',
+  '../base/optimizer.yml',
+  '../base/dfine_hgnetv2.yml',
+]
+
+output_dir: /experiments/ir_trainv18_r1b_cp_prod_brighter
+tuning: /pretrained_weights/dfine_m_obj365.pth
+sliding_nms_thresh: 0.7
+
+eval_per_video_map: true
+# Run a SECOND eval each eval cycle on the test_dataloader (which carries the
+# eval aug, e.g. a mild AGCRenormSim). It mirrors the val pass exactly — same
+# metrics, per-video (video-based) maps, operating points and AR — logged under
+# the 'TestDataset/*' namespace in TensorBoard + printed as '[TestDataset eval] ...'. The
+# original val still drives checkpoints. Set False to disable the extra pass.
+eval_low_contrast: True
+debug_images: False
+debug_dir: debug_crops_randomcrop
+freeze_backbone_iters: 40000
+freeze_neck_iters: 40000
+
+# 32k sample = her 2 epoch'ta 1 eval (toplam 10 eval)
+eval_freq: 80000
+
+# Global-step (iter) üst sınırı. eval_freq ile aynı sample-birimi cinsinden ve
+# total_batch_size'a bölünüyor; ulaşıldığında eğitim sonlanır. 0 = sınır yok.
+max_iters: 480001
+
+epoches: 20
+
+num_queries_test: [1200]
+# Inference method for the training-time debug video (generate_debug_video_from_video).
+# Options:
+#   sliding - current sliding-window inference (crop + stitch)
+#   normal  - single-pass inference matching validation (ResizeCV + ToTensor). Alias: opencv.
+#   pil     - single-pass inference matching inference_torch.py (PIL Resize + ToTensor)
+debug_video_method: normal
+draw_thr: 0.6
+target_precision: 0.9
+recall_values: [0.5, 0.6, 0.7, 0.8, 0.9]
+recall_weights: [1, 2, 2, 1, 1]
+operating_point_precisions: [0.95, 0.98, 0.99, 1.0]
+# Report Average Recall (AR) at the single IoU=0.30 (start_iou) instead of the
+# averaged IoU=0.30:0.95 range. AR@maxDets=100 is also logged to TensorBoard.
+ar_at_start_iou: True
+ar_iou: 0.30
+ar_maxdets: 6
+
+use_amp: False
+use_ema: True
+
+DEIM:
+  backbone: HGNetv2
+
+HGNetv2:
+  pretrained: False
+  local_model_dir: pretrained_backbone/PPHGNetV2_B2_stage1.pth
+  name: 'B2'
+  return_idx: [1, 2, 3]
+  freeze_at: -1
+  freeze_norm: False
+  use_lab: True
+
+DFINETransformer:
+  num_layers: 4  # 5 6
+  eval_idx: -1  # -2 -3
+  num_queries: 300
+
+PostProcessor:
+  num_top_queries: 300
+
+HybridEncoder:
+  in_channels: [384, 768, 1536]
+  hidden_dim: 256
+  depth_mult: 0.67
+
+optimizer:
+  type: AdamW
+  params:
+    -
+      # Phase 3 (epoch 6+): Backbone
+      # Güncellendi: 0.000681647382751901 / 21
+      params: '^(?=.*backbone)(?!.*norm|bn).*$'
+      lr: 0.00005
+    -
+      params: '^(?=.*backbone)(?=.*norm|bn).*$'
+      lr: 0.00005
+      weight_decay: 0.
+    -
+      params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn|bias)).*$'
+      weight_decay: 0.
+
+  # Phase 1+2 (epoch 0-6): Head/Neck için global LR = best_lr
+  lr: 0.0001
+  betas: [0.9, 0.999]
+  weight_decay: 0.0005
+
+lr_scheduler:
+  type: MultiStepLR
+  # Phase 4: Son %20'de LR 10x drop (1652064 sample = epoch 12)
+  milestones: [200000, 520000]
+  gamma: 0.1
+
+train_dataloader:
+  shuffle: True
+  total_batch_size: 8 # total batch size equals to 32 (4 * 8)
+  num_workers: 4
+
+val_dataloader:
+  shuffle: False
+  total_batch_size: 1
+  num_workers: 1
+
+lr_warmup_scheduler:
+  type: LinearWarmup
+  warmup_duration: 10000 # 2 epoch kademeli ısınma
+
+DEIMCriterion:
+  weight_dict: {loss_vfl: 1, loss_bbox: 5, loss_giou: 2, loss_fgl: 0.15, loss_ddf: 1.5}
+  losses: ['vfl', 'boxes', 'local']
+  alpha: 0.75
+  gamma: 2.5
+  reg_max: 32
+
+  matcher:
+    type: HungarianMatcher
+    weight_dict: {cost_class: 2, cost_bbox: 5, cost_giou: 2}
+    alpha: 0.25
+    gamma: 2.0

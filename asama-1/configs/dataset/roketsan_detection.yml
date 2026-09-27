@@ -1,0 +1,65 @@
+# Level Up AI / ROKETSAN hackathon (Kaggle). Build the json files first:
+#   python tools/dataset/kaggle_csv_to_coco.py --root dataset --val_ratio 0.1
+# Labels: 0 car, 1 truck, 2 van, 3 bus.
+task: detection
+
+evaluator:
+  type: CocoEvaluator
+  iou_types: ['bbox', ]
+
+num_classes: 4
+remap_mscoco_category: False
+
+train_dataloader:
+  type: DataLoader
+  dataset:
+    random_sample: True
+    phase: train
+    type: CocoDetection
+    img_folder: ./dataset/train/images
+    ann_file: ./dataset/annotations/instances_train.json
+    return_masks: False
+    transforms:
+      type: Compose
+      ops: ~
+  shuffle: True
+  num_workers: 4
+  drop_last: True
+  collate_fn:
+    type: BatchImageCollateFunction
+
+val_dataloader:
+  type: DataLoader
+  dataset:
+    phase: val
+    type: CocoDetection
+    img_folder: ./dataset/train/images
+    ann_file: ./dataset/annotations/instances_val.json
+    return_masks: False
+    transforms:
+      type: Compose
+      ops: ~
+  shuffle: False
+  num_workers: 4
+  drop_last: False
+  collate_fn:
+    type: BatchImageCollateFunction
+
+test_video: ~
+
+test_dataloader:
+  type: DataLoader
+  dataset:
+    phase: val
+    type: CocoDetection
+    img_folder: ./dataset/train/images
+    ann_file: ./dataset/annotations/instances_val.json
+    return_masks: False
+    transforms:
+      type: Compose
+      ops: ~
+  shuffle: False
+  num_workers: 4
+  drop_last: False
+  collate_fn:
+    type: BatchImageCollateFunction

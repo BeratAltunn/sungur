@@ -20,7 +20,7 @@ Aşama 2 belgesi (jüri için): `asama-2/README.md` · ürün/tasarım gerekçel
 sungur/                                   ← git kökü
   README.md                               ← depo özeti (Aşama 1 + Aşama 2)
   AGENTS.md  CLAUDE.md  .gitignore
-  asama-2/                                ← AŞAMA 2 (bu belge). Aşama 1 ayrıca asama-1/ olarak eklenecek
+  asama-2/                                ← AŞAMA 2 (bu belge). Aşama 1 (D-FINE-M eğitim kodu) asama-1/'de
     README.md                             ← Aşama 2 belgesi (jüri için: problem, mimari, risk modeli, kurulum, demo)
     PROJECT_DESIGN.md  STAGE2_ARCHITECTURE.md
     data/                                 ← RESMÎ Aşama 2 paketi (40 kare, 226 track, 137 rapor) — GIT'E GİRMEZ, ekip ayrıca paylaşır

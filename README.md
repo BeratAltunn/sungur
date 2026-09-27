@@ -4,7 +4,7 @@ Bu depo hackathonun iki aşamasının kodunu tutar.
 
 | Aşama | Klasör | İçerik |
 |---|---|---|
-| **Aşama 1** | `asama-1/` *(ayrıca eklenecek)* | Kaggle yarışması: drone görüntülerinde araç tespiti (car · truck · van · bus). Takımın D-FINE-M modeli Aşama 2'de tespit adımı olarak kullanılır. |
+| **Aşama 1** | [`asama-1/`](asama-1/) | Kaggle yarışması: drone görüntülerinde araç tespiti (car · truck · van · bus). D-FINE-M (DEIM) eğitim ve çıkarım kodu: `train.py`, `predict_submission.py`, `predict_tiled.py`, `eval_map50.py`, `configs/`. Kontrol noktası (AP50 0,712, ~300 MB) git'e girmez. Bu model Aşama 2'de tespit adımıdır. |
 | **Aşama 2** | [`asama-2/`](asama-2/) | **DİZDAR** — saha raporu destekli üs risk ajanı: drone karelerini, hareket izlerini ve saha raporlarını birleştirip operatöre kareleri risk sırasıyla, kanıta bağlı Türkçe brief'lerle sunar. |
 
 ## Aşama 2 — DİZDAR, tek bakışta
@@ -37,7 +37,7 @@ docker compose up --build -d        # arayüz: http://127.0.0.1:8000
 ```
 README.md               bu dosya
 AGENTS.md  CLAUDE.md    kod asistanları ve geliştiriciler için Aşama 2 kuralları ve kurulum
-asama-1/                Aşama 1 (ayrıca eklenecek)
+asama-1/                Aşama 1: D-FINE-M eğitim/çıkarım kodu (engine/, configs/, train.py, predict_*.py)
 asama-2/                Aşama 2: DİZDAR
   README.md             Aşama 2 belgesi
   PROJECT_DESIGN.md     ürün ve tasarım gerekçeleri
@@ -46,4 +46,4 @@ asama-2/                Aşama 2: DİZDAR
   stage2_dev_data/      dev verisi (resmî paketle aynı senaryo, küçük görüntüler)
 ```
 
-Git'e girmeyenler: resmî veri paketi (`asama-2/data/`), Kaggle verisi, organizatör belgeleri (PDF/PPTX), model ağırlıkları, `.env`.
+Git'e girmeyenler: model ağırlıkları (`*.pth`), resmî veri paketi (`asama-2/data/`), Kaggle verisi, organizatör belgeleri (PDF/PPTX), `.env`.

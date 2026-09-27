@@ -1,0 +1,55 @@
+img_height: &img_height 800
+img_width: &img_width 1408
+# Must be [H, W] -- HybridEncoder & decoder use eval_spatial_size[0]=height, [1]=width
+eval_spatial_size: [*img_height, *img_width]
+
+train_dataloader:
+  dataset:
+    aug_prob: 1.0
+    transforms:
+      type: Compose
+      ops:
+        - {type: RandomHorizontalFlip, p: 0.5}
+        - {type: RandomVerticalFlip, p: 0.0}
+        - {type: RandomRotation, degrees: 0, fill: 114, p: 0.0}
+        - {type: RandomAffine, degrees: 0, translate: [0.02, 0.02], scale: [0.9, 1.1], fill: 114, p: 0.3}
+        - {type: ColorJitter, brightness: [0.8, 1.2], contrast: [0.8, 1.2], saturation: [0.8, 1.2], hue: 0.02, p: 0.5}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ResizeCV, size: [*img_width, *img_height], interpolation: 'bilinear'}
+        - {type: ToTensor}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+      policy:
+        name: stop_epoch
+        epoch: 36
+        ops: ['RandomAffine', 'ColorJitter']
+    no_aug_transforms:
+      type: Compose
+      ops:
+        - {type: ResizeCV, size: [*img_width, *img_height], interpolation: 'bilinear'}
+        - {type: ToTensor}
+        - {type: ConvertPILImage, dtype: 'float32', scale: True}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+  collate_fn:
+    type: BatchImageCollateFunction
+    base_size: [*img_height, *img_width]
+    scales: [0.75, 0.875, 1, 1, 1.125, 1.25]
+    stop_epoch: 36
+  shuffle: True
+  total_batch_size: 16
+  num_workers: 8
+
+val_dataloader:
+  dataset:
+    transforms:
+      type: Compose
+      ops:
+        - {type: ResizeCV, size: [*img_width, *img_height], interpolation: 'bilinear'}
+        - {type: ToTensor}
+  shuffle: False
+  total_batch_size: 1
+  num_workers: 4
+  collate_fn:
+    type: BatchImageCollateFunction
+    base_size: [*img_height, *img_width]
+    val_type: None

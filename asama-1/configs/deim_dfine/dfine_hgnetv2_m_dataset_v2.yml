@@ -1,0 +1,230 @@
+# D-FINE-M baseline for the ROKETSAN / Level Up AI hackathon data (dataset_v2).
+# Self-contained: no __include__. See BASELINE_dfine_m_dataset_v2.md for how it
+# differs from the stock configs.
+#
+#   python tools/dataset/make_dataset_v2.py            # once, builds ./dataset_v2
+#   python train.py +config=configs/deim_dfine/dfine_hgnetv2_m_dataset_v2.yml
+#
+# Iteration-type knobs (eval_freq, max_iters, warmups, milestones, freeze_*_iters)
+# are in SAMPLES; YAMLConfig divides them by train_dataloader.total_batch_size.
+
+task: detection
+output_dir: ./outputs/dfine_m_dataset_v2
+tuning: ./pretrained_weights/dfine_m_obj2coco.pth   # Objects365 -> COCO D-FINE-M
+seed: 10
+
+# ---------------------------------------------------------------- data
+num_classes: 4            # 0 car, 1 truck, 2 van, 3 bus
+remap_mscoco_category: False
+
+# 87% of test images are 16:9 (1400x788 / 1360x765), so train/eval at a
+# 16:9 size close to native instead of the stock 1280x1024 stretch.
+img_width: &img_width 1024
+img_height: &img_height 576
+eval_spatial_size: [*img_height, *img_width]
+
+train_dataloader:
+  type: DataLoader
+  total_batch_size: 32
+  num_workers: 8
+  shuffle: True
+  drop_last: True
+  dataset:
+    type: CocoDetection
+    phase: train
+    img_folder: ./dataset_v2/train/images
+    ann_file: ./dataset_v2/annotations/instances_train.json
+    return_masks: False
+    random_sample: True     # plain shuffling; the IR folder-based sampler does not apply
+    aug_prob: 1.0
+    transforms:
+      type: Compose
+      ops:
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: RandomHorizontalFlip, p: 0.5}
+        - {type: RandomAffine, degrees: 0, translate: [0.02, 0.02], scale: [0.9, 1.1], fill: 114, p: 0.3}
+        - {type: ColorJitter, brightness: [0.8, 1.2], contrast: [0.8, 1.2], saturation: [0.8, 1.2], hue: 0.02, p: 0.5}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ResizeCV, size: [*img_width, *img_height], interpolation: 'bilinear'}
+        - {type: ToTensor}
+        - {type: SanitizeBoundingBoxes, min_size: 1}
+        - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+      policy:
+        name: stop_epoch
+        epoch: 36           # heavy augs off for the last epochs
+        ops: ['RandomAffine', 'ColorJitter']
+  collate_fn:
+    type: BatchImageCollateFunction
+    base_size: [*img_height, *img_width]
+    scales: [0.75, 0.875, 1, 1, 1.125, 1.25]
+    stop_epoch: 36          # multi-scale off with the heavy augs
+
+val_dataloader:
+  type: DataLoader
+  total_batch_size: 1
+  num_workers: 4
+  shuffle: False
+  drop_last: False
+  dataset:
+    type: CocoDetection
+    phase: val
+    img_folder: ./dataset_v2/val/images
+    ann_file: ./dataset_v2/annotations/instances_val.json
+    return_masks: False
+    transforms:
+      type: Compose
+      ops:
+        - {type: ResizeCV, size: [*img_width, *img_height], interpolation: 'bilinear'}
+        - {type: ToTensor}
+  collate_fn:
+    type: BatchImageCollateFunction
+    base_size: [*img_height, *img_width]
+    val_type: None
+
+# Only consumed when eval_low_contrast is True; kept pointing at val.
+test_dataloader:
+  type: DataLoader
+  total_batch_size: 1
+  num_workers: 4
+  shuffle: False
+  drop_last: False
+  dataset:
+    type: CocoDetection
+    phase: val
+    img_folder: ./dataset_v2/val/images
+    ann_file: ./dataset_v2/annotations/instances_val.json
+    return_masks: False
+    transforms:
+      type: Compose
+      ops:
+        - {type: ResizeCV, size: [*img_width, *img_height], interpolation: 'bilinear'}
+        - {type: ToTensor}
+  collate_fn:
+    type: BatchImageCollateFunction
+    base_size: [*img_height, *img_width]
+
+# ---------------------------------------------------------------- schedule
+epoches: 40
+max_iters: 0                  # 0 = run all epochs
+eval_freq: 5824               # samples -> one val pass per epoch
+freeze_backbone_iters: 0
+freeze_neck_iters: 0
+
+optimizer:
+  type: AdamW
+  params:
+    - {params: '^(?=.*backbone)(?!.*norm|bn).*$', lr: 0.00002}
+    - {params: '^(?=.*backbone)(?=.*norm|bn).*$', lr: 0.00002, weight_decay: 0.}
+    - {params: '^(?=.*(?:encoder|decoder))(?=.*(?:norm|bn|bias)).*$', weight_decay: 0.}
+  lr: 0.0002
+  betas: [0.9, 0.999]
+  weight_decay: 0.0001
+
+lr_scheduler:
+  type: MultiStepLR
+  milestones: [186368]        # samples = epoch 32 of 40
+  gamma: 0.1
+
+lr_warmup_scheduler:
+  type: LinearWarmup
+  warmup_duration: 5824       # samples = 1 epoch
+
+use_amp: True
+scaler: {type: GradScaler, enabled: True}
+use_ema: True
+ema: {type: ModelEMA, decay: 0.9999, warmups: 32000}   # samples
+sync_bn: True
+find_unused_parameters: False
+clip_max_norm: 0.1
+
+# ---------------------------------------------------------------- model (D-FINE-M)
+model: DEIM
+criterion: DEIMCriterion
+postprocessor: PostProcessor
+use_focal_loss: True
+
+DEIM: {backbone: HGNetv2, encoder: HybridEncoder, decoder: DFINETransformer}
+
+HGNetv2:
+  name: 'B2'
+  pretrained: False          # whole model comes from `tuning`
+  local_model_dir: ~
+  return_idx: [1, 2, 3]
+  freeze_at: -1
+  freeze_norm: False
+  use_lab: True
+
+HybridEncoder:
+  in_channels: [384, 768, 1536]
+  feat_strides: [8, 16, 32]
+  hidden_dim: 256
+  use_encoder_idx: [2]
+  num_encoder_layers: 1
+  nhead: 8
+  dim_feedforward: 1024
+  dropout: 0.
+  enc_act: 'gelu'
+  expansion: 1.0
+  depth_mult: 0.67
+  act: 'silu'
+
+DFINETransformer:
+  feat_channels: [256, 256, 256]
+  feat_strides: [8, 16, 32]
+  hidden_dim: 256
+  num_levels: 3
+  num_layers: 4
+  eval_idx: -1
+  num_queries: 300           # max 218 GT boxes per image
+  num_denoising: 100
+  label_noise_ratio: 0.5
+  box_noise_scale: 1.0
+  reg_max: 32
+  reg_scale: 4
+  layer_scale: 1
+  num_points: [3, 6, 3]
+  cross_attn_method: default
+  query_select_method: default
+
+PostProcessor:
+  num_top_queries: 300
+
+DEIMCriterion:
+  weight_dict: {loss_vfl: 1, loss_bbox: 5, loss_giou: 2, loss_fgl: 0.15, loss_ddf: 1.5}
+  losses: ['vfl', 'boxes', 'local']
+  alpha: 0.75
+  gamma: 2.5
+  reg_max: 32
+  matcher:
+    type: HungarianMatcher
+    weight_dict: {cost_class: 2, cost_bbox: 5, cost_giou: 2}
+    alpha: 0.25
+    gamma: 2.0
+
+# ---------------------------------------------------------------- eval / logging
+evaluator:
+  type: CocoEvaluator
+  iou_types: ['bbox']
+
+# Kaggle metric is mAP@0.5 over all predictions. COCO eval caps AP at the
+# largest maxDets (default 100); adding a 300 budget lifts that cap.
+ar_iou: 0.5
+ar_maxdets: 300
+ar_at_start_iou: False
+
+print_freq: 50
+checkpoint_freq: 10
+eval_per_video_map: False
+eval_low_contrast: False
+debug_images: False
+debug_dir: debug_crops_randomcrop
+test_video: ~
+num_queries_test: [300]
+sliding_nms_thresh: 0.7
+draw_thr: 0.5
+target_precision: 0.9
+recall_values: [0.5, 0.6, 0.7, 0.8, 0.9]
+recall_weights: [1, 2, 2, 1, 1]
+operating_point_precisions: [0.9, 0.95]
+
+# Required by YAMLConfig even when hp_tuning is off.

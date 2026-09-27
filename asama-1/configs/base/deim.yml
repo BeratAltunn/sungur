@@ -1,0 +1,46 @@
+# Dense O2O
+# img_height: &img_height 1088
+# img_width: &img_width 1088
+# train_dataloader: 
+#   dataset: 
+#     transforms:
+#       ops:
+#         # - {type: ResizeCV, size: [*img_width, *img_height], interpolation: 'bicubic'}
+#         - {type: Resize, size: [*img_width, *img_height]}#, interpolation: 3}
+#         - {type: SanitizeBoundingBoxes, min_size: 1}
+#         - {type: ConvertPILImage, dtype: 'float32', scale: True}   
+#         - {type: ConvertBoxes, fmt: 'cxcywh', normalize: True}
+#       policy:
+#         epoch: [4, 29, 50]   # list 
+#         ops: []
+#       mosaic_prob: 0
+
+#   collate_fn:
+#     mixup_prob: 0
+#     mixup_epochs: [4, 29]
+#     stop_epoch: 50    # epoch in [72, ~) stop `multiscales`
+
+# Unfreezing BN
+HGNetv2:
+  freeze_at: -1         # 0 default
+  freeze_norm: False    # True default
+
+# Activation
+DFINETransformer:
+  activation: silu
+  mlp_act: silu
+
+## Our LR-Scheduler
+# lrsheduler: flatcosine
+# lr_gamma: 0.5
+# warmup_iter: 2000
+# flat_epoch: 29    # 4 + epoch // 2, e.g., 40 = 4 + 72 / 2
+# no_aug_epoch: 8
+
+## Our Loss
+DEIMCriterion:
+
+  weight_dict: {loss_mal: 2, loss_bbox: 10, loss_giou: 2, loss_fgl: 0.15, loss_ddf: 3, loss_vf: 1, loss_vfl: 1}
+
+  losses: ['mal', 'boxes', 'local']
+  gamma: 1.5

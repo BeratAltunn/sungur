@@ -1,0 +1,100 @@
+__include__: [
+  './dfine_hgnetv2_m_coco.yml',
+  '../base/deim.yml'
+]
+
+# DİKKAT: Koşu serisi (1-5) BU DOSYAYLA KOŞMUYOR — train.py'nin default'u ve
+# clearml_task.py'nin koştuğu config ./dfine_hgnetv2_m_coco.yml (nq 300).
+# Koşu deltaları paylaşılan base'lerde (dataloader.yml, coco_detection.yml)
+# olduğundan iki config'e de akar; buradaki output_dir koşularda ETKİSİZDİR.
+output_dir: /experiments/ir_trainv13_deim_allempty_photometric_run4
+tuning: /pretrained_weights/deim_dfine_hgnetv2_m_coco_90e.pth
+sliding_nms_thresh: 0.7
+
+eval_per_video_map: true
+# Run a SECOND eval each eval cycle on the low-contrast test_dataloader (which
+# carries the eval aug, e.g. a mild AGCRenormSim). Metrics logged under
+# 'LowContrast/*' in TensorBoard + printed as '[low-contrast eval] ...'. The
+# original val still drives checkpoints. Set False to disable the extra pass.
+eval_low_contrast: True
+debug_images: False
+debug_dir: debug_crops_randomcrop
+freeze_backbone_iters: 40000
+freeze_neck_iters: 40000
+
+# 32k sample = her 2 epoch'ta 1 eval (toplam 10 eval)
+eval_freq: 80000
+
+# Global-step (iter) üst sınırı. eval_freq ile aynı sample-birimi cinsinden ve
+# total_batch_size'a bölünüyor; ulaşıldığında eğitim sonlanır. 0 = sınır yok.
+max_iters: 480001
+
+epoches: 20
+
+num_queries_test: [1200]
+# Inference method for the training-time debug video (generate_debug_video_from_video).
+# Options:
+#   sliding - current sliding-window inference (crop + stitch)
+#   normal  - single-pass inference matching validation (ResizeCV + ToTensor). Alias: opencv.
+#   pil     - single-pass inference matching inference_torch.py (PIL Resize + ToTensor)
+debug_video_method: normal
+draw_thr: 0.6
+target_precision: 0.9
+recall_values: [0.5, 0.6, 0.7, 0.8, 0.9]
+recall_weights: [1, 2, 2, 1, 1]
+
+use_amp: False
+use_ema: True
+
+ema:
+  type: ModelEMA
+  decay: 0.999
+  warmups: 500
+  start: 0
+
+optimizer:
+  type: AdamW
+  params: 
+    -
+      params: '^(?=.*backbone)(?!.*bn).*$'
+      lr: 0.00005
+    - 
+      params: '^(?=.*(?:norm|bn)).*$'
+      weight_decay: 0.
+
+  lr: 0.0001
+  betas: [0.9, 0.999]
+  weight_decay: 0.0005
+clip_max_norm: 0
+
+lr_scheduler:
+  type: MultiStepLR
+  # Phase 4: Son %20'de LR 10x drop (1652064 sample = epoch 12)
+  milestones: [200000, 520000]
+  gamma: 0.1
+
+train_dataloader:
+  shuffle: True
+  total_batch_size: 8 # total batch size equals to 32 (4 * 8)
+  num_workers: 4
+
+val_dataloader:
+  shuffle: False
+  total_batch_size: 1
+  num_workers: 1
+
+lr_warmup_scheduler:
+  type: LinearWarmup
+  warmup_duration: 1000 # 2 epoch kademeli ısınma
+
+DFINETransformer:
+  num_queries: 1200
+PostProcessor:
+  num_top_queries: 1200
+
+# DEIMCriterion:
+
+#   weight_dict: {loss_mal: 3, loss_bbox: 5, loss_giou: 6, loss_fgl: 0.3, loss_ddf: 3, loss_vf: 1, loss_vfl: 1}
+
+#   losses: ['mal', 'boxes', 'local']
+#   gamma: 1.5
