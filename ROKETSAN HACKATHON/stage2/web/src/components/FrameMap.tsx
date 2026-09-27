@@ -1,12 +1,12 @@
 import type { Map as MLMap, Marker } from "maplibre-gl";
 import { useEffect, useRef, useState } from "react";
-import { LABEL_TR, SOURCE_TR, VERDICT_CLASS, VERDICT_ICON, dec, flyMs, hhmm } from "../lib/format";
-import { QUATREFOIL, baseSymbol, vehicleSymbol } from "../lib/symbols";
+import { LABEL_TR, LEVEL_CLASS, SOURCE_TR, VERDICT_CLASS, VERDICT_ICON, dec, flyMs, hhmm } from "../lib/format";
+import { baseSymbol, classSymbol } from "../lib/symbols";
 import { levelColor, token } from "../lib/theme";
 import { bounds, circle, fullPath, grid, pathUntil, positionAt } from "../lib/geo";
 import type { FrameInfo, FrameTracks, LngLat, MapContext, ReportVerification, TrackPath } from "../lib/types";
 import { LayerMenu, useLayers } from "./LayerMenu";
-import { MapView, fc, htmlMarker, line, polygon, setGeo } from "./MapView";
+import { MAP_3D, MapView, fc, htmlMarker, line, polygon, setGeo } from "./MapView";
 import { RefText, VerdictBadge } from "./ui";
 
 export type Focus = { kind: "track"; id: string } | { kind: "report"; id: string } | null;
@@ -52,6 +52,7 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
   const { layers, toggle } = useLayers<FrameLayer>("layers_frame", { others: true, pins: true, projections: true, rings: true });
   const vehicleMarkers = useRef<Record<string, Marker>>({});
   const pinMarkers = useRef<Record<string, Marker>>({});
+  const staticMarkers = useRef<Marker[]>([]); // base + zone labels: rebuilt with the style, never duplicated
   const [ready, setReady] = useState(0);
   // Which tracks the operator wants on the map (display only; the evidence is unchanged). All shown by default.
   const [hidden, setHidden] = useState<Set<string>>(() => new Set());
@@ -88,20 +89,75 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
     mapRef.current = map;
     Object.values(vehicleMarkers.current).forEach((m) => m.remove());
     Object.values(pinMarkers.current).forEach((m) => m.remove());
+    staticMarkers.current.forEach((m) => m.remove());
     vehicleMarkers.current = {};
     pinMarkers.current = {};
+    staticMarkers.current = [];
 
     setGeo(map, "grid", fc(grid(ctx.base.center, GRID.halfM, GRID.stepM).map((l) => line(l))));
+    // Grid and distance rings styled exactly as on the main map (readable on the terrain texture too).
     if (!map.getLayer("grid"))
-      map.addLayer({ id: "grid", type: "line", source: "grid", paint: { "line-color": token("--muted"), "line-opacity": 0.14, "line-width": 1 } });
-    setGeo(map, "rings", fc(ctx.rings.map((r) => line(r.ring))));
-    map.addLayer({ id: "rings", type: "line", source: "rings", paint: { "line-color": token("--line"), "line-dasharray": [3, 3] } });
-    map.addSource("frame-img", { type: "image", url: imageUrl, coordinates: frameCorners as never });
-    map.addLayer({ id: "frame-img", type: "raster", source: "frame-img", paint: { "raster-opacity": 0.95 } });
+      map.addLayer({
+        id: "grid",
+        type: "line",
+        source: "grid",
+        paint: { "line-color": token("--muted"), "line-opacity": map.getTerrain() ? 0.3 : 0.14, "line-width": 1 },
+      });
+    setGeo(map, "rings", fc(ctx.rings.map((r) => line(r.ring, { km: r.km }))));
+    if (!map.getLayer("rings"))
+      map.addLayer({
+        id: "rings",
+        type: "line",
+        source: "rings",
+        paint: { "line-color": token("--muted"), "line-width": 1.25, "line-dasharray": [3, 3], "line-opacity": 0.7 },
+      });
+    if (!map.getSource("frame-img")) map.addSource("frame-img", { type: "image", url: imageUrl, coordinates: frameCorners as never });
+    if (!map.getLayer("frame-img"))
+      map.addLayer({ id: "frame-img", type: "raster", source: "frame-img", paint: { "raster-opacity": 0.95 } });
     setGeo(map, "frame-outline", fc([line([...frameCorners, frameCorners[0]])]));
-    map.addLayer({ id: "frame-outline", type: "line", source: "frame-outline", paint: { "line-color": token("--text-2"), "line-width": 1.5 } });
+    if (!map.getLayer("frame-outline"))
+      map.addLayer({ id: "frame-outline", type: "line", source: "frame-outline", paint: { "line-color": token("--text-2"), "line-width": 1.5 } });
 
-    for (const id of ["paths-full", "paths-sofar", "report-circle", "links"]) setGeo(map, id, fc([]));
+    for (const id of ["paths-full", "paths-sofar", "report-circle", "links", "projections"]) setGeo(map, id, fc([]));
+    if (!map.getLayer("paths-full")) addEvidenceLayers(map);
+
+    staticMarkers.current.push(htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base"));
+    // Every zone name, as on the main map; the frame's own zone stands out.
+    for (const z of ctx.zones)
+      staticMarkers.current.push(
+        htmlMarker(map, z.center, z.label, `mk mk-zone${z.name === frame.zone ? " mk-zone-active" : ""}`),
+      );
+    // Vehicles as on the main map: class silhouette in the level colour; the V-number ties it to the brief.
+    // Tracks without a detection in this frame (undetected, report-related) are the main map's grey dots.
+    for (const tr of data.tracks) {
+      const mark =
+        tr.role === "vehicle"
+          ? `<span class="mk-v ${blind || !tr.level ? "level-quiet" : LEVEL_CLASS[tr.level]}">${classSymbol(tr.label ?? "unknown")}</span>` +
+            `<span class="mk-lbl">${tr.vehicle_ref ?? tr.track_id}</span>`
+          : `<span class="mk-vdot"></span>`;
+      const m = htmlMarker(map, [0, 0], mark, `mk mk-veh mk-${tr.role}`, () => onFocusRef.current({ kind: "track", id: tr.track_id }));
+      m.getElement().style.setProperty("--c", trackColor(tr));
+      m.getElement().title = `${tr.vehicle_ref ?? ""} ${tr.track_id}${tr.label ? ` ${LABEL_TR[tr.label]}` : ""}`.trim();
+      vehicleMarkers.current[tr.track_id] = m;
+    }
+    for (const p of data.report_pins) {
+      const m = htmlMarker(
+        map,
+        [p.lon, p.lat],
+        `<span>${VERDICT_ICON[p.verdict]}</span>${p.report_id}`,
+        `mk mk-pin ${VERDICT_CLASS[p.verdict]}`,
+        () => onFocusRef.current({ kind: "report", id: p.report_id }),
+      );
+      m.getElement().title = `${p.report_id} · ${p.time} · ${p.verdict}`;
+      pinMarkers.current[p.report_id] = m;
+    }
+    fitAll();
+    setReady((r) => r + 1);
+  };
+  const onFocusRef = useRef(onFocus);
+  onFocusRef.current = onFocus;
+
+  function addEvidenceLayers(map: MLMap) {
     map.addLayer({
       id: "paths-full",
       type: "line",
@@ -124,40 +180,13 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
     });
 
     // Projection vectors (vehicle at capture → base), drawn under the markers.
-    setGeo(map, "projections", fc([]));
     map.addLayer({
       id: "projections",
       type: "line",
       source: "projections",
       paint: { "line-color": ["get", "color"], "line-width": 2, "line-dasharray": [1.5, 1.5], "line-opacity": 0.9 },
     });
-
-    htmlMarker(map, ctx.base.center, baseSymbol(ctx.base.name), "mk mk-base");
-    // Every zone name, as on the main map; the frame's own zone stands out.
-    for (const z of ctx.zones) htmlMarker(map, z.center, z.label, `mk mk-zone${z.name === frame.zone ? " mk-zone-active" : ""}`);
-    for (const tr of data.tracks) {
-      const label = tr.vehicle_ref ? `${tr.vehicle_ref}` : tr.track_id;
-      const m = htmlMarker(map, [0, 0], vehicleSymbol(label), `mk mk-veh mk-${tr.role}`, () => onFocusRef.current({ kind: "track", id: tr.track_id }));
-      m.getElement().style.setProperty("--c", trackColor(tr));
-      m.getElement().title = `${tr.vehicle_ref ?? ""} ${tr.track_id}`.trim();
-      vehicleMarkers.current[tr.track_id] = m;
-    }
-    for (const p of data.report_pins) {
-      const m = htmlMarker(
-        map,
-        [p.lon, p.lat],
-        `<span>${VERDICT_ICON[p.verdict]}</span>${p.report_id}`,
-        `mk mk-pin ${VERDICT_CLASS[p.verdict]}`,
-        () => onFocusRef.current({ kind: "report", id: p.report_id }),
-      );
-      m.getElement().title = `${p.report_id} · ${p.time} · ${p.verdict}`;
-      pinMarkers.current[p.report_id] = m;
-    }
-    fitAll();
-    setReady((r) => r + 1);
-  };
-  const onFocusRef = useRef(onFocus);
-  onFocusRef.current = onFocus;
+  }
 
   // Time slider: move vehicles, extend the "so far" paths. Pure display; runs every tick.
   useEffect(() => {
@@ -243,6 +272,8 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
       <MapView
         onReady={onReady}
         initial={{ center: [frame.center_lon, frame.center_lat], zoom: 13 }}
+        threeD={MAP_3D}
+        terrain
         controls={<LayerMenu defs={FRAME_LAYERS} layers={layers} onToggle={toggle} />}
       />
       {/* Projection readout (HUD): the soonest arrival, first in the backend's order; vectors are on the map. */}
@@ -262,10 +293,11 @@ export function FrameMap({ ctx, frame, imageUrl, data, t, focus, onFocus, blind 
           dost (üs)
         </span>
         <span>
-          <svg className="sym sym-legend" viewBox="-1 -1 22 22" aria-hidden>
-            <path d={QUATREFOIL} />
-          </svg>{" "}
-          araç: kimliği belirsiz{blind ? "" : ", renk = risk"}
+          <span className="mk-v level-quiet legend-veh" aria-hidden dangerouslySetInnerHTML={{ __html: classSymbol("car") }} />{" "}
+          araç: sınıf silueti{blind ? "" : ", renk = risk"}
+        </span>
+        <span>
+          <span className="mk-vdot legend-dot" aria-hidden /> karede tespit edilmeyen iz
         </span>
         <span>
           <span className="legend-dash" aria-hidden /> tahmini varış (çekim anı)

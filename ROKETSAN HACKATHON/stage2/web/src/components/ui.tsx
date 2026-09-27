@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { ApiError, api } from "../lib/api";
-import { DECISION_TR, LEVEL_CLASS, LEVEL_ICON, VERDICT_CLASS, VERDICT_ICON, dec, splitRefs } from "../lib/format";
+import { ApiError } from "../lib/api";
+import { DECISION_TR, LEVEL_CLASS, LEVEL_ICON, VERDICT_CLASS, VERDICT_ICON, splitRefs } from "../lib/format";
 import type { Decision, Health, Level, ShiftSummary, VerdictT } from "../lib/types";
 
 /** Level is always icon + text + colour (never colour alone). Tone "auto" fills KRİTİK (the one level that
@@ -83,20 +83,6 @@ export function useSlow(busy: boolean, ms = 1000) {
 /** Shift summary shared by the status bar and the queue (App refreshes it with the queue). */
 export const SummaryContext = createContext<ShiftSummary | null>(null);
 
-type St = "ok" | "warn" | "down";
-
-/** Subsystem indicator: label + value as text. Only a degraded or failed subsystem draws attention;
- *  colour is reserved for risk levels, so "normal" is simply quiet text. */
-function Subsystem({ label, value, st, title }: { label: string; value: string; st: St; title?: string }) {
-  return (
-    <span className={`subsys subsys-${st}`} title={title}>
-      <span className="subsys-label">{label}</span>
-      <span className="subsys-value">{value}</span>
-      {st !== "ok" && <span className="sr-only">durum: {ST_TR[st]}</span>}
-    </span>
-  );
-}
-const ST_TR: Record<St, string> = { ok: "normal", warn: "dikkat", down: "arıza" };
 
 /** Local time and Zulu, updated once a second (MIL-STD-1472: dynamic values ≤ 1 Hz). */
 function Clock() {
@@ -139,33 +125,12 @@ function Posture({ s }: { s: ShiftSummary | null }) {
   );
 }
 
-/** "LLM sorgularını kapat": the operator stops every LLM request (budget, offline demo). Shown immediately, then
- *  follows the server (health poll). */
-function LlmSwitch({ enabled }: { enabled: boolean }) {
-  const [off, setOff] = useState(!enabled);
-  useEffect(() => setOff(!enabled), [enabled]);
-  return (
-    <label className="llm-switch" title="İşaretliyken dil modeline hiç istek gitmez: brief'ler önbellekten ya da şablondan gelir, sohbet kapalı.">
-      <input
-        type="checkbox"
-        checked={off}
-        onChange={(e) => {
-          const v = e.target.checked;
-          setOff(v);
-          api.setLlm(!v).catch(() => setOff(!v));
-        }}
-      />
-      LLM sorgularını kapat
-    </label>
-  );
-}
-
-/** Global status bar: classification banner, brand, clock + posture, subsystem health.
- *  `blind` (gold-set labelling) hides the posture: it would reveal the system's levels. */
-export function TopBar({ health, left, blind = false }: { health: Health | null; left?: ReactNode; blind?: boolean }) {
+/** Global status bar: brand, clock + posture. `blind` (gold-set labelling) hides the posture: it would reveal the
+ *  system's levels. `health` is accepted for callers but no longer shown (subsystem details left the bar). */
+export function TopBar({ left, blind = false }: { health?: Health | null; left?: ReactNode; blind?: boolean }) {
   const summary = useContext(SummaryContext);
   const ref = useRef<HTMLElement>(null);
-  // Sticky bars below read the real height (the banner and wrapping change it).
+  // Sticky bars below read the real height (wrapping changes it).
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
@@ -175,16 +140,8 @@ export function TopBar({ health, left, blind = false }: { health: Health | null;
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
-  const llmOk = !!health && !health.llm.error;
-  const llmOff = llmOk && health!.llm.enabled === false;
-  const detFallback = health?.detector_fallback;
-  const warming = !!health && health.warmup.done < health.warmup.total;
-  const b = health?.budget;
   return (
     <header className="topbar" ref={ref}>
-      <div className="classification" role="note">
-        TASNİF DIŞI
-      </div>
       <div className="topbar-row">
         <button className="skip" onClick={() => document.querySelector<HTMLElement>("main")?.focus()}>
           İçeriğe geç
@@ -200,45 +157,10 @@ export function TopBar({ health, left, blind = false }: { health: Health | null;
           <Clock />
           {!blind && <Posture s={summary} />}
         </div>
-        <div className="topbar-right">
-          <Subsystem
-            label="Tespit"
-            value={health ? `${prettyDetector(health.detector)}${detFallback ? " (önbellek)" : ""}` : "…"}
-            st={detFallback ? "warn" : "ok"}
-            title={detFallback ?? "Aktif tespit modeli"}
-          />
-          <Subsystem
-            label="LLM"
-            value={!health ? "…" : llmOff ? "kapalı · önbellek/şablon" : llmOk ? health.llm.model : "çevrimdışı · şablon brief"}
-            st={!health || llmOk ? "ok" : "warn"}
-            title={health?.llm.error ?? (llmOff ? "LLM sorguları operatör tarafından kapatıldı" : "Brief ve sohbet için dil modeli")}
-          />
-          {llmOk && <LlmSwitch enabled={health!.llm.enabled !== false} />}
-          <Subsystem
-            label="Veri"
-            value={!health ? "…" : warming ? `hazırlanıyor ${health.warmup.done}/${health.warmup.total}` : `${health.data.frames} kare · ${health.data.reports} rapor`}
-            st="ok"
-          />
-          {b && (b.spent_usd > 0 || b.ratio >= 0.8) && (
-            <Subsystem
-              label="Bütçe"
-              value={b.ratio >= 1 ? "doldu · şablon brief" : `$${dec(b.spent_usd, 2)} / $${dec(b.stop_usd, 0)}`}
-              st={b.ratio >= 1 ? "down" : b.ratio >= 0.8 ? "warn" : "ok"}
-              title="LLM harcaması / durdurma sınırı. Sınırda LLM çağrıları durur, brief'ler şablondan gelir."
-            />
-          )}
-        </div>
+        <div className="topbar-right" />
       </div>
     </header>
   );
-}
-
-function prettyDetector(name: string) {
-  if (name.startsWith("yolo:")) return `Yedek ${name.slice(5)}`;
-  if (name.startsWith("dfine:")) return "D-FINE-M (Kaggle)";
-  if (name.startsWith("kaggle:")) return "Kaggle modeli";
-  if (name === "oracle") return "Oracle (test)";
-  return name;
 }
 
 export function Loading({ label = "Yükleniyor" }: { label?: string }) {

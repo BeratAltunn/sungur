@@ -31,6 +31,10 @@ function style(basemap: boolean, terrain: TerrainManifest | null): StyleSpecific
   };
 }
 
+/** Maps open tilted; right-drag / Ctrl+drag re-orients the plane, the compass resets it. Shared by the main map
+ *  and the frame maps so both look and handle the same. */
+export const MAP_3D = { pitch: 45, maxPitch: 70 };
+
 interface Props {
   className?: string;
   /** Called once the style is loaded, and again after the basemap is toggled (style reset). */

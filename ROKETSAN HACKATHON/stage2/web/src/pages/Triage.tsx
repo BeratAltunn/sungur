@@ -1,7 +1,7 @@
 import type { MapLayerMouseEvent, Map as MLMap, Marker } from "maplibre-gl";
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { go } from "../App";
-import { MapView, fc, htmlMarker, line, polygon, setGeo } from "../components/MapView";
+import { MAP_3D, MapView, fc, htmlMarker, line, polygon, setGeo } from "../components/MapView";
 import { grid } from "../lib/geo";
 import { LEVEL_LEGEND, VERDICT_LEGEND, baseSymbol, classSymbol } from "../lib/symbols";
 import { ReplayBar, useReplay } from "../components/Replay";
@@ -546,8 +546,6 @@ function arrowHtml(m: FrameMotion) {
   );
 }
 
-/** Main map opens tilted; right-drag / Ctrl+drag re-orients the plane, the compass resets it. */
-const MAP_3D = { pitch: 45, maxPitch: 70 };
 /** Faint 1 km reference grid around the base (vehicles reach ~8 km): shows the plane's tilt and heading. */
 const GRID = { halfM: 10_000, stepM: 1_000 };
 const CARD_W = 340;

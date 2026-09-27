@@ -84,9 +84,11 @@ def test_triage_map_card_and_shift_card(page: Page):
     expect(page.locator(".hud-tools")).to_have_count(0)
     expect(page.get_by_role("group", name="Harita görünümü")).to_have_count(0)
     expect(page.locator(".mk-frame:visible")).to_have_count(0)
-    # Status bar: facility posture (highest level still waiting) and subsystem health, from the backend.
+    # Status bar: facility posture (highest level still waiting); no banner or subsystem readouts (kept lean).
     expect(page.locator(".posture")).to_contain_text("karar bekliyor")
-    expect(page.locator(".classification")).to_contain_text("TASNİF DIŞI")
+    expect(page.locator(".topbar")).not_to_contain_text("TASNİF")
+    for gone in ("LLM sorgularını kapat", "Bütçe", "D-FINE"):
+        expect(page.locator(".topbar")).not_to_contain_text(gone)
     # COP: a frame's tick on the time bar pins its card; Esc closes it.
     page.locator(f'.timebar-tick[title^="{CONTRAST}"]').click()
     expect(page.locator(".frame-card-pinned")).to_contain_text(CONTRAST)
@@ -182,20 +184,6 @@ def test_vehicle_view_plays_the_day_and_the_threshold_thins_it(page: Page):
     expect(page.locator(".mk-vdot:not(.mk-hidden)")).to_have_count(0)  # unscored tracks hide above 0
     # no frame view to switch to: the map is vehicles only
     expect(page.get_by_role("button", name="Kareler")).to_have_count(0)
-
-
-def test_llm_switch_in_the_status_bar(page: Page):
-    """The operator can stop every LLM request from the status bar; the LLM indicator says so."""
-    page.goto("/#/")
-    box = page.get_by_label("LLM sorgularını kapat")
-    expect(box).not_to_be_checked()
-    box.check()
-    expect(page.locator(".subsys", has_text="LLM")).to_contain_text(
-        "kapalı", timeout=8000
-    )  # next health poll
-    assert page.evaluate("fetch('/api/health').then(r => r.json()).then(h => h.llm.enabled)") is False
-    box.uncheck()
-    expect(page.locator(".subsys", has_text="LLM")).not_to_contain_text("kapalı", timeout=8000)
 
 
 def test_terrain_draped_on_main_map_and_can_be_turned_off(page: Page):
@@ -327,6 +315,9 @@ def test_frame_map_shows_zones_grid_and_picked_tracks(page: Page):
     expect(fmap.locator(".mk-zone-active")).to_have_count(1)
     truck = fmap.locator('.mk-veh[title~="T0122"]')
     expect(truck).to_be_visible()
+    # same symbols and view as the main map: class silhouette in the level colour, tiltable 3D plane
+    expect(truck.locator(".mk-v .veh-sil")).to_have_count(1)
+    expect(fmap.locator(".maplibregl-ctrl-compass")).to_have_count(1)
     picker = fmap.get_by_role("button", name=re.compile(r"^İzler"))
     total = int(re.search(r"/(\d+)", picker.inner_text()).group(1))
     picker.click()
