@@ -4,9 +4,9 @@ import { type ReactNode, useEffect, useState } from "react";
 import { go } from "../App";
 import { DecisionPill, ErrorState, LevelBadge, Loading, TopBar, VerdictBadge } from "../components/ui";
 import { api } from "../lib/api";
-import { DECISION_TR, LEVEL_ACTION, LEVEL_ICON, SOURCE_TR, dec, km, secs, zoneName } from "../lib/format";
+import { DECISION_TR, LEVEL_ACTION, SOURCE_TR, dec, km, secs, zoneName } from "../lib/format";
 import { DecisionMetrics } from "./Triage";
-import type { FrameResponse, Health, Level, ShiftHandover, TriageRow } from "../lib/types";
+import type { FrameResponse, Health, ShiftHandover, TriageRow } from "../lib/types";
 
 const stamp = (iso: string) => `${iso.slice(0, 10)} ${iso.slice(11, 16)}`; // backend times carry local offset
 const nowStamp = () => new Date().toLocaleString("tr-TR", { dateStyle: "short", timeStyle: "short" });
@@ -57,7 +57,7 @@ function RowLine({ r, extra }: { r: TriageRow; extra?: string }) {
 function rowText(r: TriageRow) {
   const d = r.decision;
   const who = d ? ` [${DECISION_TR[d.action]}${d.level ? ` → ${d.level}` : ""} ${d.at.slice(11, 16)}${d.reason ? `: ${d.reason}` : ""}]` : "";
-  return `- ${LEVEL_ICON[r.level]} ${r.level} · ${r.image_id} · ${zoneName(r.zone)} · ${r.capture_time} · ${km(r.d_base_m)} · ${eta(r)}${who}\n  ${r.headline}`;
+  return `- ${r.level} · ${r.image_id} · ${zoneName(r.zone)} · ${r.capture_time} · ${km(r.d_base_m)} · ${eta(r)}${who}\n  ${r.headline}`;
 }
 
 export function HandoverPage({ health }: { health: Health | null }) {
@@ -73,10 +73,10 @@ export function HandoverPage({ health }: { health: Health | null }) {
   if (!h) return <Loading label="Vardiya devri hazırlanıyor" />;
   const s = h.summary;
   const levels = Object.entries(s.by_level)
-    .map(([l, n]) => `${LEVEL_ICON[l as Level]} ${l} ${n}`)
+    .map(([l, n]) => `${l} ${n}`)
     .join(" · ");
   const text = [
-    `NÖBETÇİ · Vardiya devri · ${stamp(h.generated_at)}`,
+    `DİZDAR · Vardiya devri · ${stamp(h.generated_at)}`,
     `${s.frames} kare · ${s.reports} rapor · ${levels}`,
     `${s.decided} karar verildi · ${h.awaiting.length} YÜKSEK/KRİTİK karar bekliyor`,
     `Karar süresi (açılış→karar): ${s.decision_median_s === null ? "henüz ölçüm yok" : `${secs(s.decision_median_s)} medyan, ${s.decision_timed} karar`}${s.high_decided ? ` · seviye düşürme ${s.high_downgraded}/${s.high_decided}` : ""}`,
@@ -210,7 +210,7 @@ export function EscalationCard({ id, health }: { id: string; health: Health | nu
   const bad = p.reports.filter((r) => r.verdict === "ÇELİŞİYOR");
   const d = f.decision;
   const text = [
-    `[${LEVEL_ICON[b.risk_level]} ${b.risk_level}] ${id} · ${zoneName(p.frame.zone)} · ${p.frame.capture_time} · üsten ${km(p.frame.d_base_m)} ${p.frame.direction}`,
+    `[${b.risk_level}] ${id} · ${zoneName(p.frame.zone)} · ${p.frame.capture_time} · üsten ${km(p.frame.d_base_m)} ${p.frame.direction}`,
     b.headline,
     `Önerilen eylem: ${b.recommended_action}`,
     ...b.key_findings.map((k) => `- ${k.statement}`),
@@ -228,7 +228,7 @@ export function EscalationCard({ id, health }: { id: string; health: Health | nu
           <div>
             <h1>Eskalasyon kartı</h1>
             <p className="muted">
-              NÖBETÇİ · {nowStamp()} · sistem önerisidir, kararı insan verir
+              DİZDAR · {nowStamp()} · sistem önerisidir, kararı insan verir
             </p>
           </div>
           <PrintActions text={text} back={{ label: "← Kareye dön", href: `#/frame/${id}` }} />

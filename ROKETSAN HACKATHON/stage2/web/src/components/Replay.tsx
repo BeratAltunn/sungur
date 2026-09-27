@@ -126,7 +126,7 @@ function Alert({ f, t }: { f: SimFrame; t: number }) {
         {t >= arr ? `araçlar üste vardı (~${hhmm(arr)})` : `araçlar ~${hhmm(arr)}'te üste · ${dec(arr - t)} dk`}
       </span>
       <span>
-        <span className="mk-sys" aria-hidden /> NÖBETÇİ: {status(f.system_done, f.system_start, f.system_before)}
+        <span className="mk-sys" aria-hidden /> DİZDAR: {status(f.system_done, f.system_start, f.system_before)}
       </span>
       <span>
         <span className="mk-man" aria-hidden /> Elle: {status(f.manual_done, f.manual_start, f.manual_before)}
@@ -179,7 +179,7 @@ export function ReplayBar({ r }: { r: ReturnType<typeof useReplay> }) {
       </div>
       <div className="lanes">
         <Lane name="Elle (geliş sırası)" sim={sim.manual.minutes} frames={sim.frames} t={t} which="manual" />
-        <Lane name="NÖBETÇİ (risk sırası)" sim={sim.system.minutes} frames={sim.frames} t={t} which="system" />
+        <Lane name="DİZDAR (risk sırası)" sim={sim.system.minutes} frames={sim.frames} t={t} which="system" />
       </div>
       {alerts.map((f) => (
         <Alert key={f.image_id} f={f} t={t} />

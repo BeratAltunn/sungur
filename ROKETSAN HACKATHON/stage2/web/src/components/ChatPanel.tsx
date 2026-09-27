@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { api, explain } from "../lib/api";
-import { LABEL_TR, LEVEL_ICON, dec, smooth, storage, zoneName } from "../lib/format";
+import { LABEL_TR, dec, smooth, storage, zoneName } from "../lib/format";
 import { applyCompletion, complete, type Completion } from "../lib/complete";
 import type { ChatItem, ChatTurn, ChatVocab, Suggestion } from "../lib/types";
 import { DRAG_TYPE, endDrag, itemKey, readDrag } from "../lib/vehicles";
@@ -378,7 +378,7 @@ export function ChatPanel({
                   </>
                 ) : (
                   <>
-                    <span aria-hidden>{LEVEL_ICON[c.level]}</span> <span className="mono">{c.image_id}</span>
+                    <span className="mono">{c.image_id}</span>
                     <span className="muted"> · {zoneName(c.zone)} {c.capture_time}</span>
                   </>
                 )}

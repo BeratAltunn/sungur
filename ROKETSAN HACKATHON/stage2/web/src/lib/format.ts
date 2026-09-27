@@ -16,7 +16,6 @@ export const hhmm = (t: number) => {
 };
 
 export const LEVELS: Level[] = ["KRİTİK", "YÜKSEK", "ORTA", "DÜŞÜK"];
-export const LEVEL_ICON: Record<Level, string> = { "DÜŞÜK": "○", ORTA: "●", "YÜKSEK": "▲", "KRİTİK": "▲▲" };
 export const LEVEL_CLASS: Record<Level, string> = {
   "DÜŞÜK": "lv-low",
   ORTA: "lv-mid",

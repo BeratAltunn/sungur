@@ -5,7 +5,7 @@ import { ImagePanel } from "../components/ImagePanel";
 import { EvidenceTabs, type TabId } from "../components/Tabs";
 import { ErrorState, Kbd, Loading, TopBar } from "../components/ui";
 import { api } from "../lib/api";
-import { LEVELS, LEVEL_ACTION, LEVEL_CLASS, LEVEL_ICON, km, storage, zoneName } from "../lib/format";
+import { LEVELS, LEVEL_ACTION, LEVEL_CLASS, km, storage, zoneName } from "../lib/format";
 import type { EvidencePacket, FrameTracks, Health, Level, MapContext } from "../lib/types";
 
 /**
@@ -56,7 +56,7 @@ export function LabelPage({ id, health }: { id: string | null; health: Health | 
               .map((l) => (
                 <li key={l}>
                   <span className={`level ${LEVEL_CLASS[l]} level-sm`}>
-                    {LEVEL_ICON[l]} {l}
+                    {l}
                   </span>{" "}
                   {LEVEL_ACTION[l]}
                 </li>
@@ -261,7 +261,7 @@ function LabelFrame({
                   className={`level ${LEVEL_CLASS[l]} level-md ${level === l ? "level-picked" : "level-unpicked"}`}
                   onClick={() => setLevel(l)}
                 >
-                  {LEVEL_ICON[l]} {l} <Kbd>{i + 1}</Kbd>
+                  {l} <Kbd>{i + 1}</Kbd>
                 </button>
               ))}
           </div>

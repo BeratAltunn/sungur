@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, explain } from "../lib/api";
-import { DECISION_TR, LEVELS, LEVEL_ICON, zoneName } from "../lib/format";
+import { DECISION_TR, LEVELS, zoneName } from "../lib/format";
 import { LEVEL_VAR } from "../lib/theme";
 import type { Decision, EvaluationResult, Level } from "../lib/types";
 import { Kbd, LevelBadge, RefText, useSlow } from "./ui";
@@ -196,7 +196,7 @@ export function DecisionBar({
           <select value={level} onChange={(e) => setLevel(e.target.value as Level)} aria-label="Yeni seviye">
             {LEVELS.map((l) => (
               <option key={l} value={l}>
-                {LEVEL_ICON[l]} {l}
+                {l}
               </option>
             ))}
           </select>

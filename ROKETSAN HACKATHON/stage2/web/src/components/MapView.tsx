@@ -84,7 +84,11 @@ export function MapView({ className, onReady, initial, threeD, terrain, controls
       map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
       map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-left");
       const m = map;
-      m.on("load", () => readyRef.current(m));
+      m.on("load", () => {
+        // Credits start folded into the (i) button: expanded, the long terrain credit runs under the play bar.
+        m.getContainer().querySelector(".maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show");
+        readyRef.current(m);
+      });
       m.on("rotate", () => setBearing(m.getBearing()));
       m.on("pitch", () => setPitch(m.getPitch()));
       mapRef.current = m;

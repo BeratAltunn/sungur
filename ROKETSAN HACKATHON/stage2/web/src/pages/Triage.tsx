@@ -12,7 +12,7 @@ import { DecisionPill, ErrorState, Kbd, LevelBadge, Loading, TopBar } from "../c
 import { api } from "../lib/api";
 import { createClock, type Clock } from "../lib/clock";
 import { threatAt, toMin } from "../lib/dayVehicles";
-import { LABEL_TR, reducedMotion, LEVEL_ACTION, LEVEL_CLASS, LEVEL_ICON, dec, hhmm, km, secs, storage, zoneName } from "../lib/format";
+import { LABEL_TR, reducedMotion, LEVEL_ACTION, LEVEL_CLASS, dec, hhmm, km, secs, storage, zoneName } from "../lib/format";
 import { LEVEL_VAR, levelColor, token } from "../lib/theme";
 import type { DayVehicle, EvidencePacket, FrameMotion, Health, Label, LngLat, MapContext, ShiftSummary, TriageRow, VehicleDay } from "../lib/types";
 import { addToChat, endDrag, frameItem, startDrag } from "../lib/vehicles";
@@ -278,7 +278,11 @@ export function TriagePage({
         insets={insets}
       />
 
-      <div className="hud hud-bottom" ref={hudBottom}>
+      <div className="hud hud-bottom">
+        <Legend rings={mapCtx?.rings.map((r) => r.km) ?? []} />
+      </div>
+      {/* the play bar: bottom centre of the map (its height keeps the card and the rail clear of it) */}
+      <div className="hud hud-timebar" ref={hudBottom}>
         {vehDay && (
           <TimeBar
             clock={clock}
@@ -290,7 +294,6 @@ export function TriagePage({
             onTick={select}
           />
         )}
-        <Legend rings={mapCtx?.rings.map((r) => r.km) ?? []} />
       </div>
     </div>
   );
@@ -695,8 +698,8 @@ function OverviewMap({
         map,
         f.center,
         (f.lead_label
-          ? `${classSymbol(f.lead_label)}<span class="mk-lv">${LEVEL_ICON[f.level]}</span>`
-          : `<span class="mk-frame-icon">${LEVEL_ICON[f.level]}</span>`),
+          ? classSymbol(f.lead_label)
+          : `<span class="mk-frame-icon"></span>`),
         `mk mk-frame ${LEVEL_CLASS[f.level]}`,
         () => cb.current.onSelect(f.image_id), // pin the card; double-click opens
       );
@@ -869,7 +872,7 @@ function Legend({ rings }: { rings: number[] }) {
         <div className="legend">
           {LEVEL_LEGEND.map((l) => (
             <span key={l.level} className={`level ${LEVEL_CLASS[l.level]} level-sm`}>
-              {l.icon} {l.level}: {l.action}
+              {l.level}: {l.action}
             </span>
           ))}
           {VERDICT_LEGEND.map((v) => (

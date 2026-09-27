@@ -90,6 +90,14 @@ def test_triage_map_card_and_shift_card(page: Page):
     for gone in ("LLM sorgularını kapat", "Bütçe", "D-FINE"):
         expect(page.locator(".topbar")).not_to_contain_text(gone)
     expect(page.locator(".clock")).to_have_count(0)  # no wall clock anywhere
+    # DİZDAR logo in place of the old name; levels are colour + word, no ▲/● symbols
+    expect(page.locator(".topbar .brand-logo")).to_have_attribute("alt", "DİZDAR")
+    expect(page.locator(".topbar")).not_to_contain_text("NÖBETÇİ")
+    expect(page.locator(".topbar")).not_to_contain_text("Merkez Üs")
+    assert not re.search("[▲○●]", page.locator(".posture").inner_text())
+    # the play bar sits at the bottom centre of the map
+    bar, vw = page.locator(".hud-timebar").bounding_box(), page.viewport_size["width"]
+    assert abs(bar["x"] + bar["width"] / 2 - vw / 2) < 4
     # main map: faint zone labels; the compass sits in the corner and puts north back up when clicked
     expect(page.locator(".mk-zone")).to_have_count(len(page.request.get("/api/map").json()["zones"]))
     compass = page.locator(".map-compass")
@@ -245,7 +253,7 @@ def test_hover_grows_marker_in_place_and_card_fits(page: Page):
     assert box["y"] >= stage["y"] and box["y"] + box["height"] <= stage["y"] + stage["height"] + 1
     assert box["x"] >= stage["x"] and box["x"] + box["width"] <= stage["x"] + stage["width"] + 1
     # The map is the page background: the card stays clear of the floating layers above and below it.
-    hud_top, hud_bottom = page.locator(".hud-top").bounding_box(), page.locator(".hud-bottom").bounding_box()
+    hud_top, hud_bottom = page.locator(".hud-top").bounding_box(), page.locator(".hud-timebar").bounding_box()
     assert box["y"] >= hud_top["y"] + hud_top["height"] and box["y"] + box["height"] <= hud_bottom["y"]
 
 
@@ -275,13 +283,15 @@ def test_marker_silhouettes_follow_backend_class(page: Page):
             const sil = el.querySelector('.veh-sil');
             const got = sil ? [...sil.classList].find((c) => c.startsWith('veh-') && c !== 'veh-sil').slice(4) : null;
             if (got !== f.lead_label) out.push(`${f.image_id}: ${got} != ${f.lead_label}`);
-            if (f.lead_label && !el.querySelector('.mk-lv')) out.push(`${f.image_id}: seviye işareti yok`);
+            if (![...el.classList].some((c) => c.startsWith('lv-'))) out.push(`${f.image_id}: seviye rengi yok`);
           }
           return out;
         }"""
     )
     assert mismatches == []
-    expect(marker(page, DEMO).locator(".mk-lv")).to_have_text("▲▲")
+    expect(marker(page, DEMO)).to_have_class(
+        re.compile(r"\blv-crit\b")
+    )  # colour carries the level, no symbol
 
 
 def test_card_fades_in_and_out_on_hover(page: Page):
@@ -396,7 +406,7 @@ def test_impact_view_and_shift_replay(page: Page):
     page.goto("/#/impact")
     expect(page.locator(".tile").first).to_contain_text("KRİTİK: karar araç varmadan önce")
     expect(page.locator(".params")).to_contain_text("varsayım")  # no measurements in a fresh run dir
-    expect(page.locator(".tl-row").filter(has_text=DEMO)).to_contain_text("NÖBETÇİ")
+    expect(page.locator(".tl-row").filter(has_text=DEMO)).to_contain_text("DİZDAR")
     # Replay: frames join the queue at their capture time.
     page.get_by_role("link", name=re.compile("Vardiyayı oynat")).click()
     expect(page.locator(".replay")).to_be_visible()
@@ -405,7 +415,7 @@ def test_impact_view_and_shift_replay(page: Page):
     page.get_by_label("Simülasyon saati").fill(str(14 * 60 + 12))
     expect(marker(page, DEMO)).to_have_class(re.compile(r"\bmk-new\b"))
     assert 0 < frames.count() < 40
-    expect(page.locator(".replay-alert").filter(has_text=DEMO)).to_contain_text("NÖBETÇİ: karar")
+    expect(page.locator(".replay-alert").filter(has_text=DEMO)).to_contain_text("DİZDAR: karar")
     page.get_by_role("button", name="✕ Kapat").click()
     expect(frames).to_have_count(40)
     expect(page.locator(".replay")).to_have_count(0)

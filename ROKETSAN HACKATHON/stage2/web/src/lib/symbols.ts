@@ -1,5 +1,5 @@
 // The whole symbol vocabulary of the UI. Anything not listed here is written as a word instead.
-//   level    ○ DÜŞÜK · ● ORTA · ▲ YÜKSEK · ▲▲ KRİTİK   (shape backs up colour; always shown with the word)
+//   level    colour + the word (DÜŞÜK · ORTA · YÜKSEK · KRİTİK); no shape symbol (operator request)
 //   verdict  ✓ doğrulandı · ✗ çelişiyor · ? doğrulanamaz · — ilgisiz
 //   motion   → open / go on · ← back · ✕ close
 //   chat     speech bubble: the chat's side button (the only icon; everything else is a word)
@@ -9,11 +9,11 @@
 //   friendly  → "ÜS" box (the base)
 //   unknown   → quatrefoil (every detected vehicle: detection does not make it hostile)
 //   pending   → dashed quatrefoil (tracks in the frame the detector did not find)
-import { LEVELS, LEVEL_ACTION, LEVEL_ICON, VERDICT_ICON } from "./format";
+import { LEVELS, LEVEL_ACTION, VERDICT_ICON } from "./format";
 import type { Label } from "./types";
 
 /** Legend rows, generated from the same maps the badges use. */
-export const LEVEL_LEGEND = LEVELS.map((l) => ({ level: l, icon: LEVEL_ICON[l], action: LEVEL_ACTION[l] }));
+export const LEVEL_LEGEND = LEVELS.map((l) => ({ level: l, action: LEVEL_ACTION[l] }));
 export const VERDICT_LEGEND = [
   { icon: VERDICT_ICON["DOĞRULANDI"], text: "rapor doğrulandı" },
   { icon: VERDICT_ICON["ÇELİŞİYOR"], text: "rapor kanıtla çelişiyor" },

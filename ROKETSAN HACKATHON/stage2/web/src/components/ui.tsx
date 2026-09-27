@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import logoUrl from "../assets/dizdar-logo.svg";
 import { ApiError } from "../lib/api";
-import { DECISION_TR, LEVEL_CLASS, LEVEL_ICON, VERDICT_CLASS, VERDICT_ICON, splitRefs } from "../lib/format";
+import { DECISION_TR, LEVEL_CLASS, VERDICT_CLASS, VERDICT_ICON, splitRefs } from "../lib/format";
 import type { Decision, Health, Level, ShiftSummary, VerdictT } from "../lib/types";
 
 /** Level is always icon + text + colour (never colour alone). Tone "auto" fills KRİTİK (the one level that
@@ -17,9 +18,6 @@ export function LevelBadge({
   const solid = tone === "auto" && level === "KRİTİK";
   return (
     <span className={`level ${LEVEL_CLASS[level]} level-${size} ${solid ? "level-solid" : ""} ${tone === "quiet" ? "level-quiet" : ""}`}>
-      <span className="level-icon" aria-hidden>
-        {LEVEL_ICON[level]}
-      </span>
       {level}
     </span>
   );
@@ -30,7 +28,7 @@ export function DecisionPill({ decision }: { decision: Decision }) {
   const d = decision;
   return (
     <span className={`pill decision-pill dp-${d.action}`} title={[`${d.at.slice(11, 16)} · ${DECISION_TR[d.action]}`, d.reason].filter(Boolean).join("\n")}>
-      {d.action === "override" && d.level ? `operatör: ${LEVEL_ICON[d.level]} ${d.level}` : DECISION_TR[d.action]}
+      {d.action === "override" && d.level ? `operatör: ${d.level}` : DECISION_TR[d.action]}
     </span>
   );
 }
@@ -127,10 +125,9 @@ export function TopBar({ left, blind = false }: { health?: Health | null; left?:
           İçeriğe geç
         </button>
         <div className="topbar-left">
-          <a className="brand" href="#/">
-            NÖBETÇİ
+          <a className="brand" href="#/" aria-label="DİZDAR">
+            <img className="brand-logo" src={logoUrl} alt="DİZDAR" />
           </a>
-          <span className="muted">Merkez Üs</span>
           {left}
         </div>
         <div className="topbar-center">{!blind && <Posture s={summary} />}</div>
